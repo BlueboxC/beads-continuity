@@ -1,5 +1,5 @@
 ---
-title: Graph Preview in the BlueboxC fork
+title: Graph Preview in Beads Continuity
 description: Optional typed graph workspace with retained versions and read-only BDP access
 ---
 
@@ -9,13 +9,13 @@ Graph Preview adds typed Beads and Links, opaque revision guards, retained
 snapshots and graph queries to this fork. It reuses the existing embedded/server
 Dolt engines; there is no second database engine or service. Contributor source,
 pins, licenses and fork adaptations are recorded in
-[provenance](https://github.com/BlueboxC/beads/blob/codex/project-continuity/graphops/PROVENANCE.md).
+[provenance](https://github.com/BlueboxC/beads-continuity/blob/codex/project-continuity/graphops/PROVENANCE.md).
 
 This is an **experimental explicit workspace format**, not a migration of
 ordinary Beads. Existing projects keep their tasks, knowledge, code index,
 activity capture, Codex recovery and interactive viewer. The same continuity commands also work inside the experimental format through
 a storage adapter. Existing projects are preserved; conversion uses the explicit
-`graph-convert` workflow, never an initialization flag. See the [conversion design](https://github.com/BlueboxC/beads/blob/codex/project-continuity/engdocs/design/graph-preview-conversion.md) for preservation and qualification gates.
+`graph-convert` workflow, never an initialization flag. See the [conversion design](https://github.com/BlueboxC/beads-continuity/blob/codex/project-continuity/engdocs/design/graph-preview-conversion.md) for preservation and qualification gates.
 
 ## Try a fresh workspace
 
@@ -231,5 +231,5 @@ with the same receipt after an interruption. `rollback --receipt ...
 writes exist; otherwise it refuses and retains all work. Repeat rollback after
 an interrupted restoration. This bounded conversion recovery is not a generic
 restore/merge API. Publication/rollback refuse Windows and server/proxy modes.
-See the [conversion design](https://github.com/BlueboxC/beads/blob/codex/project-continuity/engdocs/design/graph-preview-conversion.md)
+See the [conversion design](https://github.com/BlueboxC/beads-continuity/blob/codex/project-continuity/engdocs/design/graph-preview-conversion.md)
 for the preservation and recovery contracts.

@@ -1,8 +1,8 @@
-# DOX.md — Beads fork
+# DOX.md — Beads Continuity
 
 ## Purpose
 
-Own the BlueboxC Beads fork and its development contracts for persistent project context.
+Own Beads Continuity, the BlueboxC Beads fork, and its development contracts for persistent project context.
 
 ## Ownership
 
@@ -12,7 +12,7 @@ Root owns fork policy, public API packages, license, build/version files, small 
 
 - Read this file and every indexed DOX.md along the target path before edits. A closer contract cannot weaken this framework.
 - Keep the DOX hierarchy current after meaningful changes; update affected indexes and remove stale text.
-- Preserve upstream attribution and the MIT license. Keep origin pointed at BlueboxC/beads and upstream at gastownhall/beads.
+- Preserve upstream attribution and the MIT license. Keep origin pointed at BlueboxC/beads-continuity and upstream at gastownhall/beads.
 - Memory Recall and Forget report row existence independently of its value; imported empty memories are found and can be deleted. Empty new content remains rejected.
 - Public memory lists support literal case-sensitive user-key prefix inclusion/exclusion, combined with the existing case-insensitive search; empty selectors preserve full-plane behavior. The optional AtomicMemories capability guards and mutates derived generations in one storage transaction; basic Memories callers remain compatible.
 - Use bd for tasks, dependencies and durable facts; record evidence before closing work. Keep private project records out of this public fork.
@@ -26,7 +26,7 @@ Root owns fork policy, public API packages, license, build/version files, small 
 ## Work Guidance
 
 - Prefer the simplest complete implementation and existing extension points. Avoid speculative configuration and dependencies.
-- The owner authorizes publishing the verified fork corrections and extensions to BlueboxC/beads. The owner has authorized the open fork PR #2 and correction comments on upstream issues; other PR creation/reopening and merges require separate authorization; keep project data, installation records and private evidence out of public commits.
+- The owner authorizes publishing the verified fork corrections and extensions to BlueboxC/beads-continuity. The owner has authorized the open fork PR #2 and correction comments on upstream issues; other PR creation/reopening and merges require separate authorization; keep project data, installation records and private evidence out of public commits.
 - Include every verified correction in this fork and its local installed build without waiting for upstream review. Keep private disclosure and publication approval separate from local fixes.
 - The fork objective is continuity: recover project direction, existing modules, verified fixes and their evidence. Use one Beads product and its existing Dolt storage boundary.
 - Native baseline is upstream v1.3.1 at c1c4b642ac1c08d8c828007a1c2f96e47e43ef7c. Verified corrections preserve its baseline API; continuity extensions reuse the existing Dolt memory boundary. Keep main available for upstream synchronization and publish fork work on codex/project-continuity.

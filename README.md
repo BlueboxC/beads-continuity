@@ -1,4 +1,4 @@
-# bd - Beads
+# Beads Continuity
 
 **Distributed graph issue tracker for AI agents, powered by [Dolt](https://github.com/dolthub/dolt).**
 
@@ -12,7 +12,7 @@
 
 **Docs:** https://beads.gascity.com/
 
-**BlueboxC continuity fork:** adds source-backed knowledge, supervised learning, a structural code index covering 23 languages/formats, one native graph/history viewer and opt-in session capture in the existing Dolt. See [fork scope](FORK.md) and [fork installation/workflow](docs/core-concepts/fork-continuity.md). The upstream installation commands below install upstream Beads; build the fork branch to obtain these additions. This branch also includes the [verified fork corrections](FORK.md#included-corrections), independently of upstream review, and an [opt-in human gate resolver policy](docs/workflows/gates.md#optional-human-resolver-policy-blueboxc-fork). Copilot setup now [preserves shared instructions](docs/integrations/copilot-cli.md#installation) on installation and removal.
+**Beads Continuity (`bd`), the BlueboxC fork:** adds source-backed knowledge, supervised learning, a structural code index covering 23 languages/formats, one native graph/history viewer and opt-in session capture in the existing Dolt. See [fork scope](FORK.md) and [fork installation/workflow](docs/core-concepts/fork-continuity.md). The upstream installation commands below install upstream Beads; build the fork branch to obtain these additions. This branch also includes the [verified fork corrections](FORK.md#included-corrections), independently of upstream review, and an [opt-in human gate resolver policy](docs/workflows/gates.md#optional-human-resolver-policy-blueboxc-fork). Copilot setup now [preserves shared instructions](docs/integrations/copilot-cli.md#installation) on installation and removal.
 
 Beads provides a persistent, structured memory for coding agents. It replaces messy markdown plans with a dependency-aware graph, allowing agents to handle long-horizon tasks without losing context.
 
@@ -216,7 +216,7 @@ This is useful for:
 * [Documentation site](https://beads.gascity.com/) | [Installing](docs/getting-started/installation.md) | [Sync Concepts](docs/core-concepts/sync-concepts.md) | [Agent Workflow](AGENT_INSTRUCTIONS.md) | [Copilot CLI Setup](docs/integrations/copilot-cli.md) | [Copilot VS Code MCP](docs/integrations/github-copilot.md) | [Articles](ARTICLES.md) | [Sync Branch Mode](docs/reference/protected-branches.md) | [Troubleshooting](docs/reference/troubleshooting.md) | [FAQ](docs/reference/faq.md)
 * [![Ask DeepWiki](https://deepwiki.com/badge.svg)](https://deepwiki.com/gastownhall/beads)
 
-## Continuity additions in the BlueboxC fork
+## Beads Continuity additions
 
 | Command | Added function |
 | --- | --- |

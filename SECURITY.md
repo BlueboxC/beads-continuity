@@ -1,6 +1,6 @@
-# Security policy for the BlueboxC fork
+# Security policy for Beads Continuity
 
-This policy covers `codex/project-continuity` in BlueboxC/beads. The fork
+This policy covers `codex/project-continuity` in BlueboxC/beads-continuity. The fork
 preserves the upstream MIT attribution; upstream releases and security decisions
 remain owned by [gastownhall/beads](https://github.com/gastownhall/beads).
 

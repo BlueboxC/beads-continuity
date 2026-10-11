@@ -1,4 +1,4 @@
-# BlueboxC Beads continuity fork
+# Beads Continuity
 
 This fork extends [gastownhall/beads](https://github.com/gastownhall/beads) to
 preserve project direction, existing modules, decisions and resolved problems

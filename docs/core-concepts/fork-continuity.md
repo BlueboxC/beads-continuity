@@ -1,12 +1,12 @@
 ---
-title: BlueboxC continuity fork
+title: Beads Continuity
 description: Install and use the fork's document learning, code index, native graph and session continuity in one Beads Dolt workspace
 ---
 
-# BlueboxC continuity fork
+# Beads Continuity
 
 Use this fork when preserving project objectives, decisions, existing modules
-and source-backed solutions matters across sessions. [FORK.md](https://github.com/BlueboxC/beads/blob/codex/project-continuity/FORK.md)
+and source-backed solutions matters across sessions. [FORK.md](https://github.com/BlueboxC/beads-continuity/blob/codex/project-continuity/FORK.md)
 identifies the upstream baseline, implemented additions and remaining limits.
 All project data stays in that project's existing Beads Dolt.
 
@@ -55,7 +55,7 @@ Beads. To obtain these additions, build this fork's branch with the Go version
 in `go.mod` and an embedded-capable C compiler toolchain:
 
 ```bash
-git clone --branch codex/project-continuity https://github.com/BlueboxC/beads.git
+git clone --branch codex/project-continuity https://github.com/BlueboxC/beads-continuity.git beads
 cd beads
 make install-force
 bd version
@@ -66,7 +66,7 @@ bd code --help
 The fork branch intentionally differs from `origin/main`; `install-force` is the
 existing source-install target that skips only that branch-equality check.
 
-Follow [build dependencies](https://github.com/BlueboxC/beads/blob/codex/project-continuity/docs/getting-started/installation.md#build-dependencies-contributors-only)
+Follow [build dependencies](https://github.com/BlueboxC/beads-continuity/blob/codex/project-continuity/docs/getting-started/installation.md#build-dependencies-contributors-only)
 for your platform. Python indexing uses an operator-owned Python 3 interpreter;
 JS/TS uses operator-owned Node.js and bundled TypeScript 5.9.3; Java/C#/Rust/C++
 reuse Node with bundled MIT Tree-sitter WASM parsers. The additional PHP/C, scripts, web, GraphQL, mobile, SQL and configuration grammars share that fixed runtime. XML uses the Go standard XML decoder without DTD loading or external entity resolution. Go/XML parsing needs
@@ -160,7 +160,7 @@ provenance, not authentication. Rejection uses `--decision reject` with reviewer
 and reason. Missing/changed sources or origins, altered workspace identity and
 concurrent conflicts withhold promotion. Established topics require explicit
 review/revision rather than replacement by a new draft. See
-[knowledge commands](https://github.com/BlueboxC/beads/blob/codex/project-continuity/docs/core-concepts/knowledge.md) for the full record/proposal contract.
+[knowledge commands](https://github.com/BlueboxC/beads-continuity/blob/codex/project-continuity/docs/core-concepts/knowledge.md) for the full record/proposal contract.
 
 ## Explore the native graph
 
@@ -189,7 +189,7 @@ The Historial tab reads the same bounded journal and supports session/turn/type/
 text filtering. Preparing a learning copies a request for Codex; downloading a
 packet retains a private export. Neither action invokes a model or accepts a
 proposal. The loopback viewer is read-only, does not start on boot, and does not
-update indexes. See [HTTP operation](https://github.com/BlueboxC/beads/blob/codex/project-continuity/engdocs/SERVE_RUNBOOK.md) for optional
+update indexes. See [HTTP operation](https://github.com/BlueboxC/beads-continuity/blob/codex/project-continuity/engdocs/SERVE_RUNBOOK.md) for optional
 authentication and transport bounds.
 
 ## Maintain derived selections
@@ -209,7 +209,7 @@ are separate, so the next pass may need to converge them.
 The watcher does not change tasks, blockers, human memories or accepted
 assertions, and does not run a project runtime, test suite, model or remote sync.
 It is independent of viewer polling and prime/hooks. See
-[code index](https://github.com/BlueboxC/beads/blob/codex/project-continuity/docs/core-concepts/code-index.md#automatic-maintenance) for bounds and failure handling.
+[code index](https://github.com/BlueboxC/beads-continuity/blob/codex/project-continuity/docs/core-concepts/code-index.md#automatic-maintenance) for bounds and failure handling.
 
 ## Preserve privacy and evidence
 
@@ -225,7 +225,7 @@ private. Publishing source does not publish Dolt data. Cross-machine data sync
 requires an explicit `bd dolt push`/remote configuration and a separate decision
 about which project material may leave the machine.
 
-Follow [the testing authority](https://github.com/BlueboxC/beads/blob/codex/project-continuity/engdocs/TESTING.md) to verify a change.
+Follow [the testing authority](https://github.com/BlueboxC/beads-continuity/blob/codex/project-continuity/engdocs/TESTING.md) to verify a change.
 Static calls, current hashes and successful local tests do not by themselves
 qualify installation, native compact behavior or production. Old binary rollback
 must respect derived manifest versions and expanded limits; retain the prior
@@ -262,7 +262,7 @@ local delivery alone does not establish native context admission. See
 
 The fork branch includes the reviewed environment-selection, migration,
 terminal rendering, event-stream authorization, MCP argument and dependency
-corrections described in [the fork scope](https://github.com/BlueboxC/beads/blob/codex/project-continuity/FORK.md#included-corrections).
+corrections described in [the fork scope](https://github.com/BlueboxC/beads-continuity/blob/codex/project-continuity/FORK.md#included-corrections).
 Upstream review is independent of their inclusion here.
 
 Present operator environment values, including empty selectors, override project
