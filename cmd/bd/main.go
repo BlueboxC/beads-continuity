@@ -1110,6 +1110,7 @@ var rootCmd = &cobra.Command{
 		if handled, err := admitGraphPreview(cmd); handled || err != nil {
 			return err
 		}
+		gateNativeContinuityCommand(cmd)
 
 		// Block dangerous env var overrides that could cause data fragmentation (bd-hevyw).
 		if err := checkBlockedEnvVars(); err != nil {

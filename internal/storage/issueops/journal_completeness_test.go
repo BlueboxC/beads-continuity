@@ -144,6 +144,7 @@ var mutationEntryPoints = []string{
 // create/update/close/delete/dep/label op vocabulary. The staleness check fails
 // if any stops being flagged, so an exemption cannot rot.
 var beadDMLExemptions = map[string]string{
+	"AdoptVersionInTx": "isolated graph conversion seeds only participation/history bookkeeping; preserves original Issue fields and events, without replaying create",
 	// (1) Child counters are derived CLI acceleration state. In contrast,
 	// is_blocked is part of the exported bead snapshot and its recompute helpers
 	// structurally journal every value that actually changes.

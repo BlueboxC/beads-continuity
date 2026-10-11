@@ -44,4 +44,4 @@ Use the affected existing checks selected in engdocs/TESTING.md; verify indexed 
 - [issueops/DOX.md](issueops/DOX.md) — Issue persistence operations.
 - [uow/DOX.md](uow/DOX.md) — Units of work.
 - [domain/DOX.md](domain/DOX.md) — Storage domain model.
-- [graphstore/DOX.md](graphstore/DOX.md) — Opt-in Graph Preview storage and fresh-only schema.
+- [graphstore/DOX.md](graphstore/DOX.md) — Opt-in Graph Preview storage, fresh schema and isolated native adoption.

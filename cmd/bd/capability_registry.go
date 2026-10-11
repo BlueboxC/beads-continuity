@@ -242,6 +242,12 @@ const backupRemoteSchemeTracking = "open question, not a verdict: remote-scheme 
 // proxyCapabilityRegistry is the whole path-keyed policy. Rows for permitted
 // paths are appended from proxyPermittedPaths by init.
 var proxyCapabilityRegistry = []capabilityRow{
+	refusedPath("graph-convert plan", "proxy.graph_convert.unsupported", ProxyReasonUnimplemented, "explicit local embedded checkpoint/publication only"),
+	refusedPath("graph-convert prepare", "proxy.graph_convert.unsupported", ProxyReasonUnimplemented, "explicit local embedded checkpoint/publication only"),
+	refusedPath("graph-convert verify", "proxy.graph_convert.unsupported", ProxyReasonUnimplemented, "explicit local embedded checkpoint/publication only"),
+	refusedPath("graph-convert activate", "proxy.graph_convert.unsupported", ProxyReasonUnimplemented, "explicit local embedded checkpoint/publication only"),
+	refusedPath("graph-convert rollback", "proxy.graph_convert.unsupported", ProxyReasonUnimplemented, "explicit local embedded checkpoint/publication only"),
+
 	// --- doctor -------------------------------------------------------------
 	// Diagnosis needs no version-control surface; the checks simply have no
 	// proxied dual yet. S6 splits them into client-local and store-backed.

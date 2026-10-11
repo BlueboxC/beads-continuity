@@ -382,6 +382,19 @@ func RecordVersionForCreateInTx(ctx context.Context, tx DBTX, issueID, actor str
 	return recordVersionAtInTx(ctx, tx, issueID, actor, time.Now().UTC(), mintCreate)
 }
 
+// AdoptVersionInTx starts retained history at an explicit conversion boundary.
+// It preserves native fields and refuses an existing retained history for this ID.
+func AdoptVersionInTx(ctx context.Context, tx DBTX, issueID, actor string) error {
+	var count int
+	if err := tx.QueryRowContext(ctx, "SELECT COUNT(*) FROM issue_versions WHERE issue_id = ?", issueID).Scan(&count); err != nil {
+		return err
+	}
+	if count != 0 {
+		return fmt.Errorf("versioned history: %s already participates; adoption refused", issueID)
+	}
+	return recordVersionAtInTx(ctx, tx, issueID, actor, time.Now().UTC(), mintCreate)
+}
+
 // RecordVersionAtInTx is RecordVersionInTx's test-support twin: it mints a
 // version row at a caller-chosen change_at instead of time.Now(), and --
 // deliberately -- does not gate on versionedHistoryEnabled at all, since its

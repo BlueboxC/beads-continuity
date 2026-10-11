@@ -14,8 +14,8 @@ pins, licenses and fork adaptations are recorded in
 This is an **experimental explicit workspace format**, not a migration of
 ordinary Beads. Existing projects keep their tasks, knowledge, code index,
 activity capture, Codex recovery and interactive viewer. The same continuity commands also work inside the experimental format through
-a storage adapter. Existing projects are preserved; conversion is still an
-explicit future operation, not an initialization flag. See the [conversion design](https://github.com/BlueboxC/beads/blob/codex/project-continuity/engdocs/design/graph-preview-conversion.md) for preservation and qualification gates.
+a storage adapter. Existing projects are preserved; conversion uses the explicit
+`graph-convert` workflow, never an initialization flag. See the [conversion design](https://github.com/BlueboxC/beads/blob/codex/project-continuity/engdocs/design/graph-preview-conversion.md) for preservation and qualification gates.
 
 ## Try a fresh workspace
 
@@ -190,6 +190,46 @@ inspects/removes it. No global Codex hooks or persistent trust changes are made.
 The reminder is not automatic semantic extraction or context recovery.
 
 Full production Type/Memory/History contracts, external/federated Link endpoints,
-proxy access, old workspace conversion, recovery and independent clone merging
-remain unqualified. This fork provisions Issue history prerequisites only during
-fresh graph initialization; ordinary migrations and their numbering remain intact.
+proxy access, arbitrary graph-backup recovery and independent clone merging
+remain unqualified. The explicit embedded converter below adopts current native
+stores; ordinary migrations and their numbering remain intact.
+
+## Convert an existing embedded workspace
+
+Use a permanent Scope URL and an explicit canonical `.beads` path. Keep the
+private plan, restore-verified byte-sealed native checkpoint, exact selector and compatible binary outside
+public Git. Preparation restores and verifies a separate candidate; the source
+stays native until activation.
+
+```sh
+bd graph-convert plan --workspace /project/.beads --scope-url https://example.invalid/project/ --out /private/plan.json
+bd graph-convert prepare --plan /private/plan.json --out /private/rehearsal --actor OWNER --writers-stopped
+bd graph-convert verify --receipt /private/rehearsal/receipt.json
+bd graph-convert activate --receipt /private/rehearsal/receipt.json --writers-stopped
+bd graph-convert verify --receipt /private/rehearsal/receipt.json
+```
+
+The selector must be a regular file under 16 MiB. Symbolic selectors and non-regular recovery files are refused before publication.
+
+Stop all clients, lifecycle hooks and viewers before preparation/activation;
+`--writers-stopped` is an assertion, not a process-control command. Current
+native schema and main as the only dirty branch are required. Unsupported
+relations/fields, wisps, external endpoints and ambiguous native JSON integers
+refuse. Exact human keys/bodies and historical review scopes are preserved as
+retained Memories; graph attribution starts at conversion. Canonical Memory
+selectors are `beads/continuity-<SHA256 UTF-8 key>`; discovery displays their
+original keys as titles, while fork knowledge/code APIs retain keyed access.
+
+`plan --prune-obsolete-code` explicitly allows official guarded cleanup only on
+the restored candidate, preserving the current index and complete Dolt history.
+Its native rehearsal plane is bounded at 2 GiB; final graph budgets do not grow.
+
+Activation retains the original native engine and publishes through atomic
+same-filesystem renames plus an incomplete-format fence. Repeat `activate`
+with the same receipt after an interruption. `rollback --receipt ...
+--writers-stopped` restores the exact native format only if no later graph
+writes exist; otherwise it refuses and retains all work. Repeat rollback after
+an interrupted restoration. This bounded conversion recovery is not a generic
+restore/merge API. Publication/rollback refuse Windows and server/proxy modes.
+See the [conversion design](https://github.com/BlueboxC/beads/blob/codex/project-continuity/engdocs/design/graph-preview-conversion.md)
+for the preservation and recovery contracts.

@@ -131,7 +131,11 @@ func freshToken() (string, error) {
 	return hex.EncodeToString(b[:]), nil
 }
 
-func installPreview(ctx context.Context, conn *sql.Conn, o Options) (err error) {
+func installPreview(ctx context.Context, conn *sql.Conn, o Options) error {
+	return installPreviewSchema(ctx, conn, o, true)
+}
+
+func installPreviewSchema(ctx context.Context, conn *sql.Conn, o Options, fresh bool) (err error) {
 	prefix := o.IssuePrefix
 	if prefix == "" {
 		prefix = "bd"
@@ -180,8 +184,10 @@ func installPreview(ctx context.Context, conn *sql.Conn, o Options) (err error) 
 			return err
 		}
 	}
-	if _, err = tx.ExecContext(ctx, "INSERT INTO config (`key`,value) VALUES ('issue_prefix', ?)", prefix); err != nil {
-		return err
+	if fresh {
+		if _, err = tx.ExecContext(ctx, "INSERT INTO config (`key`,value) VALUES ('issue_prefix', ?)", prefix); err != nil {
+			return err
+		}
 	}
 	if _, err = issueops.ReadConfigPrefix(ctx, tx); err != nil {
 		return err

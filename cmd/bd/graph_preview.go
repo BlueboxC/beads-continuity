@@ -363,7 +363,11 @@ func admitGraphPreview(cmd *cobra.Command) (handled bool, admissionErr error) {
 	if cfg.DoltMode == configfile.DoltModeServer {
 		cfg.DoltServerUser = cfg.GetDoltServerUser()
 	}
-	return true, validateGraphPreviewRoute(cfg)
+	if err := validateGraphPreviewRoute(cfg); err != nil {
+		return true, err
+	}
+	gateGraphPreviewCommand(cmd)
+	return true, nil
 }
 
 // Refuse flags whose semantics this slice does not implement, rather than
@@ -402,7 +406,7 @@ func graphPreviewWritePolicy() error {
 	return nil
 }
 
-func runGraphPreviewInit(cmd *cobra.Command) error {
+func runGraphPreviewInit(cmd *cobra.Command) (err error) {
 	if err := graphPreviewWritePolicy(); err != nil {
 		return err
 	}
@@ -497,6 +501,11 @@ func runGraphPreviewInit(cmd *cobra.Command) error {
 	}
 	ctx, cancel := context.WithTimeout(getRootContext(), 2*time.Minute)
 	defer cancel()
+	handle, err := acquireExclusiveWorkspaceGates(ctx, real, "fresh Graph Preview initialization", filepath.Join(real, "embeddeddolt"))
+	if err != nil {
+		return err
+	}
+	defer func() { err = errors.Join(err, handle.Release()) }()
 	options := graphOptions(cfg)
 	prefix, _ := cmd.Flags().GetString("prefix")
 	if prefix == "" {

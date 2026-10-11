@@ -1,8 +1,8 @@
 # Existing-workspace conversion to Graph Preview
 
-Status: implementation design, not an available conversion command.
-The current format supports fresh initialization only; `init --graph-mode link`
-must keep refusing an existing workspace. Work state and qualification belong
+Status: explicit embedded conversion implemented by
+`graph-convert plan|prepare|verify|activate|rollback`.
+`init --graph-mode link` must keep refusing an existing workspace. Work state and qualification belong
 in Beads, not this document.
 
 ## Preservation contract
@@ -35,7 +35,9 @@ identity, metadata, thread and attribution. Unknown types, external/wisp
 endpoints, missing endpoints, invalid encodings or unsupported native fields
 produce a named refusal before mutation. JSON numbers that the graph canonical
 contract cannot represent exactly must also refuse, never round or rewrite the
-native value. No silent coercion or dropped rows.
+native value. Because native JSON columns can already contain rounded historical
+input, adoption also refuses integer metadata at or beyond 2^53 rather than
+claiming the old input was exact. No silent coercion or dropped rows.
 
 ## Compatibility work before conversion
 
@@ -108,6 +110,59 @@ original recoverable until fresh-process verification succeeds. Conversion does
 not execute project code, reindex sources, accept learning proposals, configure
 global Codex hooks, publish Dolt data or authorize project runtime/production.
 
-No live project is converted by publishing this design. First support embedded
-workspaces; shared-server adoption, moving converted workspaces and independent
-clone merging need their own qualification.
+No live project is converted by publishing this design. Initial rehearsal
+supports current embedded native schema, with main as the
+only branch carrying uncommitted work; other dirty branches refuse. Shared-server
+adoption, moving converted workspaces and independent clone merging remain
+unqualified.
+
+Example isolated rehearsal (all paths and scope are explicit):
+
+```sh
+bd graph-convert plan --workspace /project/.beads --scope-url https://example.invalid/project/ --out /private/rehearsal-plan.json
+bd graph-convert prepare --plan /private/rehearsal-plan.json --out /private/rehearsal --actor OWNER --writers-stopped
+bd graph-convert verify --receipt /private/rehearsal/receipt.json
+```
+
+Plan and preparation leave the source native. Preparation retains a Dolt-native backup, exact
+selector and compatible executable alongside the restored candidate. Seal every
+backup file after the successful restore; changed recovery material refuses
+activation, verification and rollback. A failed
+preparation directory is retained for diagnosis; repeat preparation refuses an
+existing output instead of silently healing or allocating duplicate records.
+For explicit activation after verification:
+
+```sh
+bd graph-convert activate --receipt /private/rehearsal/receipt.json --writers-stopped
+bd graph-convert verify --receipt /private/rehearsal/receipt.json
+```
+
+All clients, hooks and viewers must be stopped; the flag asserts this and does
+not stop them. Graph commands share the existing workspace/physical-root gate;
+publication holds it exclusively. Stage the verified engine through an atomic
+same-filesystem rename, retain the original engine beside it, then fence the
+workspace with `graph-conversion-incomplete` before swapping the active engine
+and publishing the exact metadata plus supported marker. Repeat `activate` to
+resume an interrupted sealed transition; unknown layouts, source drift and
+changed artifacts refuse. The original inactive engine is recovery material,
+not another running graph service. Keep the native backup and recovery binary.
+
+`rollback --receipt ... --writers-stopped` restores the exact native selector
+and engine only when the graph still matches its rehearsal fingerprint. It
+retains the graph engine and refuses new writes instead of erasing them.
+Repeat the same rollback to finish an interrupted restoration. Partial
+activation must resume activation before rollback can use the retained native
+engine. Generic recovery of arbitrary modified graphs remains unsupported.
+Publication/rollback are qualified on POSIX; Windows refuses them.
+
+When obsolete code exceeds final acquisition bounds, plan with
+`--prune-obsolete-code`. This explicit path admits a native rehearsal plane up
+to 2 GiB, reuses the existing guarded code prune only on the restored candidate,
+records removed key hashes and checks every other native/configuration field.
+It retains the current manifest/fragments and all Dolt history; final graph
+admission still enforces 64 MiB. Corrupt or missing current indexes refuse.
+Native source rows are never pruned by conversion.
+
+Converted histories begin at adoption. Earlier commits and clean branch tips
+remain in the checkpoint and retained native engine; older branches are not
+silently converted or admitted as graph writers.

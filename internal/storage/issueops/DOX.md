@@ -18,7 +18,7 @@ Root DOX.md and the parent chain remain binding.
 
 - External blocker evaluation is shared with domain/db. Absent/unreadable providers fail closed; required-table and resolver failures propagate. Traverse active parent-child descendants with a visited set, preserving external references or an inherited witness in blocked output.
 
-- The retained Issue recorder is transaction-scoped and called only by Graph Preview adapters after a final accepted mutation. Its revision bookkeeping preserves the accepted postimage's row_lock/updated_at and does not duplicate the mutation's journal event. Ordinary native writers and existing journal/security policies remain unchanged; graph-only schema prerequisites live in graphstore.
+- The retained Issue recorder is transaction-scoped and called only by Graph Preview adapters after a final accepted mutation. Explicit candidate adoption may seed the first boundary snapshot without replaying create or minting a journal event. Its revision bookkeeping preserves the accepted postimage's row_lock/updated_at and does not duplicate the mutation's journal event. Ordinary native writers and existing journal/security policies remain unchanged; graph-only schema prerequisites live in graphstore.
 
 ## Work Guidance
 

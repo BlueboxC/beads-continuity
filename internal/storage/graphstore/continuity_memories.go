@@ -135,7 +135,11 @@ func (m *ContinuityMemories) rememberInTx(ctx context.Context, tx *sql.Tx, key, 
 	if err != nil {
 		return err
 	}
-	path := "beads/continuity-" + token
+	return m.createKeyedMemoryInTx(ctx, tx, key, value, "beads/continuity-"+token, token)
+}
+
+// Explicit adoption also uses this atomic body/pointer writer, including imported empty bodies.
+func (m *ContinuityMemories) createKeyedMemoryInTx(ctx context.Context, tx *sql.Tx, key, value, path, token string) error {
 	metadata, err := canonicalJSON(map[string]string{ContinuityKeyMetadata: key})
 	if err != nil {
 		return err
