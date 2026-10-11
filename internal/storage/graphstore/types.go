@@ -10,8 +10,15 @@ import (
 	publicops "github.com/steveyegge/beads/issueops"
 )
 
-// SchemaVersion identifies this explicitly experimental storage layout.
-const SchemaVersion = 7
+// SchemaVersion identifies the experimental layout and immutable payload contracts.
+const SchemaVersion = 8
+
+// LegacySchemaVersion remains readable with its original immutable Types.
+const LegacySchemaVersion = 7
+
+func SupportsSchema(version int) bool {
+	return version == LegacySchemaVersion || version == SchemaVersion
+}
 
 // Binding is the exact identity expected by the local workspace metadata.
 // WorkspaceID is its canonical filesystem path; C0 does not support moving it.
@@ -100,11 +107,14 @@ var (
 	ErrOutcomeUnknown = errors.New("graph transaction outcome is unknown; do not replay automatically")
 )
 
-// DependencyRequest asserts one blocking Dependency between live local Issues.
+// DependencyRequest asserts one admitted native Dependency between live local Issues.
 // Path is an optional never-reused Link allocation; empty allocates a fresh path.
 type DependencyRequest struct {
 	// ExpectedSourceRevision guards generic authoring; empty retains the legacy command contract.
 	ExpectedSourceRevision string
+	Type                   publicops.DependencyType
+	Metadata               json.RawMessage
+	ThreadID               string
 	SourcePath             string
 	TargetPath             string
 	Path                   string

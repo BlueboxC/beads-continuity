@@ -218,7 +218,7 @@ func TestGraphPreviewBeadListOutput(t *testing.T) {
 // configured directory label never is, because it cannot apply to a Memory.
 func TestGraphPreviewListPlan(t *testing.T) {
 	const (
-		issueType  = "https://example.invalid/a/types/preview-issue-v2"
+		issueType  = "https://example.invalid/a/types/preview-issue-v3"
 		memoryType = "https://example.invalid/a/types/preview-memory-v2"
 	)
 	for _, tc := range []struct {

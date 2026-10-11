@@ -41,7 +41,7 @@ func TestGraphPreviewUsabilityWorkflow(t *testing.T) {
 					LinkTypes []json.RawMessage `json:"linkTypes"`
 				} `json:"result"`
 			}
-			if err := json.Unmarshal([]byte(call("types")), &installed); err != nil || len(installed.Result.BeadTypes) != 2 || len(installed.Result.LinkTypes) != 4 {
+			if err := json.Unmarshal([]byte(call("types")), &installed); err != nil || len(installed.Result.BeadTypes) != 2 || len(installed.Result.LinkTypes) != 7 {
 				t.Fatalf("installed graph Types unavailable: %+v %v", installed, err)
 			}
 			for _, item := range append(installed.Result.BeadTypes, installed.Result.LinkTypes...) {
@@ -61,7 +61,7 @@ func TestGraphPreviewUsabilityWorkflow(t *testing.T) {
 			refuse("capability_unavailable", "types", "--sections")
 			memory := graphMixedResult[graphstore.Record](t, call("create", "--bead-type", "types/preview-memory-v2", "--id", "policy", "--body", "Code flow policy\nTarget integration."))
 			other := graphMixedResult[graphstore.Record](t, call("create", "Old code flow policy", "--bead-type", graphstore.MemoryTypeURL(scope)))
-			issue := graphMixedResult[graphstore.IssueRecord](t, call("create", "Move the branch", "--id", "work", "--bead-type", "types/preview-issue-v2", "--type", "task"))
+			issue := graphMixedResult[graphstore.IssueRecord](t, call("create", "Move the branch", "--id", "work", "--bead-type", "types/preview-issue-v3", "--type", "task"))
 			if memory.ID != scope+"beads/policy" || memory.Properties.Title != "Code flow policy" || other.ID == memory.ID || other.Properties.Body != "" || issue.ID != scope+"beads/work" || issue.Type != graphstore.IssueTypeURL(scope) {
 				t.Fatal("typed creation lost identity, body or Type")
 			}
@@ -73,7 +73,7 @@ func TestGraphPreviewUsabilityWorkflow(t *testing.T) {
 			refuse("invalid_selector", "link", memory.ID, other.ID, "--link-type", "types/example-follows", "--resource-type", "types/example-follows")
 			refuse("invalid_selector", "link", memory.ID, other.ID, "--link-type", "https://foreign.invalid/types/example-follows")
 			refuse("capability_unavailable", "link", memory.ID, other.ID, "--link-type", "types/missing")
-			refuse("invalid_properties", "link", memory.ID, other.ID, "--link-type", "types/preview-blocks-v1", "--unconditional-source")
+			refuse("invalid_properties", "link", memory.ID, other.ID, "--link-type", "types/preview-blocks-v2", "--unconditional-source")
 			human := graphPolicyCLI(t, bd, work, home, nil, "", "memories")
 			if !strings.Contains(human, "beads/policy") || !strings.Contains(human, "Code flow policy") || strings.Contains(human, scope) || strings.Contains(human, memory.Revision) {
 				t.Fatalf("noisy Memory list: %s", human)

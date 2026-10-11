@@ -28,7 +28,7 @@ func TestCurrentSnapshotLifecycle(t *testing.T) {
 				}
 			})
 			empty, err := s.CurrentSnapshot(ctx)
-			if err != nil || len(empty.Records) != 0 || len(empty.Types) != 6 || !authorityID.MatchString(empty.WriterToken) {
+			if err != nil || len(empty.Records) != 0 || len(empty.Types) != 9 || !authorityID.MatchString(empty.WriterToken) {
 				t.Fatalf("empty inventory: %+v %v", empty, err)
 			}
 			memory, err := s.Create(ctx, CreateRequest{Path: "beads/plan", Body: "Plan"})
@@ -202,7 +202,7 @@ func TestCurrentSnapshotLimit(t *testing.T) {
 			if _, err := s.db.ExecContext(ctx, `DELETE FROM graph_preview_catalog WHERE path=?`, fmt.Sprintf("beads/limit%d", PreviewSnapshotLimit)); err != nil {
 				t.Fatal(err)
 			}
-			// Exactly 1000 allocations proceed to backing validation; the
+			// At-limit allocations proceed to backing validation; the
 			// deliberately missing payload now fails as corruption, not limit.
 			got, err = s.CurrentSnapshot(ctx)
 			if !errors.Is(err, ErrInvalidStore) || errors.Is(err, ErrLimitExceeded) || !reflect.DeepEqual(got, Snapshot{}) {

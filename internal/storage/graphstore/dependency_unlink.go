@@ -16,7 +16,7 @@ import (
 func (s *Store) validDeletedLinkAllocation(kind, typ, backing string, key sql.NullString) bool {
 	return kind == "link" && !key.Valid &&
 		((backing == "informational" && IsInformationalTypeURL(s.ScopeURL(), typ)) ||
-			(backing == "dependency" && typ == DependencyTypeURL(s.ScopeURL())))
+			(backing == "dependency" && s.isNativeDependencyType(typ)))
 }
 
 // unlinkDependencyInTx extends the existing guarded unlink transaction only for

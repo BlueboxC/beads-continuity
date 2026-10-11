@@ -402,7 +402,7 @@ func (s *Store) currentInformationalLinkInTx(ctx context.Context, tx *sql.Tx, pa
 		if err := tx.QueryRowContext(ctx, `SELECT resource_kind,type_url,allocation_state,backing FROM graph_preview_catalog WHERE path=?`, endpoint).Scan(&kind, &typ, &state, &backing); err != nil {
 			return LinkRecord{}, fmt.Errorf("%w: missing endpoint: %v", ErrInvalidStore, err)
 		}
-		if validatePath(endpoint) != nil || kind != "bead" || state != "live" || !((backing == "generic" && typ == MemoryTypeURL(s.options.Binding.ScopeURL)) || (backing == "issue" && typ == IssueTypeURL(s.options.Binding.ScopeURL))) {
+		if validatePath(endpoint) != nil || kind != "bead" || state != "live" || !((backing == "generic" && typ == MemoryTypeURL(s.options.Binding.ScopeURL)) || (backing == "issue" && typ == s.issueTypeURL())) {
 			return LinkRecord{}, fmt.Errorf("%w: invalid informational endpoint", ErrInvalidStore)
 		}
 	}

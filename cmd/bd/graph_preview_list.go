@@ -38,7 +38,7 @@ func runGraphPreviewList(cmd *cobra.Command) error {
 			return graphFailure("invalid_selector", err.Error(), 2)
 		}
 	}
-	plan := planGraphList(typed, graphIssueListConfigLabel(cmd, in), selectedType, graphstore.IssueTypeURL(graphPreviewConfig.GraphScopeURL))
+	plan := planGraphList(typed, graphIssueListConfigLabel(cmd, in), selectedType, graphPreviewIssueTypeURL(graphPreviewConfig.GraphScopeURL))
 	if plan.refuse {
 		return graphFailure("capability_unavailable", "Issue list filters cannot be combined with a non-Issue --bead-type", 5)
 	}

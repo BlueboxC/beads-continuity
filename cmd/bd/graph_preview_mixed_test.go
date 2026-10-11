@@ -167,7 +167,7 @@ func TestGraphPreviewMixedCoreWorkflow(t *testing.T) {
 			const memoryEndpointHint = "blocking Link Type requires two live Issues; use an informational Type such as types/preview-related-v2 for Memory endpoints: "
 			planBefore, workBefore := call("show", "beads/plan"), call("show", "beads/work")
 			for _, endpoints := range [][2]string{{"beads/plan", "beads/work"}, {"beads/work", "beads/plan"}} {
-				stdout, stderr, exit := graphVersionsProcess(t, bd, work, home, "link", endpoints[0], endpoints[1], "--link-type", "types/preview-blocks-v1", "--unconditional-source", "--json")
+				stdout, stderr, exit := graphVersionsProcess(t, bd, work, home, "link", endpoints[0], endpoints[1], "--link-type", "types/preview-blocks-v2", "--unconditional-source", "--json")
 				var diagnostic struct {
 					Code      string `json:"code"`
 					Message   string `json:"message"`

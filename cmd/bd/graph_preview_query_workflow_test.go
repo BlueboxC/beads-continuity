@@ -36,7 +36,7 @@ func TestGraphPreviewQueryWorkflow(t *testing.T) {
 			}
 			list := func(extra ...string) graphstore.IssueListPage {
 				t.Helper()
-				args := append([]string{"list", "--format", "records-json", "--bead-type", "types/preview-issue-v2"}, extra...)
+				args := append([]string{"list", "--format", "records-json", "--bead-type", "types/preview-issue-v3"}, extra...)
 				return graphMixedResult[graphstore.IssueListPage](t, graphPolicyCLI(t, bd, work, home, nil, "", args...))
 			}
 			beads := func(extra ...string) ([]graphListedBead, bool) {

@@ -38,7 +38,7 @@ func TestGraphPreviewIssueAssignmentWorkflow(t *testing.T) {
 			}
 			list := func(want []string, extra ...string) {
 				t.Helper()
-				args := append([]string{"list", "--format", "records-json", "--bead-type", "types/preview-issue-v2", "--all"}, extra...)
+				args := append([]string{"list", "--format", "records-json", "--bead-type", "types/preview-issue-v3", "--all"}, extra...)
 				page := graphMixedResult[graphstore.IssueListPage](t, graphPolicyCLI(t, bd, work, home, nil, "", args...))
 				got := make([]string, 0, len(page.Items))
 				for _, item := range page.Items {

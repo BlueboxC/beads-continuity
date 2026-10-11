@@ -330,9 +330,13 @@ func mergePreviewGraph(page *graphview.Page, snapshot graphstore.Snapshot) {
 		if link, ok := entry.(graphstore.LinkRecord); ok {
 			kind := link.Type[strings.LastIndex(link.Type, "/")+1:]
 			switch kind {
-			case "preview-blocks-v1":
+			case "preview-blocks-v1", "preview-blocks-v2":
 				kind = "blocks"
-			case "preview-related-v2":
+			case "preview-parent-child-v1":
+				kind = "parent-child"
+			case "preview-discovered-from-v1":
+				kind = "discovered-from"
+			case "preview-related-v2", "preview-native-related-v1":
 				kind = "related"
 			case "example-follows":
 				kind = "follows"

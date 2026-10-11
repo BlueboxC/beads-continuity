@@ -16,6 +16,7 @@ import (
 // added), no bd writes it any more, and admission accepts it as it stands.
 var graphPreviewGoldenTypes = map[string][]string{
 	"link-preview-v6\n": {"memory", "issue", "dependency", "related", "example-follows", "example-cites"},
+	"link-preview-v7\n": {"memory", "issue", "dependency", "related", "example-follows", "example-cites", "parent-child", "discovered-from", "native-related"},
 }
 
 // An older bd checks only the marker (and a schema version that names the

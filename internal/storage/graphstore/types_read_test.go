@@ -74,7 +74,7 @@ func TestReadInstalledTypes(t *testing.T) {
 }
 
 func TestListInstalledTypesReflectsPersistedInstallation(t *testing.T) {
-	ctx, options := issueExperimentOptions(t, "embedded")
+	ctx, options := issueExperimentOptionsForSchema(t, "embedded", LegacySchemaVersion)
 	store, err := OpenExisting(ctx, options)
 	if err != nil {
 		t.Fatal(err)

@@ -24,10 +24,16 @@ import (
 
 func issueExperimentOptions(t *testing.T, backend string) (context.Context, Options) {
 	t.Helper()
+	return issueExperimentOptionsForSchema(t, backend, SchemaVersion)
+}
+
+func issueExperimentOptionsForSchema(t *testing.T, backend string, version int) (context.Context, Options) {
+	t.Helper()
 	ctx, cancel := context.WithTimeout(context.Background(), 90*time.Second)
 	t.Cleanup(cancel)
 	o := testOptions(t)
 	o.IssuePrefix = "exp"
+	o.Binding.SchemaVersion = version
 	if backend == "server" {
 		port := os.Getenv("BEADS_GRAPH_TEST_SERVER_PORT")
 		if port == "" {

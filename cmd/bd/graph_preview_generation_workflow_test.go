@@ -16,6 +16,7 @@ import (
 
 	"github.com/steveyegge/beads/internal/configfile"
 	"github.com/steveyegge/beads/internal/storage/embeddeddolt"
+	"github.com/steveyegge/beads/internal/storage/graphstore"
 )
 
 // The two refusals that existed before generations were admitted by one
@@ -184,23 +185,43 @@ func TestGraphPreviewMarkerGenerationWorkflow(t *testing.T) {
 		}
 	}
 	newerRefusal := func(number string) string {
-		return "graph_mode workspace format link-preview-v" + number + " is newer than this bd supports (link-preview-v6); upgrade bd; no database was opened"
+		return "graph_mode workspace format link-preview-v" + number + " is newer than this bd supports (link-preview-v7); upgrade bd; no database was opened"
 	}
 
 	t.Run("fresh init writes the current generation", func(t *testing.T) {
 		marker, err := os.ReadFile(markerPath)
-		if err != nil || string(marker) != "link-preview-v6\n" {
-			t.Fatalf("fresh workspace marker = %q (%v), want link-preview-v6 and a newline", marker, err)
+		if err != nil || string(marker) != "link-preview-v7\n" {
+			t.Fatalf("fresh workspace marker = %q (%v), want link-preview-v7 and a newline", marker, err)
 		}
 		// Common metadata changes the storage layout independently of the
 		// installed Type generation.
-		if cfg := loadConfig(t); cfg.GraphSchemaVersion != 7 {
-			t.Fatalf("graph_schema_version = %d, want 7", cfg.GraphSchemaVersion)
+		if cfg := loadConfig(t); cfg.GraphSchemaVersion != 8 {
+			t.Fatalf("graph_schema_version = %d, want 8", cfg.GraphSchemaVersion)
 		}
-		if persisted := graphGenerationQueryInt(t, loadConfig(t), `SELECT schema_version FROM graph_preview_scope WHERE singleton = 1`); persisted != 7 {
-			t.Fatalf("persisted schema_version = %d, want 7", persisted)
+		if persisted := graphGenerationQueryInt(t, loadConfig(t), `SELECT schema_version FROM graph_preview_scope WHERE singleton = 1`); persisted != 8 {
+			t.Fatalf("persisted schema_version = %d, want 8", persisted)
 		}
 	})
+
+	t.Run("current generation has all native Types", func(t *testing.T) {
+		if beads, links := readTypes(t, graphPreviewGeneration); beads != 2 || links != 7 {
+			t.Fatalf("current Types = %d Bead, %d Link", beads, links)
+		}
+		refuse(t, "link-preview-v6\n", graphGenerationSecondGateRefusal, "types")
+	})
+
+	// Construct a real layout-7 database in this disposable workspace. Relabeling
+	// the new Type set as legacy must not stand in for actual compatibility.
+	cfg := loadConfig(t)
+	cfg.DoltDatabase += "_legacy"
+	cfg.GraphSchemaVersion = graphstore.LegacySchemaVersion
+	if err := graphstore.Init(t.Context(), graphstore.Options{Backend: "embedded", DataDir: dataDir, Database: cfg.DoltDatabase,
+		Binding: graphstore.Binding{WorkspaceID: cfg.GraphWorkspace, ScopeURL: cfg.GraphScopeURL, AuthorityID: cfg.GraphAuthorityID, SchemaVersion: cfg.GraphSchemaVersion}}); err != nil {
+		t.Fatal(err)
+	}
+	if err := cfg.Save(beadsDir); err != nil {
+		t.Fatal(err)
+	}
 
 	t.Run("admits link-preview-v6 over six Types", func(t *testing.T) {
 		if beads, links := readTypes(t, "link-preview-v6\n"); beads != 2 || links != 4 {
@@ -217,10 +238,10 @@ func TestGraphPreviewMarkerGenerationWorkflow(t *testing.T) {
 	t.Run("refuses a newer generation at the first gate", func(t *testing.T) {
 		// 10 sorts before 6 as text and 18446744073709551616 overflows 64 bits;
 		// both are still newer, and the write is refused the same way as a read.
-		for _, number := range []string{"7", "10", "18446744073709551616"} {
+		for _, number := range []string{"8", "10", "18446744073709551616"} {
 			refuse(t, "link-preview-v"+number+"\n", newerRefusal(number), "types")
 		}
-		refuse(t, "link-preview-v7\n", newerRefusal("7"), "remember", "Refused write", "--id", "beads/refused", "--title", "Refused")
+		refuse(t, "link-preview-v8\n", newerRefusal("8"), "remember", "Refused write", "--id", "beads/refused", "--title", "Refused")
 	})
 
 	t.Run("keeps the existing refusal for every other marker", func(t *testing.T) {
@@ -277,7 +298,7 @@ func TestGraphPreviewMarkerGenerationWorkflow(t *testing.T) {
 				t.Fatalf("a supported marker was refused as a marker problem: %s", stderr)
 			}
 		}
-		refuse(t, "link-preview-v7\n", newerRefusal("7"), "types")
+		refuse(t, "link-preview-v8\n", newerRefusal("8"), "types")
 	})
 
 	t.Run("admits link-preview-v5 over the legacy four Types", func(t *testing.T) {

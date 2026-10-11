@@ -158,8 +158,8 @@ func TestExampleInformationalTypeLifecycle(t *testing.T) {
 				t.Fatalf("Issue query with examples: %+v %v", got, err)
 			}
 			inventory, err := s.CurrentSnapshot(ctx)
-			if err != nil || len(inventory.Types) != 6 {
-				t.Fatalf("six-Type inventory: %+v %v", inventory.Types, err)
+			if err != nil || len(inventory.Types) != 9 {
+				t.Fatalf("nine-Type inventory: %+v %v", inventory.Types, err)
 			}
 			for _, record := range inventory.Records {
 				if link, ok := record.(LinkRecord); ok && link.Type == RelatedTypeURL(s.ScopeURL()) {
@@ -173,7 +173,7 @@ func TestExampleInformationalTypeLifecycle(t *testing.T) {
 func TestExampleTypesLegacyInstallation(t *testing.T) {
 	for _, backend := range []string{"embedded", "server"} {
 		t.Run(backend, func(t *testing.T) {
-			ctx, o := issueExperimentOptions(t, backend)
+			ctx, o := issueExperimentOptionsForSchema(t, backend, LegacySchemaVersion)
 			s, err := OpenExisting(ctx, o)
 			if err != nil {
 				t.Fatal(err)
@@ -227,7 +227,7 @@ func TestExampleTypesLegacyInstallation(t *testing.T) {
 			}
 			for _, descriptor := range current.Types {
 				var want []byte
-				for _, definition := range previewTypeDefinitions()[:4] {
+				for _, definition := range previewTypeDefinitions(LegacySchemaVersion)[:4] {
 					expected, err := definition.build(s.ScopeURL())
 					if err != nil {
 						t.Fatal(err)
@@ -301,7 +301,7 @@ func TestExampleTypesRefuseMissingAndCorruptInstallation(t *testing.T) {
 				if !reflect.DeepEqual(before, workflowState(t, ctx, s)) {
 					t.Fatal("invalid Type read changed state")
 				}
-				for _, definition := range previewTypeDefinitions()[4:] {
+				for _, definition := range previewTypeDefinitions(SchemaVersion)[4:] {
 					descriptor, err := definition.build(s.ScopeURL())
 					if err != nil {
 						t.Fatal(err)

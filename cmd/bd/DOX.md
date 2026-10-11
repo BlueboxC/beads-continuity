@@ -60,6 +60,8 @@ Root DOX.md and the parent chain remain binding.
 
 - Admit graph-mode metadata before ordinary storage opening or maintenance. Route only supported Graph Preview commands; refuse unsupported flags, proxy selectors and incomplete/binding-mismatched workspaces. Opaque revision flags are graph-only on this baseline. Graph status reports canonical and continuity acquisition budgets; failed growth publishes no partial results. Admit knowledge/code/prime/Codex recovery and project viewer through the Graph Preview memory adapter, with existing-only scoped opens and no ordinary housekeeping. Activity capture and derived maintenance also support embedded Graph Preview; shared/server capture and maintenance remain refused. Project overview joins canonical records/typed Links and fork evidence from one read snapshot, and uses the existing interactive viewer. Prime includes ordinary graph Memories as untrusted bounded context alongside reviewed knowledge. Ordinary code/knowledge/activity/prime/viewer workflows remain unchanged. Graph setup affects project-local Claude configuration only when explicitly requested or fresh init does not skip it.
 
+- Fresh Graph Preview initialization writes link-preview-v7/schema 8 with nine Types. Markers v5/v6 admit only schema 7 and its original four/six Types; no read upgrades a descriptor or database. Native dep add/link admit blocks, parent-child, discovered-from and related with exact JSON metadata and thread; metadata uses the shared bounded parser without float conversion. Canonical Link selectors require the existing source guard; ordinary workspaces refuse graph-only fields.
+
 ## Work Guidance
 
 Keep existing CLI primitives and machine-readable output stable. Follow AGENTS.md and ../../engdocs/TESTING.md.

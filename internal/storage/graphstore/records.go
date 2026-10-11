@@ -166,7 +166,6 @@ func (s *Store) showMemoryInTx(ctx context.Context, tx *sql.Tx, path string) (Re
 // readMemoryInTx requires binding validation in this same transaction. It still
 // validates allocation, canonical bytes, retained state and owned Links.
 func (s *Store) readMemoryInTx(ctx context.Context, tx *sql.Tx, path string) (Record, error) {
-	var record Record
 	var kind, typ, revision, state, backing string
 	err := tx.QueryRowContext(ctx, `SELECT resource_kind, type_url, revision, allocation_state, backing
             FROM graph_preview_catalog WHERE path = ?`, path).Scan(&kind, &typ, &revision, &state, &backing)
@@ -193,20 +192,31 @@ func (s *Store) readMemoryInTx(ctx context.Context, tx *sql.Tx, path string) (Re
 	if err := tx.QueryRowContext(ctx, `SELECT snapshot, actor FROM graph_preview_versions WHERE path = ? AND version = ?`, path, revision).Scan(&snapshot, &actor); err != nil {
 		return Record{}, fmt.Errorf("%w: missing retained state: %v", ErrInvalidStore, err)
 	}
-	record = Record{ID: graph.CanonicalURL(s.options.Binding.ScopeURL, path), Type: typ,
-		Revision: revision, Version: revision, Owned: []json.RawMessage{}}
+	owned, err := s.memoryOwnedLinksInTx(ctx, tx, path)
+	if err != nil {
+		return Record{}, err
+	}
+	return s.validateCurrentMemory(path, typ, revision, payload, metadata, snapshot, actor, owned)
+}
+
+// Both single-record and complete reads compare current authority against the
+// exact retained bytes. Bulk acquisition changes queries, never validation.
+func (s *Store) validateCurrentMemory(path, typ, revision string, payload, metadata, snapshot []byte, actor string, owned []json.RawMessage) (Record, error) {
+	if typ != MemoryTypeURL(s.ScopeURL()) || !authorityID.MatchString(revision) {
+		return Record{}, fmt.Errorf("%w: invalid Memory allocation", ErrInvalidStore)
+	}
+	record := Record{ID: graph.CanonicalURL(s.ScopeURL(), path), Type: typ,
+		Revision: revision, Version: revision, Owned: owned}
 	var retained Record
 	if err := json.Unmarshal(snapshot, &retained); err != nil {
 		return Record{}, fmt.Errorf("%w: malformed retained state", ErrInvalidStore)
 	}
+	var err error
 	record.Metadata, err = commonMetadata(metadata)
 	if err != nil || !bytes.Equal(record.Metadata, metadata) {
 		return Record{}, fmt.Errorf("%w: invalid current Memory metadata", ErrInvalidStore)
 	}
-	record.Owned, err = s.memoryOwnedLinksInTx(ctx, tx, path)
-	if err != nil {
-		return Record{}, err
-	}
+
 	record.Attribution = retained.Attribution
 	at, err := time.Parse(time.RFC3339Nano, record.Attribution.RecordedAt)
 	if err != nil || at.UTC().Format(time.RFC3339Nano) != record.Attribution.RecordedAt || actor != record.Attribution.Actor ||

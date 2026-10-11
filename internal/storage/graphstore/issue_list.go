@@ -317,9 +317,9 @@ func (s *Store) checkIssueListCatalogInTx(ctx context.Context, tx *sql.Tx) error
 		case "generic":
 			valid = valid && kind == "bead" && strings.HasPrefix(path, "beads/") && typ == MemoryTypeURL(s.ScopeURL()) && !key.Valid && memoryExists
 		case "issue":
-			valid = valid && kind == "bead" && strings.HasPrefix(path, "beads/") && typ == IssueTypeURL(s.ScopeURL()) && key.Valid && key.String != "" && issueExists
+			valid = valid && kind == "bead" && strings.HasPrefix(path, "beads/") && typ == s.issueTypeURL() && key.Valid && key.String != "" && issueExists
 		case "dependency":
-			valid = valid && kind == "link" && strings.HasPrefix(path, "links/") && typ == DependencyTypeURL(s.ScopeURL()) && key.Valid && key.String != "" && dependencyExists
+			valid = valid && kind == "link" && strings.HasPrefix(path, "links/") && s.isNativeDependencyType(typ) && key.Valid && key.String != "" && dependencyExists
 		case "informational":
 			valid = valid && kind == "link" && strings.HasPrefix(path, "links/") && informational[typ] && !key.Valid && informationalExists
 		default:

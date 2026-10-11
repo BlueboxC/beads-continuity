@@ -76,7 +76,7 @@ func runGraphPreviewAddDependency(cmd *cobra.Command, args []string) error {
 	if err := graphPreviewWritePolicy(); err != nil {
 		return err
 	}
-	if err := graphPreviewFlags(cmd, "type", "link-type", "resource-type", "id", "if-source-revision", "unconditional-source"); err != nil {
+	if err := graphPreviewFlags(cmd, "type", "link-type", "resource-type", "id", "metadata", "thread", "if-source-revision", "unconditional-source"); err != nil {
 		return err
 	}
 	if len(args) != 2 {
@@ -93,6 +93,7 @@ func runGraphPreviewAddDependency(cmd *cobra.Command, args []string) error {
 		}
 		paths[i] = path
 	}
+	typ := types.DepBlocks
 	var sourceRevision string
 	linkPath := ""
 	if cmd.Flags().Changed("id") {
@@ -116,23 +117,31 @@ func runGraphPreviewAddDependency(cmd *cobra.Command, args []string) error {
 		if err != nil {
 			return err
 		}
-		if resourceType != graphstore.DependencyTypeURL(graphPreviewConfig.GraphScopeURL) {
-			return graphFailure("capability_unavailable", "this preview accepts only the installed Type "+graphstore.DependencyTypeURL(graphPreviewConfig.GraphScopeURL), 5)
+		var typeErr error
+		typ, typeErr = graphstore.NativeDependencyTypeFromURL(graphPreviewConfig.GraphScopeURL, resourceType, graphPreviewConfig.GraphSchemaVersion)
+		if typeErr != nil {
+			return graphStorageError(typeErr)
 		}
 	} else {
 		if cmd.Flags().Changed("if-source-revision") || cmd.Flags().Changed("unconditional-source") {
 			return graphFailure("invalid_selector", "source guard options require --link-type", 2)
 		}
 		raw, _ := cmd.Flags().GetString("type")
-		typ := canonicalDependencyType(types.DependencyType(raw))
+		typ = canonicalDependencyType(types.DependencyType(raw))
 		if err := validateDependencyType(typ); err != nil {
 			return graphFailure("invalid_properties", err.Error(), 2)
 		}
-		if typ != types.DepBlocks {
-			return graphFailure("capability_unavailable", "this preview supports only local blocking Dependencies", 5)
+		if _, err := graphstore.NativeDependencyTypeURLForSchema(graphPreviewConfig.GraphScopeURL, typ, graphPreviewConfig.GraphSchemaVersion); err != nil {
+			return graphStorageError(err)
 		}
 	}
-	return graphPreviewInsertDependency(paths[0], paths[1], linkPath, sourceRevision, args[0], args[1])
+	metadata, err := graphPreviewMetadataCreate(cmd)
+	if err != nil {
+		return err
+	}
+
+	thread, _ := cmd.Flags().GetString("thread")
+	return graphPreviewInsertNativeDependency(graphstore.DependencyRequest{SourcePath: paths[0], TargetPath: paths[1], Path: linkPath, ExpectedSourceRevision: sourceRevision, Type: typ, Metadata: metadata, ThreadID: thread}, args[0], args[1])
 }
 
 func runGraphPreviewDepBlocks(cmd *cobra.Command, args []string) error {
@@ -161,8 +170,13 @@ func runGraphPreviewDepBlocks(cmd *cobra.Command, args []string) error {
 }
 
 func graphPreviewInsertDependency(sourcePath, targetPath, linkPath, sourceRevision, sourceLabel, targetLabel string) error {
+	return graphPreviewInsertNativeDependency(graphstore.DependencyRequest{Path: linkPath, SourcePath: sourcePath, TargetPath: targetPath, ExpectedSourceRevision: sourceRevision}, sourceLabel, targetLabel)
+}
+
+func graphPreviewInsertNativeDependency(request graphstore.DependencyRequest, sourceLabel, targetLabel string) error {
+	request.Actor = getActorWithGit()
 	return withGraphStore(func(ctx context.Context, store *graphstore.Store) (any, string, error) {
-		result, err := store.AddDependency(ctx, graphstore.DependencyRequest{Path: linkPath, SourcePath: sourcePath, TargetPath: targetPath, Actor: getActorWithGit(), ExpectedSourceRevision: sourceRevision})
+		result, err := store.AddDependency(ctx, request)
 		if err != nil {
 			if strings.Contains(err.Error(), "operation requires a live durable Issue, not generic") {
 				return nil, "", fmt.Errorf("blocking Link Type requires two live Issues; use an informational Type such as types/preview-related-v2 for Memory endpoints: %w", err)

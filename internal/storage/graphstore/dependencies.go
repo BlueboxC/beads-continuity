@@ -36,7 +36,7 @@ func validateLinkPath(path string) error {
 	return nil
 }
 
-// AddDependency asserts the ordinary Issue-domain blocking relation and its
+// AddDependency asserts the admitted ordinary Issue-domain relation and its
 // independently allocated canonical Link, atomically with source-owned History.
 // Reasserting the same pair is an exact no-op; it never invokes the legacy
 // same-pair metadata updater. This is not generic Link multiedge policy.
@@ -54,8 +54,25 @@ func (s *Store) AddDependency(ctx context.Context, request DependencyRequest) (D
 	if request.Actor == "" || !utf8.ValidString(request.Actor) || request.SourcePath == request.TargetPath {
 		return DependencyResult{}, fmt.Errorf("%w: Dependency requires an actor and two distinct local Issues", storage.ErrValidation)
 	}
+	if request.Type == "" {
+		request.Type = types.DepBlocks
+	}
+	typeURL, err := NativeDependencyTypeURLForSchema(s.ScopeURL(), request.Type, s.options.Binding.SchemaVersion)
+	if err != nil {
+		return DependencyResult{}, err
+	}
+	metadata, err := commonMetadata(request.Metadata)
+	if err != nil {
+		return DependencyResult{}, err
+	}
+	if !utf8.ValidString(request.ThreadID) || len(request.ThreadID) > 255 {
+		return DependencyResult{}, fmt.Errorf("%w: invalid Dependency thread ID", storage.ErrValidation)
+	}
+	if s.options.Binding.SchemaVersion == LegacySchemaVersion && (string(metadata) != "{}" || request.ThreadID != "") {
+		return DependencyResult{}, fmt.Errorf("%w: native metadata requires the new graph format", ErrCapabilityUnavailable)
+	}
 	var result DependencyResult
-	err := s.withTx(ctx, true, func(tx *sql.Tx) error {
+	err = s.withTx(ctx, true, func(tx *sql.Tx) error {
 		if err := checkBinding(ctx, tx, s.options); err != nil {
 			return err
 		}
@@ -76,6 +93,10 @@ func (s *Store) AddDependency(ctx context.Context, request DependencyRequest) (D
 				return err
 			}
 			if existing.Target == target.ID {
+				thread, _ := existing.Properties["threadId"].(string)
+				if existing.Type != typeURL || !bytes.Equal(existing.Metadata, metadata) || thread != request.ThreadID {
+					return fmt.Errorf("%w: existing Dependency Type, metadata or thread differs; no changes applied", storage.ErrValidation)
+				}
 				if request.Path != "" && existing.ID != graph.CanonicalURL(s.options.Binding.ScopeURL, request.Path) {
 					return fmt.Errorf("%w: Dependency pair already has canonical Link %s", storage.ErrValidation, existing.ID)
 				}
@@ -108,7 +129,7 @@ func (s *Store) AddDependency(ctx context.Context, request DependencyRequest) (D
 		unscope := issueops.ScopeVersionedHistoryTransaction(tx, true)
 		defer unscope()
 		_, _, err = issueops.ExecuteAddDependencies(ctx, tx, publicops.AddDependenciesRequest{
-			Actor: request.Actor, Edges: []publicops.DependencyEdge{{IssueID: source.Properties.ID, DependsOnID: target.Properties.ID, Type: types.DepBlocks}},
+			Actor: request.Actor, Edges: []publicops.DependencyEdge{{IssueID: source.Properties.ID, DependsOnID: target.Properties.ID, Type: request.Type}},
 		})
 		if err != nil {
 			if errors.Is(err, publicops.ErrDependencyCycle) {
@@ -123,11 +144,17 @@ func (s *Store) AddDependency(ctx context.Context, request DependencyRequest) (D
 		if err := tx.QueryRowContext(ctx, `SELECT id FROM dependencies WHERE issue_id=? AND depends_on_issue_id=?`, source.Properties.ID, target.Properties.ID).Scan(&key); err != nil {
 			return err
 		}
+		if _, err := tx.ExecContext(ctx, `UPDATE dependencies SET metadata=?,thread_id=? WHERE id=?`, string(metadata), request.ThreadID, key); err != nil {
+			return err
+		}
+		if err := s.afterStage("dependency-fields"); err != nil {
+			return err
+		}
 		revision, err := freshToken()
 		if err != nil {
 			return err
 		}
-		if _, err := tx.ExecContext(ctx, `INSERT INTO graph_preview_catalog (path,resource_kind,type_url,revision,allocation_state,backing,backing_key) VALUES (?,'link',?,?,'live','dependency',?)`, path, DependencyTypeURL(s.options.Binding.ScopeURL), revision, key); err != nil {
+		if _, err := tx.ExecContext(ctx, `INSERT INTO graph_preview_catalog (path,resource_kind,type_url,revision,allocation_state,backing,backing_key) VALUES (?,'link',?,?,'live','dependency',?)`, path, typeURL, revision, key); err != nil {
 			return err
 		}
 		if err := s.afterStage("link-catalog"); err != nil {
@@ -207,7 +234,7 @@ func (s *Store) currentLinkInTx(ctx context.Context, tx *sql.Tx, path string) (L
 	if err != nil {
 		return LinkRecord{}, err
 	}
-	if kind != "link" || typ != DependencyTypeURL(s.options.Binding.ScopeURL) || !authorityID.MatchString(revision) || state != "live" || backing != "dependency" || key == "" {
+	if kind != "link" || !s.isNativeDependencyType(typ) || !authorityID.MatchString(revision) || state != "live" || backing != "dependency" || key == "" {
 		return LinkRecord{}, fmt.Errorf("%w: invalid Dependency allocation", ErrInvalidStore)
 	}
 	var sourcePath, targetPath, depType, metadata, thread, actor string
@@ -215,19 +242,33 @@ func (s *Store) currentLinkInTx(ctx context.Context, tx *sql.Tx, path string) (L
 	err = tx.QueryRowContext(ctx, `SELECT src.path,dst.path,d.type,d.metadata,d.thread_id,d.created_by,d.created_at
  FROM dependencies d JOIN graph_preview_catalog src ON src.backing='issue' AND src.backing_key=d.issue_id AND src.allocation_state='live' AND src.resource_kind='bead' AND src.type_url=?
  JOIN graph_preview_catalog dst ON dst.backing='issue' AND dst.backing_key=d.depends_on_issue_id AND dst.allocation_state='live' AND dst.resource_kind='bead' AND dst.type_url=?
- WHERE d.id=? AND d.depends_on_wisp_id IS NULL AND d.depends_on_external IS NULL`, IssueTypeURL(s.options.Binding.ScopeURL), IssueTypeURL(s.options.Binding.ScopeURL), key).Scan(&sourcePath, &targetPath, &depType, &metadata, &thread, &actor, &at)
+ WHERE d.id=? AND d.depends_on_wisp_id IS NULL AND d.depends_on_external IS NULL`, s.issueTypeURL(), s.issueTypeURL(), key).Scan(&sourcePath, &targetPath, &depType, &metadata, &thread, &actor, &at)
 	if err != nil {
 		return LinkRecord{}, fmt.Errorf("%w: Dependency backing: %v", ErrInvalidStore, err)
 	}
-	if depType != string(types.DepBlocks) || metadata != "{}" || thread != "" {
-		return LinkRecord{}, fmt.Errorf("%w: Dependency exceeds preview", ErrInvalidStore)
+	return s.nativeLinkRecord(path, typ, revision, key, sourcePath, targetPath, depType, metadata, thread, actor, at)
+}
+
+func (s *Store) nativeLinkRecord(path, typ, revision, key, sourcePath, targetPath, depType, metadata, thread, actor string, at time.Time) (LinkRecord, error) {
+	expected, typeErr := NativeDependencyTypeURLForSchema(s.ScopeURL(), types.DependencyType(depType), s.options.Binding.SchemaVersion)
+	nativeMetadata, metadataErr := commonMetadata([]byte(metadata))
+	properties := map[string]any{}
+	if s.options.Binding.SchemaVersion == LegacySchemaVersion {
+		if metadata != "{}" || thread != "" {
+			return LinkRecord{}, fmt.Errorf("%w: Dependency exceeds legacy preview", ErrInvalidStore)
+		}
+	} else {
+		properties = map[string]any{"nativeId": key, "threadId": thread}
+	}
+	if typeErr != nil || expected != typ || metadataErr != nil || !validNativeDependencyProperties(properties, s.options.Binding.SchemaVersion) {
+		return LinkRecord{}, fmt.Errorf("%w: invalid native Dependency Type or fields", ErrInvalidStore)
 	}
 	status := "unknown"
 	if actor != "" {
 		status = "claimed"
 	}
 	return LinkRecord{ID: graph.CanonicalURL(s.options.Binding.ScopeURL, path), Type: typ, Revision: revision, Version: revision,
-		Source: graph.CanonicalURL(s.options.Binding.ScopeURL, sourcePath), Target: graph.CanonicalURL(s.options.Binding.ScopeURL, targetPath), Properties: map[string]any{}, Metadata: []byte(`{}`),
+		Source: graph.CanonicalURL(s.options.Binding.ScopeURL, sourcePath), Target: graph.CanonicalURL(s.options.Binding.ScopeURL, targetPath), Properties: properties, Metadata: nativeMetadata,
 		Attribution: Attribution{Actor: actor, Status: status, RecordedAt: at.UTC().Format(time.RFC3339Nano)}}, nil
 }
 
@@ -241,6 +282,10 @@ func (s *Store) showLinkInTx(ctx context.Context, tx *sql.Tx, path string) (Link
 	if err := tx.QueryRowContext(ctx, `SELECT snapshot,actor FROM graph_preview_versions WHERE path=? AND version=?`, path, link.Version).Scan(&retained, &actor); err != nil {
 		return LinkRecord{}, fmt.Errorf("%w: missing Link retained state: %v", ErrInvalidStore, err)
 	}
+	return validateRetainedLink(link, retained, actor)
+}
+
+func validateRetainedLink(link LinkRecord, retained []byte, actor string) (LinkRecord, error) {
 	canonical, err := canonicalJSON(link)
 	if err != nil {
 		return LinkRecord{}, err

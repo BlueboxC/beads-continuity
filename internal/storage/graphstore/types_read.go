@@ -22,7 +22,7 @@ func (s *Store) ListInstalledTypes(ctx context.Context) ([]graph.TypeDescriptor,
 			return err
 		}
 		var err error
-		descriptors, err = installedPreviewTypes(ctx, tx, s.ScopeURL())
+		descriptors, err = installedPreviewTypes(ctx, tx, s.ScopeURL(), s.options.Binding.SchemaVersion)
 		return err
 	})
 	if err != nil {
@@ -70,10 +70,16 @@ func (s *Store) readTypeInTx(ctx context.Context, tx *sql.Tx, id string) (graph.
 	switch id {
 	case MemoryTypeURL(s.options.Binding.ScopeURL):
 		name = "memory"
-	case IssueTypeURL(s.options.Binding.ScopeURL):
+	case s.issueTypeURL():
 		name = "issue"
-	case DependencyTypeURL(s.options.Binding.ScopeURL):
+	case s.dependencyTypeURL():
 		name = "dependency"
+	case ParentChildTypeURL(s.ScopeURL()):
+		name = "parent-child"
+	case DiscoveredFromTypeURL(s.ScopeURL()):
+		name = "discovered-from"
+	case NativeRelatedTypeURL(s.ScopeURL()):
+		name = "native-related"
 	case RelatedTypeURL(s.options.Binding.ScopeURL):
 		name = "related"
 	case ExampleFollowsTypeURL(s.ScopeURL()):
@@ -86,7 +92,7 @@ func (s *Store) readTypeInTx(ctx context.Context, tx *sql.Tx, id string) (graph.
 	var raw []byte
 	var fingerprint string
 	if err := tx.QueryRowContext(ctx, `SELECT descriptor,fingerprint FROM graph_preview_types WHERE name=?`, name).Scan(&raw, &fingerprint); err != nil {
-		if errors.Is(err, sql.ErrNoRows) && (name == "example-follows" || name == "example-cites") {
+		if errors.Is(err, sql.ErrNoRows) {
 			return graph.TypeDescriptor{}, ErrNotFound
 		}
 		return graph.TypeDescriptor{}, fmt.Errorf("%w: read installed %s descriptor: %v", ErrInvalidStore, name, err)

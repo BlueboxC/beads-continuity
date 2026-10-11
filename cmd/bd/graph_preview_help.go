@@ -117,7 +117,7 @@ metadata-only update uses the same Resource and owning-source guards.
 Generic updates accept the current state when --if-revision is omitted.
 Informational Links owned by a Memory may also use --if-source-revision TOKEN;
 without it, the current source is
-accepted. Blocking Dependency properties are not editable here. Issue scalar
+accepted. Native Dependency properties are not editable here. Issue scalar
 edits and standalone --claim are separate graph operations. Without an ID,
 interactive Issue update uses the last-touched Issue; scripts require an ID
 unless BD_LAST_TOUCHED_FALLBACK=1 explicitly enables the fallback.`},
@@ -132,6 +132,8 @@ Dependency between two live Issues. Bare bd dep prints help; the ordinary
 --no-cycle-check option is unavailable in graph preview workspaces.`},
 		{depAddCmd, `Use bd dep add issue blocker for a blocking
 Dependency between two live Issues, optionally with --id links/ID.
+New format workspaces also accept --type parent-child, discovered-from or
+related. --metadata JSON and --thread ID preserve native Dependency fields.
 bd dep blocker --blocks issue is the same operation with reversed arguments.
 Memory endpoints, remote routing and bulk dependency flags are unavailable
 in this preview.`},
@@ -144,9 +146,11 @@ accepts types/NAME or a full local Type URL. An optional --id
 selects a bare Link ID or links/PATH; --properties supplies informational Link properties.
 Memory-owned Links accept the current source by default, or use
 --if-source-revision TOKEN to reject a stale source. --metadata JSON supplies
-an initial open metadata object for informational Links; blocking Dependencies
-do not accept it. --unconditional-source
-explicitly selects the default. The blocking Type types/preview-blocks-v1
+an initial metadata object; native Dependencies also accept --thread ID in
+new format workspaces. --type selects blocks, parent-child, discovered-from
+or native related, while --link-type selects a canonical installed Type.
+--unconditional-source
+explicitly selects the default. The blocking Type types/preview-blocks-v2
 requires Issue endpoints and, unlike informational Types, one of
 --if-source-revision TOKEN or --unconditional-source.`},
 		{closeCmd, `Close one or more local Issues by ID or beads/ID. One --reason

@@ -62,7 +62,7 @@ func TestAuthoritativeRecordsProjectToPublicWire(t *testing.T) {
 			})
 			r := New(s)
 			empty, err := r.Inventory(ctx)
-			if err != nil || len(empty.Beads) != 0 || len(empty.Links) != 0 || len(empty.Types) != 6 || empty.WriterToken == "" {
+			if err != nil || len(empty.Beads) != 0 || len(empty.Links) != 0 || len(empty.Types) != 9 || empty.WriterToken == "" {
 				t.Fatalf("empty installed inventory: %+v, %v", empty, err)
 			}
 			memory, err := s.Create(ctx, graphstore.CreateRequest{Path: "beads/plan", Title: "Memory — 記憶", Body: "", Actor: "human:Donna <unchanged>", Metadata: json.RawMessage(`{"reviewed":true}`)})
@@ -119,7 +119,7 @@ func TestAuthoritativeRecordsProjectToPublicWire(t *testing.T) {
 			if !reflect.DeepEqual(a, b) {
 				t.Fatal("Issue properties were filtered or changed")
 			}
-			if _, err := s.AddDependency(ctx, graphstore.DependencyRequest{SourcePath: "beads/task", TargetPath: "beads/blocker", Path: "links/blocks", Actor: "agent:test"}); err != nil {
+			if _, err := s.AddDependency(ctx, graphstore.DependencyRequest{SourcePath: "beads/task", TargetPath: "beads/blocker", Path: "links/blocks", Actor: "agent:test", Metadata: json.RawMessage(`{"native":true}`), ThreadID: "thread-α"}); err != nil {
 				t.Fatal(err)
 			}
 			var created graphstore.LinkRecord
@@ -156,7 +156,11 @@ func TestAuthoritativeRecordsProjectToPublicWire(t *testing.T) {
 			if len(withBlock.OwnedLinks[graphstore.DependencyTypeURL(o.Binding.ScopeURL)]) != 1 || withBlock.Revision == firstIssue.Revision {
 				t.Fatal("Issue owned state did not advance")
 			}
-			for _, typ := range []string{memory.Type, issue.Type, created.Type, graphstore.DependencyTypeURL(o.Binding.ScopeURL), graphstore.ExampleFollowsTypeURL(o.Binding.ScopeURL), graphstore.ExampleCitesTypeURL(o.Binding.ScopeURL)} {
+			nativeLink := withBlock.OwnedLinks[graphstore.DependencyTypeURL(o.Binding.ScopeURL)][0]
+			if string(nativeLink.Properties["threadId"]) != `"thread-α"` || len(nativeLink.Properties["nativeId"]) < 3 || string(nativeLink.Metadata["native"]) != "true" {
+				t.Fatalf("wire lost native fields: %+v", nativeLink)
+			}
+			for _, typ := range []string{memory.Type, issue.Type, created.Type, graphstore.DependencyTypeURL(o.Binding.ScopeURL), graphstore.ExampleFollowsTypeURL(o.Binding.ScopeURL), graphstore.ExampleCitesTypeURL(o.Binding.ScopeURL), graphstore.ParentChildTypeURL(o.Binding.ScopeURL), graphstore.DiscoveredFromTypeURL(o.Binding.ScopeURL), graphstore.NativeRelatedTypeURL(o.Binding.ScopeURL)} {
 				d, err := r.Type(ctx, strings.TrimPrefix(typ, o.Binding.ScopeURL))
 				if err != nil {
 					t.Fatal(err)
@@ -219,7 +223,7 @@ func checkInventory(t *testing.T, ctx context.Context, reader *Reader, beads, li
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(value.Beads) != beads || len(value.Links) != links || len(value.Types) != 6 {
+	if len(value.Beads) != beads || len(value.Links) != links || len(value.Types) != 9 {
 		t.Fatalf("incomplete inventory: %d Beads, %d Links, %d Types", len(value.Beads), len(value.Links), len(value.Types))
 	}
 	verify := func(id string, record any) {

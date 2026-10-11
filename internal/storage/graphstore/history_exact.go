@@ -103,14 +103,14 @@ func (s *Store) readVersionInTx(ctx context.Context, tx *sql.Tx, path, version s
 		}
 	}
 	if backing == "issue" {
-		if kind != "bead" || typ.String != IssueTypeURL(s.ScopeURL()) || !key.Valid || key.String == "" {
+		if kind != "bead" || typ.String != s.issueTypeURL() || !key.Valid || key.String == "" {
 			return nil, fmt.Errorf("%w: invalid Issue allocation", ErrInvalidStore)
 		}
 		return s.readIssueVersionInTx(ctx, tx, path, version, head, key.String)
 	}
 	if !((backing == "generic" && kind == "bead" && typ.String == MemoryTypeURL(s.ScopeURL())) ||
 		(backing == "informational" && kind == "link" && IsInformationalTypeURL(s.ScopeURL(), typ.String)) ||
-		(backing == "dependency" && kind == "link" && typ.String == DependencyTypeURL(s.ScopeURL()))) {
+		(backing == "dependency" && kind == "link" && s.isNativeDependencyType(typ.String))) {
 		return nil, fmt.Errorf("%w: unsupported retained allocation", ErrInvalidStore)
 	}
 	if backing == "informational" {
@@ -214,7 +214,7 @@ func (s *Store) validateVersionLink(ctx context.Context, tx *sql.Tx, link LinkRe
 		}
 		return s.validateRetainedInformational(link, raw, actor)
 	}
-	if link.Type != DependencyTypeURL(s.ScopeURL()) || link.Properties == nil || len(link.Properties) != 0 {
+	if !s.isNativeDependencyType(link.Type) || !validNativeDependencyProperties(link.Properties, s.options.Binding.SchemaVersion) || (s.options.Binding.SchemaVersion == LegacySchemaVersion && string(metadata) != "{}") {
 		return fmt.Errorf("%w: invalid retained Dependency", ErrInvalidStore)
 	}
 	for _, endpoint := range []string{link.Source, link.Target} {
@@ -230,15 +230,14 @@ func (s *Store) validateVersionOwned(ctx context.Context, tx *sql.Tx, source, ty
 	if owned == nil || len(owned) > PreviewOwnedLinkLimit {
 		return fmt.Errorf("%w: invalid retained owned set", ErrInvalidStore)
 	}
-	// typ is the owner's Bead Type for a Memory, which owns only informational
-	// Links, and the one owned Link Type for an Issue. The Memory Type is never an
-	// owned Link Type, so it must not pass the Link Type equality.
+	// Memories own informational Links; Issues own only the native Dependency
+	// Types admitted by their immutable format. The total source cap is shared.
 	memoryOwner := typ == MemoryTypeURL(s.ScopeURL())
 	previous := ""
 	for _, raw := range owned {
 		var link LinkRecord
 		if json.Unmarshal(raw, &link) != nil || link.Source != source ||
-			(memoryOwner && !IsInformationalTypeURL(s.ScopeURL(), link.Type)) || (!memoryOwner && link.Type != typ) ||
+			(memoryOwner && !IsInformationalTypeURL(s.ScopeURL(), link.Type)) || (!memoryOwner && !s.isNativeDependencyType(link.Type)) ||
 			(previous != "" && graph.CompareCodeUnits(previous, link.ID) >= 0) {
 			return fmt.Errorf("%w: invalid retained owned membership", ErrInvalidStore)
 		}
@@ -290,14 +289,14 @@ func (s *Store) readIssueVersionInTx(ctx context.Context, tx *sql.Tx, path, vers
 		return IssueRecord{}, err
 	}
 	var issue publicops.Issue
-	result := IssueRecord{ID: s.ScopeURL() + path, Type: IssueTypeURL(s.ScopeURL()), Revision: version, Version: version,
+	result := IssueRecord{ID: s.ScopeURL() + path, Type: s.issueTypeURL(), Revision: version, Version: version,
 		Attribution: Attribution{Actor: actor, Status: status, RecordedAt: at.UTC().Format(time.RFC3339Nano)}}
 	if json.Unmarshal(raw, &issue) != nil || !sameVersionJSON(raw, &issue) || issue.ID != issueID ||
 		json.Unmarshal(owned, &result.Owned) != nil || !sameVersionJSON(owned, result.Owned) ||
 		!validVersionAttribution(result.Attribution, actor) {
 		return IssueRecord{}, fmt.Errorf("%w: invalid retained Issue state", ErrInvalidStore)
 	}
-	if err := s.validateVersionOwned(ctx, tx, result.ID, DependencyTypeURL(s.ScopeURL()), result.Owned); err != nil {
+	if err := s.validateVersionOwned(ctx, tx, result.ID, s.issueTypeURL(), result.Owned); err != nil {
 		return IssueRecord{}, err
 	}
 	// Match the current graph projection without duplicating Jim's domain body.

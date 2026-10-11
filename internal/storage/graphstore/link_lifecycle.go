@@ -60,7 +60,7 @@ func (s *Store) ListLinks(ctx context.Context, request LinksRequest) ([]LinkReco
 }
 
 func (s *Store) validateLinkType(typ string, allowEmpty bool) error {
-	if (allowEmpty && typ == "") || IsInformationalTypeURL(s.ScopeURL(), typ) || typ == DependencyTypeURL(s.options.Binding.ScopeURL) {
+	if (allowEmpty && typ == "") || IsInformationalTypeURL(s.ScopeURL(), typ) || s.isNativeDependencyType(typ) {
 		return nil
 	}
 	return fmt.Errorf("%w: Link Type is not installed in this preview", storage.ErrValidation)
@@ -140,7 +140,7 @@ func (s *Store) Unlink(ctx context.Context, request LinkDeleteRequest) (LinkDele
 		if err := s.validateLinkType(request.TypeURL, false); err != nil {
 			return LinkDeleteResult{}, err
 		}
-		if request.TypeURL == DependencyTypeURL(s.options.Binding.ScopeURL) {
+		if s.isNativeDependencyType(request.TypeURL) {
 			return LinkDeleteResult{}, fmt.Errorf("%w: blocking Dependency unlink requires its canonical Link ID", ErrCapabilityUnavailable)
 		}
 	}
@@ -162,7 +162,7 @@ func (s *Store) Unlink(ctx context.Context, request LinkDeleteRequest) (LinkDele
 		if err != nil {
 			return err
 		}
-		if link.Type == DependencyTypeURL(s.options.Binding.ScopeURL) {
+		if s.isNativeDependencyType(link.Type) {
 			result, err = s.unlinkDependencyInTx(ctx, tx, path, link, request)
 			return err
 		}
@@ -310,8 +310,9 @@ func (s *Store) checkLinkMappingsInTx(ctx context.Context, tx *sql.Tx) error {
 		return err
 	}
 	placeholders, args := informationalTypeSQL(ids)
-	args = append(args, DependencyTypeURL(s.ScopeURL()))
-	if err := tx.QueryRowContext(ctx, `SELECT COUNT(*) FROM graph_preview_catalog WHERE resource_kind='link' AND allocation_state='live' AND ((backing='informational' AND type_url NOT IN (`+placeholders+`)) OR (backing='dependency' AND type_url<>?))`, args...).Scan(&invalidTypes); err != nil {
+	nativePlaceholders, nativeArgs := informationalTypeSQL(s.nativeDependencyTypeURLs())
+	args = append(args, nativeArgs...)
+	if err := tx.QueryRowContext(ctx, `SELECT COUNT(*) FROM graph_preview_catalog WHERE resource_kind='link' AND allocation_state='live' AND ((backing='informational' AND type_url NOT IN (`+placeholders+`)) OR (backing='dependency' AND type_url NOT IN (`+nativePlaceholders+`)))`, args...).Scan(&invalidTypes); err != nil {
 		return err
 	}
 	if invalidTypes != 0 {

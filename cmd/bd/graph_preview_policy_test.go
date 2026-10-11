@@ -277,7 +277,7 @@ func TestGraphPreviewC0DeferredCommandsRefuseBeforeLegacyOpen(t *testing.T) {
 		{"update", "beads/plan", "--add-label", "new", "--json"},
 		{"memories", "--json"}, {"recall", "beads/plan", "--json"},
 		{"list", "--json"}, {"ready", "--explain", "--json"}, {"close", "beads/plan", "--force", "--json"},
-		{"link", "beads/plan", "beads/other", "--type=related", "--json"}, {"serve", "--json"},
+		{"link", "beads/plan", "beads/other", "--type=tracks", "--json"}, {"serve", "--json"},
 		{"db-proxy-child", "--root", filepath.Join(work, ".beads"), "--port", "1", "--backend", "external", "--json"},
 	} {
 		before := legacyUpgradeTreeDigest(t, work)

@@ -221,7 +221,7 @@ func (s *Store) versionsInTx(ctx context.Context, tx *sql.Tx, path string, bound
 		// name the same Issue the catalog is bound to before it is trusted. The
 		// type URL is compared too: backing alone was never enough to establish
 		// that this allocation is the kind of thing it claims to be.
-		if typ.String != IssueTypeURL(s.ScopeURL()) || !key.Valid || key.String == "" {
+		if typ.String != s.issueTypeURL() || !key.Valid || key.String == "" {
 			return "", nil, fmt.Errorf("%w: invalid Issue allocation", ErrInvalidStore)
 		}
 		rows, err := issueVersionsInTx(ctx, tx, path, key.String, head, bounds)
@@ -233,7 +233,7 @@ func (s *Store) versionsInTx(ctx context.Context, tx *sql.Tx, path string, bound
 		rows, err := previewVersionsInTx(ctx, tx, path, head, "", bounds)
 		return KindMemory, rows, err
 	case backing == "informational" && kind == "link" && IsInformationalTypeURL(s.ScopeURL(), typ.String),
-		backing == "dependency" && kind == "link" && typ.String == DependencyTypeURL(s.ScopeURL()):
+		backing == "dependency" && kind == "link" && s.isNativeDependencyType(typ.String):
 		// Every informational Type the binary knows is accepted here, but only
 		// one this store has INSTALLED is valid: a legacy four-Type installation
 		// never holds the example Types, so an allocation naming one is corrupt

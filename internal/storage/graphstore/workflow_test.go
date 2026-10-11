@@ -236,10 +236,10 @@ func assertReadyIDs(t *testing.T, ctx context.Context, s *Store, want ...string)
 
 // Fingerprint all affected authoritative/retained tables, including the writer
 // fence and derived readiness. This detects updates as well as orphan rows.
-func workflowState(t *testing.T, ctx context.Context, s *Store) map[string]string {
+func workflowState(t *testing.T, ctx context.Context, s *Store, additionalTables ...string) map[string]string {
 	t.Helper()
 	state := map[string]string{}
-	for _, table := range []string{"issues", "dependencies", "events", "bd_events_journal", "bd_events_seq", "leases", "issue_versions", "store_epoch", "local_metadata", "graph_preview_scope", "graph_preview_catalog", "graph_preview_versions", "graph_preview_issue_versions", "graph_preview_links", "graph_preview_payloads"} {
+	for _, table := range append([]string{"issues", "dependencies", "events", "bd_events_journal", "bd_events_seq", "leases", "issue_versions", "store_epoch", "local_metadata", "graph_preview_scope", "graph_preview_catalog", "graph_preview_versions", "graph_preview_issue_versions", "graph_preview_links", "graph_preview_payloads"}, additionalTables...) {
 		rows, err := s.db.QueryContext(ctx, "SELECT * FROM "+table)
 		if err != nil {
 			t.Fatal(err)

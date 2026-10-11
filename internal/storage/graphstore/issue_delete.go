@@ -105,7 +105,7 @@ func (s *Store) DeleteIssue(ctx context.Context, request IssueDeleteRequest) (Is
 }
 
 func (s *Store) validDeletedIssueAllocationInTx(ctx context.Context, tx *sql.Tx, path, kind, typ, head, state, backing string, key sql.NullString) error {
-	if validatePath(path) != nil || kind != "bead" || typ != IssueTypeURL(s.ScopeURL()) ||
+	if validatePath(path) != nil || kind != "bead" || typ != s.issueTypeURL() ||
 		!authorityID.MatchString(head) || state != "deleted" || backing != "issue" || !key.Valid || key.String == "" {
 		return fmt.Errorf("%w: invalid deleted Issue allocation", ErrInvalidStore)
 	}

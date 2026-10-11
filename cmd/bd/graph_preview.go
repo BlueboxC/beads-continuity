@@ -36,17 +36,15 @@ const graphPreviewMarker = "graph-preview-format"
 
 // The marker records the format generation a workspace was created with.
 // graphPreviewGeneration is the only one this bd writes; admission accepts every
-// entry of graphPreviewSupportedGenerations. link-preview-v5 is the legacy
-// generation: four installed Types, or six in a workspace made after the example
-// Link Types were added and before link-preview-v6 existed. Changing which Types a
-// fresh init installs is a new generation, which
-// TestGraphPreviewGenerationPinsFreshInstallTypes enforces.
+// entry of graphPreviewSupportedGenerations. Generations 5/6 retain schema 7
+// and their four/six Types; generation 7 uses schema 8 and nine Types.
+// TestGraphPreviewGenerationPinsFreshInstallTypes pins each fresh installed set.
 const (
 	graphPreviewGenerationPrefix = "link-preview-v"
-	graphPreviewGeneration       = "link-preview-v6\n"
+	graphPreviewGeneration       = "link-preview-v7\n"
 )
 
-var graphPreviewSupportedGenerations = []string{"link-preview-v5\n", graphPreviewGeneration}
+var graphPreviewSupportedGenerations = []string{"link-preview-v5\n", "link-preview-v6\n", graphPreviewGeneration}
 
 var graphPreviewActive bool
 var graphPreviewStructuredErrors bool
@@ -85,7 +83,10 @@ func init() {
 	memoriesCmd.Flags().String("format", "table", "Graph Memory summaries: table or records-json (preview only)")
 	recallCmd.Flags().String("version", "", "Recall an exact retained Memory version token (graph preview only)")
 	showCmd.Flags().String("version", "", "Read an exact retained version token (graph preview only)")
-	depAddCmd.Flags().String("id", "", "New blocking Link ID (Graph Preview only)")
+	depAddCmd.Flags().String("metadata", "", "Native Dependency metadata JSON object (Graph Preview only)")
+	depAddCmd.Flags().String("thread", "", "Native Dependency thread ID (Graph Preview only)")
+	depAddCmd.Flags().String("id", "", "New native Dependency Link ID (Graph Preview only)")
+	linkCmd.Flags().String("thread", "", "Native Dependency thread ID (Graph Preview only)")
 	registerGraphLinkTypeFlag(linkCmd)
 	createCmd.Flags().String("bead-type", "", "Installed Bead Type: types/NAME or full local URL (graph preview only)")
 	createCmd.Flags().String("properties", "", "Initialize installed Bead Type properties from a JSON object, @file, or @- (graph preview only)")
@@ -315,10 +316,10 @@ func admitGraphPreview(cmd *cobra.Command) (handled bool, admissionErr error) {
 		if cmd == createCmd && (cmd.Flags().Changed("bead-type") || cmd.Flags().Changed("properties")) {
 			return true, graphFailure("capability_unavailable", "generic create options require a workspace initialized with graph_mode link", 5)
 		}
-		if cmd == linkCmd && (graphPreviewLinkTypeChanged(cmd) || cmd.Flags().Changed("id") || cmd.Flags().Changed("properties") || cmd.Flags().Changed("metadata") || cmd.Flags().Changed("if-source-revision") || cmd.Flags().Changed("unconditional-source")) {
+		if cmd == linkCmd && (graphPreviewLinkTypeChanged(cmd) || cmd.Flags().Changed("id") || cmd.Flags().Changed("properties") || cmd.Flags().Changed("metadata") || cmd.Flags().Changed("thread") || cmd.Flags().Changed("if-source-revision") || cmd.Flags().Changed("unconditional-source")) {
 			return true, graphFailure("capability_unavailable", "generic Link options require a workspace initialized with graph_mode link", 5)
 		}
-		if cmd == depAddCmd && cmd.Flags().Changed("id") {
+		if cmd == depAddCmd && (cmd.Flags().Changed("id") || cmd.Flags().Changed("metadata") || cmd.Flags().Changed("thread")) {
 			return true, graphFailure("capability_unavailable", "--id requires a workspace initialized with graph_mode link", 5)
 		}
 		// --if-revision is absent on purpose: outside link mode it is upstream's
@@ -334,7 +335,7 @@ func admitGraphPreview(cmd *cobra.Command) (handled bool, admissionErr error) {
 	if err := requireDoltBackend(cfg, dir); err != nil {
 		return true, graphFailure("graph_not_initialized", "graph_mode link: "+err.Error(), 5)
 	}
-	if cfg == nil || !graphPreviewGenerationSupported(marker) || !cfg.GraphReady || cfg.GraphSchemaVersion != graphstore.SchemaVersion || cfg.GraphScopeURL == "" || cfg.GraphAuthorityID == "" || cfg.GraphWorkspace == "" || cfg.DoltDatabase == "" {
+	if cfg == nil || !graphPreviewGenerationSupported(marker) || !cfg.GraphReady || !graphPreviewGenerationSchema(marker, cfg.GraphSchemaVersion) || cfg.GraphScopeURL == "" || cfg.GraphAuthorityID == "" || cfg.GraphWorkspace == "" || cfg.DoltDatabase == "" {
 		return true, graphFailure("graph_not_initialized", "graph_mode link metadata is missing, incomplete, or unsupported; no database was opened", 5)
 	}
 	real, err := filepath.EvalSymlinks(dir)

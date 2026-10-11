@@ -47,7 +47,8 @@ before changing preview versions.
 - Native Issue creation and supported scalar edits, notes append/guarded
   replacement/deliberate clear, claim/unclaim, close/reopen, defer/undefer and
   ready/blocked inspection. Native human-gate policy remains in force.
-- Typed informational Links and blocking Dependencies, independent Link identity,
+- Typed informational Links and native `blocks`, `parent-child`,
+  `discovered-from` and `related` Dependencies, independent Link identity,
   incident queries, guarded unlink, common metadata and bounded ordered property
   patches. Informational Links do not imply scheduling dependencies.
 - Current records, exact retained versions, comparison and local ordered version
@@ -64,6 +65,38 @@ Use the complete output of `bd status --graph --json` for implemented capabiliti
 and numerical limits. Unsupported flags/commands fail explicitly before ordinary
 storage opens. On this v1.3.1 fork, `--if-revision` is graph-only; it does not add
 upstream's newer decimal revision CLI to ordinary workspaces.
+
+## Native relations and format compatibility
+
+Fresh initialization writes marker `link-preview-v7` and schema 8, with nine
+immutable Types. Issue `preview-issue-v3` owns native dependencies. Each native
+Link carries its original row identity in `properties.nativeId`, thread in
+`properties.threadId`, JSON metadata and writer attribution. The four native
+relations preserve ordinary scheduling, parent closure and inherited deferral;
+native `related` is distinct from independently authored informational Links.
+Owned native Links count against one total limit of 1,000 per Issue.
+
+```sh
+bd dep add beads/child beads/parent --type parent-child --id links/ancestry
+bd dep add beads/work beads/origin --type discovered-from --metadata '{"reason":"diagnosis"}' --thread discussion-1
+bd link beads/work beads/other --link-type types/preview-native-related-v1 --unconditional-source
+bd show links/ancestry --json
+```
+
+Metadata follows the graph canonical JSON contract; unrepresentable numbers
+are refused before writing rather than rounded. Native dependency fields are
+immutable through graph authoring. Repeating the
+same relation and fields is a no-op; a conflicting type or fields is refused.
+Unlink uses the native removal policy and preserves the old retained version.
+
+| Workspace marker | Schema | Installed Types | Native relations |
+| --- | --- | --- | --- |
+| `link-preview-v5` / `link-preview-v6` | 7 | Original four or six | Original `preview-blocks-v1` only |
+| `link-preview-v7` | 8 | Nine | `preview-blocks-v2`, `preview-parent-child-v1`, `preview-discovered-from-v1`, `preview-native-related-v1` |
+
+Existing formats keep their original Issue/Link descriptors and payloads.
+Opening them does not install Types or upgrade schema. Relabeling metadata or a
+marker to the new generation is refused; conversion remains a separate operation.
 
 ## Integrated continuity
 
@@ -107,7 +140,7 @@ Issues without turning code symbols into tasks. Accepted solutions show their
 canonical record/version in node evidence. Plain native graph Memories also
 participate in bounded recovery, as untrusted memory content.
 
-The complete canonical inventory is limited to 1,000 live Resources and 16 MiB
+The complete canonical inventory is limited to 2,048 live Resources and 16 MiB
 of current acquisition bytes. Keyed continuity projections have a separate
 65,536-row / 64 MiB acquisition budget, including keys and row overhead.
 All graph writers check these limits before commit and roll back payloads,

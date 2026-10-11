@@ -52,7 +52,7 @@ func validateOptions(o Options) error {
 	if !databaseName.MatchString(o.Database) || (o.Branch != "" && o.Branch != "main") {
 		return fmt.Errorf("%w: invalid database or unsupported branch", ErrInvalidStore)
 	}
-	if o.Binding.SchemaVersion != SchemaVersion || !authorityID.MatchString(o.Binding.AuthorityID) {
+	if !SupportsSchema(o.Binding.SchemaVersion) || !authorityID.MatchString(o.Binding.AuthorityID) {
 		return fmt.Errorf("%w: invalid preview version or authority ID", ErrInvalidStore)
 	}
 	if err := graph.ValidatePersistedScopeURL(o.Binding.ScopeURL); err != nil {

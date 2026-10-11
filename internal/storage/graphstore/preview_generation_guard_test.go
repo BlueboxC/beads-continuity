@@ -12,7 +12,7 @@ import (
 // installs, so the list it is checked against must be the installer's own list
 // and not a second copy that can drift from it.
 func TestFreshTypeNamesFollowPreviewTypeDefinitions(t *testing.T) {
-	definitions := previewTypeDefinitions()
+	definitions := previewTypeDefinitions(SchemaVersion)
 	want := make([]string, len(definitions))
 	for i, definition := range definitions {
 		want[i] = definition.name
@@ -29,17 +29,17 @@ func TestFreshTypeNamesFollowPreviewTypeDefinitions(t *testing.T) {
 }
 
 // The common-metadata columns change the preview storage layout and require
-// SchemaVersion 7. Older workspaces remain pinned to their original binary;
-// this binary refuses them rather than silently upgrading their data. The
+// SchemaVersion 7. Schema 8 preserves native Dependency fields and Types.
+// Both formats open without automatic upgrade; earlier layouts refuse. The
 // workspace marker generation still describes the installed Type set.
 //
 // Counting Types is plain SQL over graph_preview_types and identical on both
 // engines, so only the embedded engine is exercised here.
 func TestPreviewSchemaVersionAndInstalledTypeCounts(t *testing.T) {
-	if SchemaVersion != 7 {
-		t.Fatalf("SchemaVersion is %d, want 7 for the common-metadata storage layout", SchemaVersion)
+	if SchemaVersion != 8 || LegacySchemaVersion != 7 {
+		t.Fatalf("SchemaVersion is %d, want 8 with legacy format 7 still supported", SchemaVersion)
 	}
-	ctx, o := issueExperimentOptions(t, "embedded")
+	ctx, o := issueExperimentOptionsForSchema(t, "embedded", LegacySchemaVersion)
 	s, err := OpenExisting(ctx, o)
 	if err != nil {
 		t.Fatal(err)
@@ -59,7 +59,7 @@ func TestPreviewSchemaVersionAndInstalledTypeCounts(t *testing.T) {
 				t.Error(err)
 			}
 		}()
-		descriptors, err := installedPreviewTypes(ctx, tx, s.ScopeURL())
+		descriptors, err := installedPreviewTypes(ctx, tx, s.ScopeURL(), s.options.Binding.SchemaVersion)
 		return len(descriptors), err
 	}
 	if count, err := installed(); err != nil || count != 6 {

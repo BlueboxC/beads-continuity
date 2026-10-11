@@ -12,7 +12,7 @@ import (
 )
 
 // These are real installed informational Types, not aliases for RelatedTypeURL.
-// The identities and original four descriptors remain immutable.
+// Informational identities remain unchanged across the native Type generations.
 func ExampleFollowsTypeURL(scope string) string { return scope + "types/example-follows" }
 func ExampleCitesTypeURL(scope string) string   { return scope + "types/example-cites" }
 
@@ -25,13 +25,21 @@ type previewTypeDefinition struct {
 	build func(string) (graph.TypeDescriptor, error)
 }
 
-// The original four entries are a complete legacy installation. Examples are
-// installed together only in new workspaces; reads never upgrade an old store.
-func previewTypeDefinitions() []previewTypeDefinition {
+// Layout 7 admits its original four or six Types; layout 8 installs nine.
+// Existing reads validate the selected set without installing or upgrading it.
+func previewTypeDefinitions(version int) []previewTypeDefinition {
+	if version == LegacySchemaVersion {
+		return []previewTypeDefinition{
+			{"memory", memoryDescriptor}, {"issue", legacyIssueDescriptor},
+			{"dependency", legacyDependencyDescriptor}, {"related", relatedDescriptor},
+			{"example-follows", exampleFollowsDescriptor}, {"example-cites", exampleCitesDescriptor},
+		}
+	}
 	return []previewTypeDefinition{
 		{"memory", memoryDescriptor}, {"issue", issueDescriptor},
 		{"dependency", dependencyDescriptor}, {"related", relatedDescriptor},
 		{"example-follows", exampleFollowsDescriptor}, {"example-cites", exampleCitesDescriptor},
+		{"parent-child", parentChildDescriptor}, {"discovered-from", discoveredFromDescriptor}, {"native-related", nativeRelatedDescriptor},
 	}
 }
 
@@ -39,7 +47,7 @@ func previewTypeDefinitions() []previewTypeDefinition {
 // The workspace format generation recorded by the CLI must change whenever this
 // list does, so the CLI checks the generation against it.
 func FreshTypeNames() []string {
-	definitions := previewTypeDefinitions()
+	definitions := previewTypeDefinitions(SchemaVersion)
 	names := make([]string, len(definitions))
 	for i, definition := range definitions {
 		names[i] = definition.name
@@ -68,16 +76,16 @@ func exampleInformationalDescriptor(id, name, meaning string) (graph.TypeDescrip
 	})
 }
 
-// installedPreviewTypes admits exactly the original four or all six immutable
-// descriptors. Count and SQL byte-length guards bound metadata acquisition and
+// installedPreviewTypes admits the exact immutable set for the selected format.
+// Count and SQL byte-length guards bound metadata acquisition and
 // reject partial, unknown, replaced or oversized installations.
-func installedPreviewTypes(ctx context.Context, tx *sql.Tx, scope string) ([]graph.TypeDescriptor, error) {
+func installedPreviewTypes(ctx context.Context, tx *sql.Tx, scope string, version int) ([]graph.TypeDescriptor, error) {
 	var count int
 	if err := tx.QueryRowContext(ctx, `SELECT COUNT(*) FROM graph_preview_types`).Scan(&count); err != nil {
 		return nil, err
 	}
-	definitions := previewTypeDefinitions()
-	if count != 4 && count != len(definitions) {
+	definitions := previewTypeDefinitions(version)
+	if count != len(definitions) && !(version == LegacySchemaVersion && count == 4) {
 		return nil, fmt.Errorf("%w: unsupported Type installation", ErrInvalidStore)
 	}
 	result := make([]graph.TypeDescriptor, 0, count)
@@ -113,7 +121,7 @@ func (s *Store) informationalTypeInTx(ctx context.Context, tx *sql.Tx, id string
 // Keep collection integrity based on the installed set, not every Type the
 // binary knows. A legacy store cannot silently acquire an example allocation.
 func (s *Store) installedInformationalTypes(ctx context.Context, tx *sql.Tx) ([]string, error) {
-	descriptors, err := installedPreviewTypes(ctx, tx, s.ScopeURL())
+	descriptors, err := installedPreviewTypes(ctx, tx, s.ScopeURL(), s.options.Binding.SchemaVersion)
 	if err != nil {
 		return nil, err
 	}

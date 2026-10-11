@@ -87,12 +87,12 @@ func projectGraphGeneric(snapshot graphstore.Snapshot, scope string, in graphGen
 			}
 			node = graphGenericNode{record.ID, record.Type, record.Properties.Title, record.Version, record.Attribution}
 		case graphstore.IssueRecord:
-			if record.Properties == nil || record.Type != graphstore.IssueTypeURL(scope) {
+			if record.Properties == nil || !graphstore.IsIssueTypeURL(scope, record.Type) {
 				return invalid("unsupported or incomplete Issue")
 			}
 			node = graphGenericNode{record.ID, record.Type, record.Properties.Title, record.Version, record.Attribution}
 		case graphstore.LinkRecord:
-			if !graphstore.IsInformationalTypeURL(scope, record.Type) && record.Type != graphstore.DependencyTypeURL(scope) {
+			if !graphstore.IsInformationalTypeURL(scope, record.Type) && !graphstore.IsNativeDependencyTypeURL(scope, record.Type) {
 				return invalid("unsupported Link Type")
 			}
 			if _, kind, ok := graph.SplitCanonicalURL(scope, record.ID); !ok || kind != graph.KindLink || record.Version == "" {

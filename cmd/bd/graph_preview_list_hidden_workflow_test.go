@@ -141,14 +141,14 @@ func TestGraphPreviewListHiddenIssuesWorkflow(t *testing.T) {
 
 			got, more := list()
 			expect("bare list hides the closed and the pinned Issue", got, more, []string{"beads/open", "beads/plan"}, false)
-			got, more = list("--bead-type", "types/preview-issue-v2")
+			got, more = list("--bead-type", "types/preview-issue-v3")
 			expect("Issue Type hides them too", got, more, []string{"beads/open"}, false)
 			got, more = list("--bead-type", "types/preview-memory-v2")
 			expect("a Memory is never hidden", got, more, []string{"beads/plan"}, false)
 
 			got, more = list("--all")
 			expect("--all shows them and lifts the configured default limit", got, more, everything, false)
-			got, more = list("--all", "--bead-type", "types/preview-issue-v2")
+			got, more = list("--all", "--bead-type", "types/preview-issue-v3")
 			expect("--all with the Issue Type", got, more, issues, false)
 			got, more = list("--all", "--limit", "3")
 			if len(got) != 3 || !more {

@@ -694,7 +694,7 @@ func TestVersionsOfDeletedSubjects(t *testing.T) {
 func TestVersionsOfExampleInformationalLinks(t *testing.T) {
 	for _, backend := range []string{"embedded", "server"} {
 		t.Run(backend, func(t *testing.T) {
-			ctx, o := issueExperimentOptions(t, backend)
+			ctx, o := issueExperimentOptionsForSchema(t, backend, LegacySchemaVersion)
 			s := openVersionsStore(t, ctx, o)
 			policy, err := s.Create(ctx, CreateRequest{Path: "beads/policy", Title: "Policy", Body: "Code flow policy", Actor: "author"})
 			if err != nil {

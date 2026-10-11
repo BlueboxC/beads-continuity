@@ -103,7 +103,7 @@ func (s *Store) blockedIssuesFilteredInTx(ctx context.Context, tx *sql.Tx, filte
 		}
 		seen[blocked.ID] = true
 		item := BlockedIssue{Issue: issue, BlockedBy: make([]string, 0, len(blocked.BlockedBy))}
-		// This preview admits unique local blocks-only pairs and no wisp plane.
+		// Native dependency pairs are unique and the preview admits no wisp plane.
 		// A duplicate violates that admitted invariant; do not silently dedupe a
 		// future broader native result into an apparently supported graph view.
 		blockers := make(map[string]bool)

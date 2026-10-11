@@ -6,7 +6,7 @@ import (
 )
 
 // The workspace marker is the first thing admission reads, so its
-// classification is exact: only the two supported generations are accepted,
+// classification is exact: only the supported generations are accepted,
 // only a well-formed higher generation is called newer, and every other byte
 // sequence keeps the generic refusal rather than earning a more specific claim.
 func TestGraphPreviewGenerationMarkerClassification(t *testing.T) {
@@ -18,7 +18,8 @@ func TestGraphPreviewGenerationMarkerClassification(t *testing.T) {
 	}{
 		{"legacy generation", "link-preview-v5\n", true, false},
 		{"current generation", "link-preview-v6\n", true, false},
-		{"next generation", "link-preview-v7\n", false, true},
+		{"native generation", "link-preview-v7\n", true, false},
+		{"next generation", "link-preview-v8\n", false, true},
 		{"numeric not lexical order", "link-preview-v10\n", false, true},
 		{"two digits above current", "link-preview-v99\n", false, true},
 		{"largest uint64", "link-preview-v18446744073709551615\n", false, true},
@@ -62,16 +63,16 @@ func TestGraphPreviewGenerationMarkerClassification(t *testing.T) {
 		})
 	}
 
-	// Exactly generations 5 and 6 are accepted and exactly those above 6 are
+	// Exactly generations 5, 6 and 7 are accepted and exactly those above 7 are
 	// newer, however the numbers are written in the ordinary decimal form.
 	for generation := range 300 {
 		marker := []byte("link-preview-v" + strconv.Itoa(generation) + "\n")
-		wantSupported := generation == 5 || generation == 6
+		wantSupported := generation == 5 || generation == 6 || generation == 7
 		if got := graphPreviewGenerationSupported(marker); got != wantSupported {
 			t.Errorf("supported(generation %d) = %t, want %t", generation, got, wantSupported)
 		}
-		if got := graphPreviewGenerationNewer(marker); got != (generation > 6) {
-			t.Errorf("newer(generation %d) = %t, want %t", generation, got, generation > 6)
+		if got := graphPreviewGenerationNewer(marker); got != (generation > 7) {
+			t.Errorf("newer(generation %d) = %t, want %t", generation, got, generation > 7)
 		}
 	}
 

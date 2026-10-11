@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"database/sql"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"reflect"
@@ -107,7 +108,7 @@ func (s *Store) CreateIssue(ctx context.Context, path string, request publicops.
 		}
 		if _, err := tx.ExecContext(ctx, `INSERT INTO graph_preview_catalog
             (path,resource_kind,type_url,revision,allocation_state,backing,backing_key)
-            VALUES (?,'bead',?,?,'live','issue',?)`, path, IssueTypeURL(s.options.Binding.ScopeURL), revision, created.Issue.ID); err != nil {
+            VALUES (?,'bead',?,?,'live','issue',?)`, path, s.issueTypeURL(), revision, created.Issue.ID); err != nil {
 			return err
 		}
 		if err := s.afterStage("issue-catalog"); err != nil {
@@ -190,6 +191,10 @@ func (s *Store) ShowIssue(ctx context.Context, path string) (IssueRecord, error)
 }
 
 func (s *Store) showIssueInTx(ctx context.Context, tx *sql.Tx, path string) (IssueRecord, error) {
+	return s.showIssueWithOwnedInTx(ctx, tx, path, nil)
+}
+
+func (s *Store) showIssueWithOwnedInTx(ctx context.Context, tx *sql.Tx, path string, owned []json.RawMessage) (IssueRecord, error) {
 	var kind, typ, revision, state, backing, issueID string
 	err := tx.QueryRowContext(ctx, `SELECT resource_kind,type_url,revision,allocation_state,backing,backing_key
         FROM graph_preview_catalog WHERE path=?`, path).Scan(&kind, &typ, &revision, &state, &backing, &issueID)
@@ -205,7 +210,7 @@ func (s *Store) showIssueInTx(ctx context.Context, tx *sql.Tx, path string) (Iss
 		}
 		return IssueRecord{}, ErrGone
 	}
-	if kind != "bead" || typ != IssueTypeURL(s.options.Binding.ScopeURL) || !authorityID.MatchString(revision) || state != "live" || backing != "issue" || issueID == "" {
+	if kind != "bead" || typ != s.issueTypeURL() || !authorityID.MatchString(revision) || state != "live" || backing != "issue" || issueID == "" {
 		return IssueRecord{}, fmt.Errorf("%w: invalid Issue allocation", ErrInvalidStore)
 	}
 	// Comments are a separate native Issue feed, outside durable_state and its
@@ -233,9 +238,11 @@ func (s *Store) showIssueInTx(ctx context.Context, tx *sql.Tx, path string) (Iss
 		(actor == "" && status != "unknown") || (actor != "" && status != "claimed") {
 		return IssueRecord{}, fmt.Errorf("%w: Issue current/retained state differs or exceeds preview", ErrInvalidStore)
 	}
-	owned, err := s.ownedLinksInTx(ctx, tx, issueID)
-	if err != nil {
-		return IssueRecord{}, err
+	if owned == nil {
+		owned, err = s.ownedLinksInTx(ctx, tx, issueID)
+		if err != nil {
+			return IssueRecord{}, err
+		}
 	}
 	canonicalOwned, err := canonicalJSON(owned)
 	if err != nil {

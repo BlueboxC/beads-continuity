@@ -67,31 +67,31 @@ func memoryDescriptor(scope string) (graph.TypeDescriptor, error) {
 	})
 }
 
-// IssueTypeURL deliberately avoids settling the nominal Task/Bug discussion.
-func IssueTypeURL(scope string) string { return scope + "types/preview-issue-v2" }
+// legacyIssueTypeURL deliberately avoids settling the nominal Task/Bug discussion.
+func legacyIssueTypeURL(scope string) string { return scope + "types/preview-issue-v2" }
 
-func issueDescriptor(scope string) (graph.TypeDescriptor, error) {
-	owns, err := graph.NewOwnedLinkDecl(DependencyTypeURL(scope), "", PreviewOwnedLinkLimit)
+func legacyIssueDescriptor(scope string) (graph.TypeDescriptor, error) {
+	owns, err := graph.NewOwnedLinkDecl(legacyDependencyTypeURL(scope), "", PreviewOwnedLinkLimit)
 	if err != nil {
 		return graph.TypeDescriptor{}, err
 	}
 	return graph.NewTypeDescriptor(graph.TypeDescriptorSpec{
-		ID: IssueTypeURL(scope), Name: "Experimental Issue v2", Describes: graph.KindBead,
+		ID: legacyIssueTypeURL(scope), Name: "Experimental Issue v2", Describes: graph.KindBead,
 		Description:  "Disposable specialized Issue adapter. Issue classification remains a property. Admits durable create, checked close, ready work and up to 1000 outgoing blocking Dependencies owned by their source. Complete canonical owned-Link state is retained with each Issue version. No production Type or complete History contract is established.",
 		OwnsOutgoing: []graph.OwnedLinkDecl{owns},
 	})
 }
 
-// DependencyTypeURL is a registered private blocking-Dependency Type.
-func DependencyTypeURL(scope string) string { return scope + "types/preview-blocks-v1" }
+// legacyDependencyTypeURL is a registered private blocking-Dependency Type.
+func legacyDependencyTypeURL(scope string) string { return scope + "types/preview-blocks-v1" }
 
-func dependencyDescriptor(scope string) (graph.TypeDescriptor, error) {
-	endpoint, err := graph.NewEndpointConstraint([]string{IssueTypeURL(scope)}, graph.ExternalNone)
+func legacyDependencyDescriptor(scope string) (graph.TypeDescriptor, error) {
+	endpoint, err := graph.NewEndpointConstraint([]string{legacyIssueTypeURL(scope)}, graph.ExternalNone)
 	if err != nil {
 		return graph.TypeDescriptor{}, err
 	}
 	return graph.NewTypeDescriptor(graph.TypeDescriptorSpec{
-		ID: DependencyTypeURL(scope), Name: "Experimental blocking Dependency v1", Describes: graph.KindLink,
+		ID: legacyDependencyTypeURL(scope), Name: "Experimental blocking Dependency v1", Describes: graph.KindLink,
 		Description: "Disposable Dependency adapter. Unpinned live local durable Issue endpoints; empty properties. The source depends on the target and owns this Link. Issue-domain pair uniqueness applies. No generic multiedge or production Dependency contract is established.",
 		Source:      &endpoint, Target: &endpoint,
 	})
@@ -171,7 +171,7 @@ func installPreview(ctx context.Context, conn *sql.Conn, o Options) (err error) 
         VALUES (1, ?, ?, ?, ?, ?)`, b.WorkspaceID, b.ScopeURL, b.AuthorityID, b.SchemaVersion, token); err != nil {
 		return err
 	}
-	for _, definition := range previewTypeDefinitions() {
+	for _, definition := range previewTypeDefinitions(o.Binding.SchemaVersion) {
 		descriptor, buildErr := definition.build(b.ScopeURL)
 		if buildErr != nil {
 			return buildErr
@@ -210,7 +210,7 @@ func checkBinding(ctx context.Context, tx *sql.Tx, o Options) error {
 	if b != o.Binding || !authorityID.MatchString(token) {
 		return fmt.Errorf("%w: persisted binding differs from workspace", ErrInvalidStore)
 	}
-	if _, err := installedPreviewTypes(ctx, tx, b.ScopeURL); err != nil {
+	if _, err := installedPreviewTypes(ctx, tx, b.ScopeURL, b.SchemaVersion); err != nil {
 		return err
 	}
 	if _, err := issueops.ReadConfigPrefix(ctx, tx); err != nil {

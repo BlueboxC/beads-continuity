@@ -1,7 +1,6 @@
 # Existing-workspace conversion to Graph Preview
 
 Status: implementation design, not an available conversion command.
-Reviewed against the fork at `df356b1b09158d07baa9bcbfe4c8ffffa41d5b33`.
 The current format supports fresh initialization only; `init --graph-mode link`
 must keep refusing an existing workspace. Work state and qualification belong
 in Beads, not this document.
@@ -34,25 +33,27 @@ scheduling and closure, so it cannot become an informational Related Link.
 `discovered-from` and `related` must retain their distinct type, direction,
 identity, metadata, thread and attribution. Unknown types, external/wisp
 endpoints, missing endpoints, invalid encodings or unsupported native fields
-produce a named refusal before mutation. No silent coercion or dropped rows.
+produce a named refusal before mutation. JSON numbers that the graph canonical
+contract cannot represent exactly must also refuse, never round or rewrite the
+native value. No silent coercion or dropped rows.
 
 ## Compatibility work before conversion
 
-Extend native dependency projection to the selected ordinary types, keeping
-ordinary ready/blocked/closure behavior. Retain the row as authoritative and
-register the corresponding immutable local Type descriptors; owned snapshots,
-incident queries, retained versions and unlink must agree. Do not duplicate an
-ordinary dependency as an independently editable generic Link.
+The fresh schema-8 format projects native `blocks`, `parent-child`,
+`discovered-from` and `related`, retaining row identity, metadata, thread and
+attribution. Existing schema-7 descriptors stay immutable and are not upgraded
+by opening a workspace. Native source-owned snapshots, incident queries,
+retained versions and unlink preserve the shared native policy. Adoption must
+use this mapping rather than duplicate an ordinary dependency as a generic Link.
 
-The current complete-inventory cap is 1,000 live Resources. Closed Issues and
-supervised review/proposal Memories still count. Qualify a bounded 2,048-Resource
-inventory for the initial conversion pilot while keeping the 16 MiB current-read
-byte ceiling, SQL size checks and atomic postconditions. Measure a representative
-2,048-Resource fixture and test 2,049 refusal, rollback and oversized-state
-reduction. If the measured cost is unacceptable, retain the current cap and
-implement paged selection before admitting conversion. Do not remove closed
-work or raise the byte budget to make a project fit. This remains an operational
-preview limit, not production scalability.
+The complete-inventory cap is 2,048 live Resources with a 16 MiB current-read
+byte ceiling. Closed Issues and supervised proposal/review Memories still count.
+Capacity qualification uses a real mixed inventory with all four native kinds
+and keyed envelopes, 2,049 refusal, atomic rollback and oversized-state reduction.
+Complete reads batch Memory/native-Link acquisition while retaining exact
+individual-record validation. This remains an operational preview limit, not
+production scalability. Conversion must refuse any projected inventory or byte
+budget that does not fit; never remove closed work to make a project fit.
 
 Keep the 65,536-row / 64 MiB continuity budget. An explicit existing code-prune
 plan can remove only unreferenced content-addressed blobs from the current

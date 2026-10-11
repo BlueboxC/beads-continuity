@@ -316,14 +316,14 @@ func graphPreviewApplyIssueCreateProperties(cmd *cobra.Command, issue *types.Iss
 // Only the two installed graph descriptors have a create writer in this slice.
 func graphPreviewCreateBeadType(cmd *cobra.Command, scope string) (string, error) {
 	if !cmd.Flags().Changed("bead-type") {
-		return graphstore.IssueTypeURL(scope), nil
+		return graphPreviewIssueTypeURL(scope), nil
 	}
 	selector, _ := cmd.Flags().GetString("bead-type")
 	typeURL, err := graphPreviewTypeURL(scope, selector)
 	if err != nil {
 		return "", graphFailure("invalid_selector", err.Error(), 2)
 	}
-	if typeURL != graphstore.IssueTypeURL(scope) && typeURL != graphstore.MemoryTypeURL(scope) {
+	if typeURL != graphPreviewIssueTypeURL(scope) && typeURL != graphstore.MemoryTypeURL(scope) {
 		return "", graphFailure("capability_unavailable", "graph create supports only the installed Issue and Memory bead types", 5)
 	}
 	return typeURL, nil
