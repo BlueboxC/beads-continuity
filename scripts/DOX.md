@@ -12,6 +12,8 @@ Build, CI, verification, packaging and release helpers.
 
 Root DOX.md and the parent chain remain binding.
 
+- Nix vendor-hash refresh accepts success only after building the restored or updated real default.nix. Retain the original bytes/mode until verification, restore them on handled failures, keep operator backups untouched and isolate diagnostic logs per run. GNU/BSD sed and Docker mount arguments preserve empty/space-containing arguments. Run one updater per checkout; force-kill recovery remains manual.
+
 ## Work Guidance
 
 Generated CLI freshness checks compare generated pages while excluding DOX.md work contracts; DOX reachability is checked separately.

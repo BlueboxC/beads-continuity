@@ -79,6 +79,10 @@ jobs:
       - name: Update vendorHash
         run: ./scripts/update-nix-vendorhash.sh
 
+      - name: Verify the build independently of the script's exit status
+        # Refuse reporting a match or pushing until the actual build succeeds.
+        run: nix build .#default
+
       - name: Detect whether hash changed
         id: changed
         run: |
