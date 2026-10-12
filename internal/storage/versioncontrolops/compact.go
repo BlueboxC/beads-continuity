@@ -5,6 +5,8 @@ import (
 	"errors"
 	"fmt"
 	"time"
+
+	"github.com/steveyegge/beads/internal/storage/issueops"
 )
 
 // Compact squashes old Dolt commits into a single base commit while preserving
@@ -23,7 +25,24 @@ import (
 //
 // conn must be a single database connection (not a pooled *sql.DB) since the
 // stored procedures rely on session-scoped state (current branch, working set).
-func Compact(ctx context.Context, conn DBConn, initialHash, boundaryHash string, oldCommits int, recentHashes []string) (retErr error) {
+func Compact(ctx context.Context, conn DBConn, initialHash, boundaryHash string, oldCommits int, recentHashes []string) error {
+	return CompactAtHead(ctx, conn, planNewest(boundaryHash, recentHashes), initialHash, boundaryHash, oldCommits, recentHashes)
+}
+
+// CompactAtHead requires exclusive writer access for the entire operation.
+// Head checks detect stale plans; they are not an atomic compare-and-reset.
+// Server adapters refuse this operation. The embedded caller owns the engine lease.
+func CompactAtHead(ctx context.Context, conn DBConn, plannedHead, initialHash, boundaryHash string, oldCommits int, recentHashes []string) (retErr error) {
+	if err := requireMainAt(ctx, conn, plannedHead, "before building the squashed branch"); err != nil {
+		return err
+	}
+	if newest := planNewest(boundaryHash, recentHashes); newest != plannedHead {
+		return fmt.Errorf("%w: main is at %s, but the plan ends at %s; main was left unchanged", ErrPlanNotAtHead, plannedHead, newest)
+	}
+	if err := requireCleanCompactWorkingSet(ctx, conn); err != nil {
+		return err
+	}
+
 	// Capture the timeline before rewriting it (#7294). Cherry-pick preserves
 	// authorship itself; committer overrides avoid amend overwriting the author.
 	meta, err := compactCommitMetadata(ctx, conn)
@@ -113,6 +132,12 @@ func Compact(ctx context.Context, conn DBConn, initialHash, boundaryHash string,
 	if err := execSQL("checkout main", "CALL DOLT_CHECKOUT('main')"); err != nil {
 		return err
 	}
+	if err := requireMainAt(ctx, conn, plannedHead, "before resetting main"); err != nil {
+		return err
+	}
+	if err := requireCleanCompactWorkingSet(ctx, conn); err != nil {
+		return err
+	}
 	if err := execSQL("reset main to compacted", "CALL DOLT_RESET('--hard', 'compact-tmp')"); err != nil {
 		return err
 	}
@@ -144,4 +169,62 @@ func compactCommitMetadata(ctx context.Context, conn DBConn) (map[string]compact
 		meta[hash] = m
 	}
 	return meta, rows.Err()
+}
+
+// Head guards adapted from uschtwill's gastownhall/beads#7502.
+// ErrMainMoved reports that main's head is no longer the commit a compaction
+// plan was built from, so the compaction stopped without changing main.
+var ErrMainMoved = errors.New("main moved during compaction")
+
+// ErrPlanNotAtHead reports that main is at the head read before the plan,
+// but the plan's newest commit is a different commit, so the compaction
+// stopped without changing main.
+var ErrPlanNotAtHead = errors.New("compaction plan does not end at main's head")
+
+// planNewest is the newest commit a plan names: the last commit it replays
+// or, when it replays none, the boundary commit itself.
+func planNewest(boundaryHash string, recentHashes []string) string {
+	if len(recentHashes) > 0 {
+		return recentHashes[len(recentHashes)-1]
+	}
+	return boundaryHash
+}
+
+// MainHead returns the commit at the head of main.
+func MainHead(ctx context.Context, conn DBConn) (string, error) {
+	var head string
+	if err := conn.QueryRowContext(ctx, "SELECT DOLT_HASHOF('main')").Scan(&head); err != nil {
+		return "", err
+	}
+	return head, nil
+}
+
+// requireMainAt returns ErrMainMoved, in words, unless main's head is want.
+func requireMainAt(ctx context.Context, conn DBConn, want, when string) error {
+	head, err := MainHead(ctx, conn)
+	if err != nil {
+		return fmt.Errorf("compact: reading the head of main %s: %w", when, err)
+	}
+	if head != want {
+		return fmt.Errorf("%w: the plan was built from main at %s, but main is at %s (checked %s), "+
+			"so main was left unchanged; run compact again",
+			ErrMainMoved, want, head, when)
+	}
+	return nil
+}
+
+// ErrOnlineCompaction prevents an unguarded history rewrite on a multi-writer server.
+var ErrOnlineCompaction = errors.New("Dolt history compaction is unavailable on server/proxy backends: the engine has no atomic compare-and-reset; use an exclusively opened embedded workspace")
+
+var ErrUncommittedCompactChanges = errors.New("history compaction refuses uncommitted tracked changes; commit or discard them explicitly before retrying")
+
+func requireCleanCompactWorkingSet(ctx context.Context, conn DBConn) error {
+	pending, err := issueops.HasPendingChanges(ctx, conn)
+	if err != nil {
+		return fmt.Errorf("compact: read working-set status: %w", err)
+	}
+	if pending {
+		return ErrUncommittedCompactChanges
+	}
+	return nil
 }

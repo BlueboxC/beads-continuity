@@ -1004,18 +1004,8 @@ func (s *EmbeddedDoltStore) Flatten(ctx context.Context) error {
 // Compact squashes old Dolt commits while preserving recent ones.
 // Pins a single *sql.Conn for session-scoped stored procedures.
 func (s *EmbeddedDoltStore) Compact(ctx context.Context, initialHash, boundaryHash string, oldCommits int, recentHashes []string) error {
-	return s.withMutatingDBConn(ctx, func(db versioncontrolops.DBConn) error {
-		// withDBConn returns *sql.DB; pin a single connection for
-		// session-scoped operations (checkout, reset, cherry-pick).
-		if pooled, ok := db.(*sql.DB); ok {
-			conn, err := pooled.Conn(ctx)
-			if err != nil {
-				return err
-			}
-			defer conn.Close()
-			return versioncontrolops.Compact(ctx, conn, initialHash, boundaryHash, oldCommits, recentHashes)
-		}
-		return versioncontrolops.Compact(ctx, db, initialHash, boundaryHash, oldCommits, recentHashes)
+	return s.withMutatingPinnedDBConn(ctx, func(conn versioncontrolops.DBConn) error {
+		return versioncontrolops.Compact(ctx, conn, initialHash, boundaryHash, oldCommits, recentHashes)
 	})
 }
 

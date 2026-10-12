@@ -8,6 +8,14 @@ import (
 	"github.com/DATA-DOG/go-sqlmock"
 )
 
+const testCompactPendingQuery = `SELECT COUNT(*) FROM dolt_status s
+WHERE NOT EXISTS ( SELECT 1 FROM dolt_ignore di WHERE di.ignored = 1 AND s.table_name LIKE di.pattern )`
+
+func expectCompactPreflight(mock sqlmock.Sqlmock, head string) {
+	mock.ExpectQuery("SELECT DOLT_HASHOF('main')").WillReturnRows(sqlmock.NewRows([]string{"hash"}).AddRow(head))
+	mock.ExpectQuery(testCompactPendingQuery).WillReturnRows(sqlmock.NewRows([]string{"count"}).AddRow(0))
+}
+
 const testCompactMetadataQuery = "SELECT commit_hash, committer, email, DATE_FORMAT(date, '%Y-%m-%dT%H:%i:%s.%fZ') FROM dolt_log"
 const testCompactIdentityQuery = "SELECT @@dolt_committer_name, @@dolt_committer_email, @@dolt_committer_date"
 const testCompactIdentitySet = "SET @@dolt_committer_name = ?, @@dolt_committer_email = ?, @@dolt_committer_date = ?"
@@ -27,6 +35,7 @@ func TestCompactRestoresCommitMetadata(t *testing.T) {
 				t.Fatal(err)
 			}
 			defer db.Close()
+			expectCompactPreflight(mock, "recent")
 			mock.ExpectQuery(testCompactMetadataQuery).WillReturnRows(sqlmock.NewRows([]string{"hash", "committer", "email", "date"}).
 				AddRow("boundary", "base", "base@example.com", "2026-09-01T07:00:00.000000Z").
 				AddRow("recent", "Jane (work) <tag>", "jane@example.com", "2026-10-01T08:00:00.125000Z"))
@@ -46,6 +55,7 @@ func TestCompactRestoresCommitMetadata(t *testing.T) {
 			}
 			mock.ExpectExec("CALL DOLT_CHECKOUT('main')").WillReturnResult(sqlmock.NewResult(0, 0))
 			if !failReplay {
+				expectCompactPreflight(mock, "recent")
 				mock.ExpectExec("CALL DOLT_RESET('--hard', 'compact-tmp')").WillReturnResult(sqlmock.NewResult(0, 0))
 			}
 			mock.ExpectExec("CALL DOLT_BRANCH('-D', 'compact-tmp')").WillReturnResult(sqlmock.NewResult(0, 0))
@@ -80,6 +90,7 @@ func TestCompactRefusesUnknownRecentCommit(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer db.Close()
+	expectCompactPreflight(mock, "missing")
 	mock.ExpectQuery(testCompactMetadataQuery).WillReturnRows(sqlmock.NewRows([]string{"hash", "committer", "email", "date"}).AddRow("boundary", "Ann", "ann@example.com", "2026-09-01T07:00:00.000000Z"))
 	if err := Compact(t.Context(), db, "initial", "boundary", 1, []string{"missing"}); err == nil || !strings.Contains(err.Error(), "missing") {
 		t.Fatalf("expected missing commit refusal, got %v", err)
@@ -97,6 +108,7 @@ func TestCompactRefusesUnreadableMetadata(t *testing.T) {
 				t.Fatal(err)
 			}
 			defer db.Close()
+			expectCompactPreflight(mock, "boundary")
 			q := mock.ExpectQuery(testCompactMetadataQuery)
 			switch tc {
 			case "query_error":

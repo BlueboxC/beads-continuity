@@ -56,12 +56,26 @@ func TestCommandNeedsExclusiveGate(t *testing.T) {
 	list := &cobra.Command{Use: "list"}
 	root.AddCommand(list)
 
+	compact := &cobra.Command{Use: "compact"}
+	compact.Flags().Bool("dry-run", false, "")
+	root.AddCommand(compact)
+	preview := &cobra.Command{Use: "compact"}
+	preview.Flags().Bool("dry-run", true, "")
+	root.AddCommand(preview)
+	admin := &cobra.Command{Use: "admin"}
+	semantic := &cobra.Command{Use: "compact"}
+	admin.AddCommand(semantic)
+	root.AddCommand(admin)
+
 	cases := []struct {
 		name string
 		cmd  *cobra.Command
 		want bool
 	}{
 		{"backup restore is exclusive", backupRestore, true},
+		{"history compact is exclusive", compact, true},
+		{"history preview is shared", preview, false},
+		{"semantic compaction is shared", semantic, false},
 		{"top-level issue restore is not", issueRestore, false},
 		{"list is not", list, false},
 		{"backup parent is not", backup, false},
@@ -87,6 +101,33 @@ func TestAcquireCommandWorkspaceGatesAbsentWorkspace(t *testing.T) {
 	}
 	if workspaceGateHandle != nil {
 		t.Error("absent beadsDir must leave no gate handle")
+	}
+}
+
+func TestHistoryCompactionGateRefusesActiveWriter(t *testing.T) {
+	resetGateTestEnv(t)
+	t.Cleanup(releaseWorkspaceGates)
+	beadsDir := newGateTestWorkspace(t)
+	gate, err := workspacegate.ForWorkspace(beadsDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	holder, err := gate.Acquire(t.Context(), workspacegate.Shared, workspacegate.Options{Reason: "active writer"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer holder.Release()
+	root := &cobra.Command{Use: "bd"}
+	compact := &cobra.Command{Use: "compact"}
+	compact.Flags().Bool("dry-run", false, "")
+	root.AddCommand(compact)
+	ctx, cancel := context.WithTimeout(t.Context(), 50*time.Millisecond)
+	defer cancel()
+	if err := acquireCommandWorkspaceGates(ctx, compact, beadsDir); err == nil {
+		t.Fatal("history rewrite admitted while a writer holds the shared gate")
+	}
+	if workspaceGateHandle != nil {
+		t.Fatal("failed acquisition retained a gate")
 	}
 }
 

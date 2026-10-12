@@ -258,6 +258,22 @@ marker. A failed cold stdout delivery keeps the next-prompt fallback; successful
 local delivery alone does not establish native context admission. See
 [hook diagnostics](/integrations/codex#local-hook-diagnostics).
 
+## History compaction
+
+`bd compact --dry-run` previews the history plan. Applying it requires an
+embedded workspace with exclusive writer access. The command waits for other
+Beads operations, then retains that access through history rewriting and GC.
+Changed heads and uncommitted tracked changes cause refusal; commit or discard
+pending changes explicitly. Existing retained authors, dates and ignored data
+planes are preserved.
+
+Server/proxy history compaction is unavailable in this fork: Dolt does not
+offer an atomic compare-and-reset for the final publication. `--force` cannot
+override that refusal. A backup and a separately authorized, exclusively opened
+embedded workspace are needed for offline maintenance. No database is moved or
+converted automatically. `bd admin compact` summarizes issue text and retains
+its separate behavior.
+
 ## Corrections and upgrade boundaries
 
 The fork branch includes the reviewed environment-selection, migration,

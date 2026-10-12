@@ -127,12 +127,19 @@ func releaseWorkspaceGates() {
 }
 
 // commandNeedsExclusiveGate classifies the store-opening commands that
-// REPLACE storage rather than use it. Currently only `bd backup restore`
-// flows through the chokepoint and needs exclusivity; `bd init` and the
+// replace or rewrite storage. Backup restore and non-preview history
+// compaction need exclusivity; `bd init` and the
 // `bd migrate from-*-to-*` family are in the skip-store lists and acquire
 // their exclusive gates inside their own Run functions instead.
 func commandNeedsExclusiveGate(cmd *cobra.Command) bool {
-	return cmd.Name() == "restore" && cmd.Parent() != nil && cmd.Parent().Name() == "backup"
+	if cmd.Name() == "restore" && cmd.Parent() != nil && cmd.Parent().Name() == "backup" {
+		return true
+	}
+	if cmd.Name() == "compact" && cmd.Parent() != nil && cmd.Parent().Parent() == nil {
+		dryRun, err := cmd.Flags().GetBool("dry-run")
+		return err != nil || !dryRun
+	}
+	return false
 }
 
 // buildWorkspaceGateSet resolves the workspace gate plus the physical-root
@@ -200,7 +207,7 @@ func acquireCommandWorkspaceGates(ctx context.Context, cmd *cobra.Command, beads
 	opts := workspacegate.Options{}
 	if exclusive {
 		mode = workspacegate.Exclusive
-		opts = exclusiveGateOptions("bd backup restore")
+		opts = exclusiveGateOptions(cmd.CommandPath())
 	}
 	h, err := workspacegate.AcquireAll(ctx, mode, opts, gates...)
 	if err != nil {
@@ -209,7 +216,7 @@ func acquireCommandWorkspaceGates(ctx context.Context, cmd *cobra.Command, beads
 			// modes are blocked by OPPOSITE kinds of holders, so the
 			// message must not claim "a maintenance operation" for both:
 			// a SHARED attempt is blocked only by an exclusive maintenance
-			// holder, while an EXCLUSIVE attempt (backup restore) is
+			// holder, while an EXCLUSIVE restore/compact attempt is
 			// usually blocked by ordinary shared commands.
 			if exclusive {
 				return HandleErrorRespectJSON("other bd commands are using this workspace; wait for them to finish and retry: %v", err)

@@ -16,6 +16,8 @@ Root DOX.md and the parent chain remain binding.
 
 - `ApplySchemaMigrations` includes migrations performed by this store's writable open exactly once, so explicit shared-server migration reports the applied count and reaches CLI version reconciliation. Read-only/gateway opens and consent gates keep their existing behavior.
 
+- Compact refuses before acquiring a connection or issuing SQL: an online server does not provide atomic guarded publication of rewritten history. Existing signature and semantic issue-compaction operations remain.
+
 ## Work Guidance
 
 Metadata field conversion delegates to shared issueops parsing; YAML numeric types, enum fallback and adapter-specific warning/error modes remain unchanged.
