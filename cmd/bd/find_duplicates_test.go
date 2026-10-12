@@ -1,8 +1,16 @@
 package main
 
 import (
+	"context"
+	"fmt"
+	"net/http"
+	"net/http/httptest"
+	"reflect"
+	"sync/atomic"
 	"testing"
 
+	"github.com/anthropics/anthropic-sdk-go"
+	"github.com/anthropics/anthropic-sdk-go/option"
 	"github.com/steveyegge/beads/internal/types"
 )
 
@@ -259,5 +267,69 @@ func TestIssueText(t *testing.T) {
 	text2 := issueText(issue2)
 	if text2 != "Just title" {
 		t.Errorf("issueText() = %q, want %q", text2, "Just title")
+	}
+}
+
+// Regression from Harry Miller's upstream PR #7522.
+func TestAnalyzeWithAI_SkipsLeadingThinkingBlock(t *testing.T) {
+	const reply = `[{"pair_index":0,"is_duplicate":true,"confidence":0.9,"reason":"same bug"}]`
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		fmt.Fprintf(w, `{"id":"msg_1","type":"message","role":"assistant","model":"m","stop_reason":"end_turn","usage":{"input_tokens":1,"output_tokens":1},"content":[{"type":"thinking","thinking":"hmm","signature":"sig"},{"type":"text","text":%q}]}`, reply)
+	}))
+	defer srv.Close()
+	client := anthropic.NewClient(option.WithAPIKey("k"), option.WithBaseURL(srv.URL), option.WithMaxRetries(0))
+	candidates := []duplicatePair{{IssueA: &types.Issue{ID: "bd-1", Title: "a"}, IssueB: &types.Issue{ID: "bd-2", Title: "b"}, Method: "mechanical"}}
+	got := analyzeWithAI(context.Background(), client, "m", candidates)
+	if len(got) != 1 || got[0].Method != "ai" || got[0].Reason != "same bug" {
+		t.Fatalf("got %+v, want one ai pair with reason %q", got, "same bug")
+	}
+}
+
+func TestAnalyzeWithAI_ResponseBlocks(t *testing.T) {
+	const text = `{"type":"text","text":"[{\"pair_index\":0,\"is_duplicate\":true,\"confidence\":0.9,\"reason\":\"same\"}]"}`
+	const thinking = `{"type":"thinking","thinking":"private-reasoning-sentinel","signature":"sig"}`
+	for _, tc := range []struct {
+		name, content, stop string
+		fallback            bool
+	}{
+		{"text first", "[" + text + "]", "end_turn", false},
+		{"redacted thinking", "[{\"type\":\"redacted_thinking\",\"data\":\"private\"}," + text + "]", "end_turn", false},
+		{"first of multiple texts", "[" + text + ",{\"type\":\"text\",\"text\":\"do not append\"}]", "end_turn", false},
+		{"interleaved thinking", "[" + thinking + "," + text + "," + thinking + "]", "end_turn", false},
+		{"no blocks", "[]", "end_turn", true},
+		{"no text", "[" + thinking + "]", "end_turn", true},
+		{"empty text", "[{\"type\":\"text\",\"text\":\"\"}]", "end_turn", true},
+		{"empty first text", "[{\"type\":\"text\",\"text\":\"\"}," + text + "]", "end_turn", true},
+		{"truncated valid JSON", "[" + text + "]", "max_tokens", true},
+		{"malformed JSON", "[{\"type\":\"text\",\"text\":\"[\"}]", "end_turn", true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			var requests atomic.Int32
+			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				requests.Add(1)
+				if r.Method != "POST" || r.URL.Path != "/v1/messages" {
+					t.Errorf("unexpected route: %s %s", r.Method, r.URL.Path)
+				}
+				w.Header().Set("Content-Type", "application/json")
+				fmt.Fprintf(w, `{"id":"msg_1","type":"message","role":"assistant","model":"m","stop_reason":%q,"usage":{"input_tokens":1,"output_tokens":1},"content":%s}`, tc.stop, tc.content)
+			}))
+			defer srv.Close()
+			client := anthropic.NewClient(option.WithAPIKey("stub-only"), option.WithBaseURL(srv.URL), option.WithHTTPClient(srv.Client()), option.WithMaxRetries(0))
+			candidates := []duplicatePair{{IssueA: &types.Issue{ID: "bd-1", Title: "a"}, IssueB: &types.Issue{ID: "bd-2", Title: "b"}, Similarity: 0.8, Method: "mechanical", Reason: "original"}}
+			got := analyzeWithAI(context.Background(), client, "m", candidates)
+			if requests.Load() != 1 {
+				t.Fatalf("requests=%d, want 1", requests.Load())
+			}
+			if tc.fallback {
+				if !reflect.DeepEqual(got, candidates) {
+					t.Fatalf("fallback changed: %+v", got)
+				}
+				return
+			}
+			if len(got) != 1 || got[0].Method != "ai" || got[0].Reason != "same" || got[0].Similarity != 0.9 {
+				t.Fatalf("bad AI result: %+v", got)
+			}
+		})
 	}
 }

@@ -4,11 +4,15 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"net/http"
+	"net/http/httptest"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
 	"github.com/anthropics/anthropic-sdk-go"
+	"github.com/anthropics/anthropic-sdk-go/option"
 	"github.com/steveyegge/beads/internal/config"
 	"github.com/steveyegge/beads/internal/types"
 )
@@ -343,5 +347,90 @@ func TestBytesWriterAppends(t *testing.T) {
 	}
 	if got := string(w.buf); got != "hello world" {
 		t.Fatalf("unexpected buffer content: %q", got)
+	}
+}
+
+// Stub seam and regressions adapted from Harry Miller's upstream PR #7522.
+func fakeMessagesServer(t *testing.T, content string) {
+	t.Helper()
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		fmt.Fprintf(w, `{"id":"msg_1","type":"message","role":"assistant","model":"m","stop_reason":"end_turn","usage":{"input_tokens":1,"output_tokens":1},"content":%s}`, content)
+	}))
+	t.Cleanup(srv.Close)
+	t.Setenv("ANTHROPIC_API_KEY", "")
+	t.Setenv("MINIMAX_API_KEY", "")
+	if err := config.Initialize(); err != nil {
+		t.Fatal(err)
+	}
+	config.Set("ai.api_key", "")
+	config.Set("ai.base_url", srv.URL)
+	t.Cleanup(func() { config.Set("ai.base_url", "") })
+}
+func TestCallWithRetry_SkipsLeadingThinkingBlock(t *testing.T) {
+	fakeMessagesServer(t, `[{"type":"thinking","thinking":"hmm","signature":"sig"},{"type":"text","text":"the summary"}]`)
+	client, err := newHaikuClient("test-key")
+	if err != nil {
+		t.Fatal(err)
+	}
+	got, err := client.callWithRetry(context.Background(), "prompt")
+	if err != nil {
+		t.Fatalf("callWithRetry: %v", err)
+	}
+	if got != "the summary" {
+		t.Fatalf("got %q, want the summary", got)
+	}
+}
+func TestCallWithRetry_NoTextBlock(t *testing.T) {
+	fakeMessagesServer(t, `[{"type":"thinking","thinking":"hmm","signature":"sig"}]`)
+	client, err := newHaikuClient("test-key")
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = client.callWithRetry(context.Background(), "prompt")
+	if err == nil || !strings.Contains(err.Error(), "no text block") {
+		t.Fatalf("err=%v, want no text block error", err)
+	}
+}
+func TestCallWithRetry_ResponseBlocks(t *testing.T) {
+	const text = `{"type":"text","text":"summary"}`
+	const thinking = `{"type":"thinking","thinking":"private-reasoning-sentinel","signature":"sig"}`
+	for _, tc := range []struct{ name, content, stop, err string }{
+		{"text first", "[" + text + "]", "end_turn", ""},
+		{"redacted thinking", "[{\"type\":\"redacted_thinking\",\"data\":\"private\"}," + text + "]", "end_turn", ""},
+		{"first of multiple texts", "[" + text + ",{\"type\":\"text\",\"text\":\"do not append\"}]", "end_turn", ""},
+		{"interleaved thinking", "[" + thinking + "," + text + "," + thinking + "]", "end_turn", ""},
+		{"no blocks", "[]", "end_turn", "no text block"},
+		{"empty text", "[{\"type\":\"text\",\"text\":\"\"}]", "end_turn", "empty text block"},
+		{"whitespace text", "[{\"type\":\"text\",\"text\":\" \"}]", "end_turn", "empty text block"},
+		{"empty first text", "[{\"type\":\"text\",\"text\":\"\"}," + text + "]", "end_turn", "empty text block"},
+		{"truncated summary", "[" + text + "]", "max_tokens", "max_tokens"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			var requests atomic.Int32
+			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				requests.Add(1)
+				if r.Method != "POST" || r.URL.Path != "/v1/messages" {
+					t.Errorf("unexpected route: %s %s", r.Method, r.URL.Path)
+				}
+				w.Header().Set("Content-Type", "application/json")
+				fmt.Fprintf(w, `{"id":"msg_1","type":"message","role":"assistant","model":"m","stop_reason":%q,"usage":{"input_tokens":1,"output_tokens":1},"content":%s}`, tc.stop, tc.content)
+			}))
+			defer srv.Close()
+			client := &haikuClient{client: anthropic.NewClient(option.WithAPIKey("stub-only"), option.WithBaseURL(srv.URL), option.WithHTTPClient(srv.Client()), option.WithMaxRetries(0)), model: "m", maxRetries: 3, initialBackoff: time.Millisecond}
+			got, err := client.callWithRetry(context.Background(), "prompt")
+			if requests.Load() != 1 {
+				t.Fatalf("requests=%d, malformed replies must not retry", requests.Load())
+			}
+			if tc.err != "" {
+				if err == nil || !strings.Contains(err.Error(), tc.err) || strings.Contains(err.Error(), "private-reasoning") || got != "" {
+					t.Fatalf("got=%q err=%v", got, err)
+				}
+				return
+			}
+			if err != nil || got != "summary" {
+				t.Fatalf("got=%q err=%v", got, err)
+			}
+		})
 	}
 }

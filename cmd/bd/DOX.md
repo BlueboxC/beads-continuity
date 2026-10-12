@@ -68,6 +68,8 @@ Root DOX.md and the parent chain remain binding.
 
 - Markdown `create --file` shares dependency aliases and direction with `--deps`: bare targets, `depends-on:` and `blocked-by:` block the new issue; explicit `blocks:` makes the target depend on it. Custom valid types remain supported. Preserve duplicate/empty target validation and atomic batch refusal. This parser change does not repair existing edges or extend HTTP-connected file creation.
 
+- AI duplicate analysis uses the first text response block, skipping thinking/redacted blocks without reading their contents. Missing or unparseable text and max_tokens replies preserve the mechanical candidates; later text blocks are not appended.
+
 ## Work Guidance
 
 Keep existing CLI primitives and machine-readable output stable. Follow AGENTS.md and ../../engdocs/TESTING.md.

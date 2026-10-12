@@ -285,6 +285,17 @@ embedded workspace are needed for offline maintenance. No database is moved or
 converted automatically. `bd admin compact` summarizes issue text and retains
 its separate behavior.
 
+## AI response handling
+
+`bd find-duplicates --method ai` and `bd admin compact --auto` read the first
+text block, skipping preceding thinking or redacted blocks. They do not append
+later text blocks or retain reasoning content. A `max_tokens` response is
+rejected even when its text appears complete. Duplicate analysis warns and
+retains mechanical scores on missing/unparseable text or truncation. Issue
+compaction refuses missing/blank text or truncation before writing a summary;
+transport retries retain their existing policy. Model, credentials, endpoint
+and token limits are unchanged. Local stub tests do not qualify a live model.
+
 ## Corrections and upgrade boundaries
 
 The fork branch includes the reviewed environment-selection, migration,

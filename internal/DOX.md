@@ -25,6 +25,8 @@ Root DOX.md and the parent chain remain binding.
 
 - Recipe SharedPaths explicitly declare section-managed instruction files; other paths retain their existing whole-file ownership semantics.
 
+- AI issue compaction uses the first text response block without reading thinking/redacted contents. Missing/blank text or max_tokens replies fail before compaction; malformed replies do not retry. Existing transport retry and optional audit behavior remain.
+
 ## Work Guidance
 
 Tracker adapters share configuration resolution: YAML-only secrets never query Dolt, while ordinary values keep storage-first/environment fallback including store errors.
