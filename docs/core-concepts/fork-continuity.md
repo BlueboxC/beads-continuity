@@ -48,6 +48,17 @@ API server after changing its configured provider paths. The explicit manual
 `update --claim` retains upstream's override semantics; use `ready --claim` for
 blocker-aware scheduling.
 
+## Markdown dependencies
+
+`bd create --file plan.md` applies the same blocking direction as `--deps`.
+In a `### Deps` or `### Dependencies` section, a bare ID, `depends-on:ID`
+or `blocked-by:ID` makes the new issue depend on ID. `blocks:ID` instead
+makes ID depend on the new issue. `discovered-from:ID` and valid custom
+relationship names remain non-blocking. Refused batches leave no partial
+issues. This applies to direct and proxied CLI workspaces; existing
+mis-typed or reversed edges need explicit inspection and correction.
+HTTP-connected file creation retains its existing unsupported status.
+
 ## Install the fork
 
 The upstream Homebrew/npm packages and upstream install script install upstream
