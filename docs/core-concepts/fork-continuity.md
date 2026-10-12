@@ -285,6 +285,22 @@ embedded workspace are needed for offline maintenance. No database is moved or
 converted automatically. `bd admin compact` summarizes issue text and retains
 its separate behavior.
 
+## Advisory Git remote probes
+
+Remote-ref detection during `init`/`bootstrap` uses the signal-aware command
+context with a ten-second network deadline and at most two seconds waiting for
+retained output pipes. Failed or incomplete output is UNKNOWN; partial stdout
+never establishes a ref. Existing init safety and configured-bootstrap local
+recovery rules remain in place. SIGTERM cancels the probe and initialization;
+it does not authorize creating a database after cancellation.
+
+The advisory probe disables terminal input, `GIT_ASKPASS`, `SSH_ASKPASS` and
+configured `core.askPass`. Noninteractive Git `credential.helper` remains
+available. Authentication that depends on askpass may therefore fail; prepare
+credentials outside the probe. The pipe limit does not guarantee termination
+of every descendant. Operator-invoked reset/clone commands retain their own
+policies. Qualification uses local fixtures, not authenticated real remotes.
+
 ## AI response handling
 
 `bd find-duplicates --method ai` and `bd admin compact --auto` read the first
