@@ -80,6 +80,8 @@ Root DOX.md and the parent chain remain binding.
 
 - Usage metrics cannot collect or upload. `metrics`/`off`/`example` report the policy without writing configuration; `on` fails and legacy `send-metrics` does nothing. Existing config and historical queues remain untouched.
 
+- Purge/prune reject nonpositive day counts before duration multiplication. Confirmation commands retain the preview's limit, storage plane, age, pattern and explicit reference override; quote age/pattern as literal POSIX shell arguments. Preview and existing deletion protections remain unchanged.
+
 ## Work Guidance
 
 Keep existing CLI primitives and machine-readable output stable. Follow AGENTS.md and ../../engdocs/TESTING.md.
