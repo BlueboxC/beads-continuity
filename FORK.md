@@ -131,6 +131,7 @@ separate optional glab reader, without importing the unrelated sync redesign.
   retain the last-good token set within the documented deadline limits.
 - Python MCP comments/notes preserve literal positional text and configured actor
   identity. Option-shaped text cannot become another CLI option.
+- Graph Preview accepts the existing `--sandbox` flag on supported commands, retaining readonly guards and skipping native sync/push housekeeping.
 - Graph Preview rejects unreadable native/continuity writes atomically, bounds
   SQL acquisition of keyed projections and allows gradual reduction of old
   oversized state while retaining history. Complete snapshots reuse one binding

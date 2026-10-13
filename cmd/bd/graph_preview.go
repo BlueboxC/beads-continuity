@@ -373,7 +373,8 @@ func admitGraphPreview(cmd *cobra.Command) (handled bool, admissionErr error) {
 // Refuse flags whose semantics this slice does not implement, rather than
 // silently pretending a legacy option was honored by the generic route.
 func graphPreviewFlags(cmd *cobra.Command, allowed ...string) error {
-	set := map[string]bool{"json": true, "graph-mode": true, "actor": true, "quiet": true, "no-color": true, "directory": true, "readonly": true}
+	// Graph routes skip native sync/push housekeeping, preserving sandbox's opt-out.
+	set := map[string]bool{"json": true, "graph-mode": true, "actor": true, "quiet": true, "no-color": true, "directory": true, "readonly": true, "sandbox": true}
 	for _, name := range allowed {
 		set[name] = true
 	}

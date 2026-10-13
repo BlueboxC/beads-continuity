@@ -61,6 +61,16 @@ before changing preview versions.
 - Opt-in observed Codex activity and derived maintenance in embedded workspaces.
   Shared-server activity and maintenance remain refused.
 
+Supported graph commands accept the existing `--sandbox` auto-push opt-out.
+Graph routes skip ordinary sync/push housekeeping; `--readonly` continues to
+block mutations. Unsupported commands, flags and database overrides still fail
+before ordinary storage opens. For example:
+
+```sh
+bd --sandbox --readonly show beads/policy --json
+bd --sandbox --readonly status --graph --json
+```
+
 Use the complete output of `bd status --graph --json` for implemented capabilities
 and numerical limits. Unsupported flags/commands fail explicitly before ordinary
 storage opens. On this v1.3.1 fork, `--if-revision` is graph-only; it does not add
