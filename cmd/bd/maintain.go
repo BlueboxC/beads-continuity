@@ -176,17 +176,24 @@ func init() {
 func maintainDerived(ctx context.Context, memories memoryops.Memories, workspace string, options codeindex.ScanOptions) (maintenanceResult, error) {
 	started := time.Now()
 	result := maintenanceResult{Workspace: workspace}
-	plane, err := memories.List(ctx, memoryops.ListRequest{})
+	var plane memoryops.ListResult
+	var index codeindex.Index
+	var err error
+	if graphPreviewActive {
+		plane, err = memories.List(ctx, memoryops.ListRequest{})
+		if err == nil {
+			index, err = codeindex.Load(plane.Memories)
+		}
+	} else {
+		plane, index, err = readIndexedMemories(ctx, memories)
+	}
 	if err != nil {
 		return result, err
 	}
 	if _, err := knowledge.LoadCatalog(plane.Memories); err != nil {
 		return result, err
 	}
-	index, err := codeindex.Load(plane.Memories)
-	if err != nil {
-		return result, err
-	}
+
 	state := knowledge.Decode(plane.Memories)
 	if index.Version == 0 && len(state.Catalog.Roots) == 0 {
 		return result, errors.New("no saved selections; select roots with bd code scan or bd knowledge scan first")

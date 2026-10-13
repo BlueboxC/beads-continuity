@@ -5,6 +5,7 @@ package embeddeddolt
 import (
 	"context"
 	"database/sql"
+	"fmt"
 
 	"github.com/steveyegge/beads/internal/memoryapi"
 	"github.com/steveyegge/beads/internal/storage"
@@ -95,6 +96,39 @@ func (m *memories) List(ctx context.Context, req memoryops.ListRequest) (memoryo
 		all, err = storagememoryops.ListInTx(ctx, tx, req)
 		return err
 	}); err != nil {
+		return memoryops.ListResult{}, err
+	}
+	return memoryops.ListResult{Memories: memoryapi.SelectMemories(all, req)}, nil
+}
+
+var _ memoryops.SnapshotMemories = (*memories)(nil)
+
+func (m *memories) ReadSnapshot(ctx context.Context, fn func(memoryops.MemoryReader) error) error {
+	if fn == nil {
+		return fmt.Errorf("%w: snapshot callback required", memoryops.ErrValidation)
+	}
+	return m.store.withConn(ctx, false, func(tx *sql.Tx) error {
+		return fn(snapshotReader{tx: tx})
+	})
+}
+
+type snapshotReader struct{ tx *sql.Tx }
+
+func (r snapshotReader) Recall(ctx context.Context, req memoryops.RecallRequest) (memoryops.RecallResult, error) {
+	key, err := memoryapi.ValidateKey(req.Key)
+	if err != nil {
+		return memoryops.RecallResult{}, err
+	}
+	value, found, err := storagememoryops.RecallInTx(ctx, r.tx, key)
+	if err != nil {
+		return memoryops.RecallResult{}, err
+	}
+	return memoryops.RecallResult{Key: key, Value: value, Found: found}, nil
+}
+
+func (r snapshotReader) List(ctx context.Context, req memoryops.ListRequest) (memoryops.ListResult, error) {
+	all, err := storagememoryops.ListInTx(ctx, r.tx, req)
+	if err != nil {
 		return memoryops.ListResult{}, err
 	}
 	return memoryops.ListResult{Memories: memoryapi.SelectMemories(all, req)}, nil

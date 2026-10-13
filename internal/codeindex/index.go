@@ -199,6 +199,26 @@ func Load(plane map[string]string) (Index, error) {
 	}, nil)
 }
 
+// ReadCurrent reads only the fixed manifest and its verified live blobs.
+// Retained generations stay in storage; the returned plane supports guarded Save.
+func ReadCurrent(ctx context.Context, memories memoryops.MemoryReader) (Index, map[string]string, error) {
+	plane := make(map[string]string)
+	index, err := loadIndex(func(key string) (string, bool, error) {
+		if value, ok := plane[key]; ok {
+			return value, true, nil
+		}
+		result, err := memories.Recall(ctx, memoryops.RecallRequest{Key: key})
+		if err == nil && result.Found {
+			plane[key] = result.Value
+		}
+		return result.Value, result.Found, err
+	}, nil)
+	if err != nil {
+		return Index{}, nil, err
+	}
+	return index, plane, nil
+}
+
 // LoadSelected reads routing metadata and only the requested current file blobs.
 // All manifest paths and reference parts are validated before a file is trusted.
 func LoadSelected(ctx context.Context, memories memoryops.Memories, paths []string) (Index, error) {

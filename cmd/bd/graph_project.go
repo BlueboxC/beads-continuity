@@ -39,8 +39,9 @@ func runProjectGraph(cmd *cobra.Command, args []string) error {
 	defer func() { _ = reader.Close() }()
 	var snapshot graphstore.Snapshot
 	var plane memoryops.ListResult
+	var index codeindex.Index
 	if !graphPreviewActive {
-		plane, err = memories.List(rootCtx, memoryops.ListRequest{})
+		plane, index, err = readIndexedMemories(rootCtx, memories)
 	}
 	if graphPreviewActive {
 		err = withGraphStoreOutput(func(ctx context.Context, st *graphstore.Store) (any, string, error) {
@@ -53,9 +54,11 @@ func runProjectGraph(cmd *cobra.Command, args []string) error {
 		return err
 	}
 	state := reader.Refresh(knowledge.Decode(plane.Memories))
-	index, err := codeindex.Load(plane.Memories)
-	if err != nil {
-		return err
+	if graphPreviewActive {
+		index, err = codeindex.Load(plane.Memories)
+		if err != nil {
+			return err
+		}
 	}
 	workspace := filepath.Dir(beads.FindBeadsDir())
 	if index.Version != 0 {

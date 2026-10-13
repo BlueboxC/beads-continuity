@@ -127,15 +127,9 @@ type ListResult struct {
 // what Recall answers and what Forget reports it removed — so splitting them
 // would put one role's promise inside another role's result.
 //
-// The read/write entitlement test the role rule applies (can one caller be
-// entitled to the read and not the write?) comes back NO here: bd's readonly
-// mode is a front-door guard applied uniformly across every role, and no
-// shipped path is forbidden to write memories the way a provisioned identity is
-// forbidden to write a workspace identity. If a genuinely read-only memory
-// consumer appears — a credential that may read prime context but not write it
-// — that is the day to mint a MemoryReader. Being born whole is allowed;
-// appending later is not, and splitting later is cheap because the four methods
-// already have separate request types.
+// The basic role keeps its four operations. Optional SnapshotMemories lends
+// the separate MemoryReader view within one read transaction, without adding
+// mutation methods or changing ordinary callers' entitlements.
 //
 // PROBE AND ACT SHARE ONE TRANSACTION on every implementation. Remember's
 // Replaced and Forget's Value are observations of the row the same transaction

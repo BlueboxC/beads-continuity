@@ -14,7 +14,7 @@ Root DOX.md and the parent chain remain binding.
 
 ## Work Guidance
 
-Exercise behavior, errors and state transitions against each supported implementation. The optional `AtomicMemories` case runs only where advertised and checks generation guards, no-op writes and preservation of neighboring planes.
+Exercise behavior, errors and state transitions against each supported implementation. The optional `AtomicMemories` case runs only where advertised and checks generation guards, no-op writes and preservation of neighboring planes. The optional SnapshotMemories case checks exact rows, read-only callback access, reader lifetime, error/cancellation propagation and preservation; run it only on implementations advertising that capability.
 
 ## Verification
 

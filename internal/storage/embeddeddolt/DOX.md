@@ -18,7 +18,7 @@ Root DOX.md and the parent chain remain binding.
 
 ## Work Guidance
 
-Respect embedded writer and transaction constraints; use disposable stores for tests. Memories.Apply validates keys before opening a transaction, checks every expected value before mutation and atomically writes/deletes through the existing SQL helpers. Equal values skip writes; return counts only after successful commit. No engine-specific lock, schema change or retry layer.
+Respect embedded writer and transaction constraints; use disposable stores for tests. SnapshotMemories uses one existing read transaction and lends only Recall/List within its synchronous callback. Do not call outer store operations or retain the reader beyond the callback. Nil callbacks, cancellation and read/callback errors fail without publishing partial results or writing records. Memories.Apply validates keys before opening a transaction, checks every expected value before mutation and atomically writes/deletes through the existing SQL helpers. Equal values skip writes; return counts only after successful commit. No engine-specific lock, schema change or retry layer.
 
 ## Verification
 

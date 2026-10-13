@@ -196,6 +196,14 @@ provenance and actual task details. Type/status filters and search focus the vie
 All indexed files are present; the code-query `--limit` does not truncate this
 overview. `--max-rows` caps the complete task selection and fails on overage.
 
+In ordinary embedded workspaces, graph export and maintenance use a single
+read snapshot: non-code memories plus the manifest and blobs of the current
+index generation. Unused retained generations are not enumerated or deleted.
+File/fragment hashes, complete-index limits and human evidence remain checked;
+failed reads publish no partial result. Other memory adapters retain the full
+read path, and Graph Preview retains its canonical joined snapshot. This does
+not add a cache, change deadlines or start pruning/engine GC.
+
 The export reads current source/DOX validity without parsing or writing. Stored
 locations can be stale; opening a source does not renew its learning. Source
 bodies are not embedded. Normal task/code/knowledge exports remain available.
