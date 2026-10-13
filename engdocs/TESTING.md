@@ -68,7 +68,11 @@ intentionally have different contracts in some cases.
 
 ### Test Environment and Readiness
 
-The runner isolates `HOME`, Git configuration, and Dolt state. By default its
+The runner isolates `HOME`, Git configuration, and Dolt state. Its private Dolt
+root starts with `metrics.disabled=true` and `versioncheck.disabled=true`;
+`DOLT_DISABLE_EVENT_FLUSH=1` suppresses detached uploads. Managed version probes
+also enforce those settings in their own disposable configuration. Tests do not
+rely on or edit the operator's global metrics preferences. By default its
 test environment adds `dolt` to `BEADS_TEST_SKIP`; set
 `BEADS_TEST_ENV_RUN_DOLT=1` only when deliberately exercising the Dolt path
 and its prerequisites are available. Do not make ordinary tests depend on a

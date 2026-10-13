@@ -456,22 +456,8 @@ func primeScenarioNoMemoriesMemoriesOnlyWins(t *testing.T, binPath, workDir stri
 	}
 }
 
-// TestPrime_NoTelemetryInIsolatedHome is the regression guard for wy-12x1p:
-// a `bd` subprocess launched by this suite must not write a telemetry queue
-// into its isolated HOME. That queue is the visible half of the real problem —
-// the other half is the DETACHED `bd send-metrics` child metrics.CloseAndFlush
-// spawns alongside it, which outlives its parent and keeps mutating
-// $HOME/.beads/eventsData while Go's t.TempDir cleanup is trying to delete the
-// tree. The result was an intermittent, assertion-free
-// "TempDir RemoveAll cleanup: ... directory not empty" that reddened the whole
-// cmd/bd package (the TestPrime_HookJSON_* tests were the observed victims).
-//
-// The fix is the metrics opt-out set process-wide in testMainInner; this test
-// pins it from the outside, because the failure it prevents is load-dependent
-// and would otherwise creep back unnoticed. The assertion is deterministic:
-// metrics.Init creates the eventsData dir eagerly (and synchronously, in the
-// parent) whenever metrics are enabled, so its absence proves the flusher was
-// never armed.
+// A real prime subprocess in a fresh HOME must not recreate an upstream usage
+// queue. The fork removes this path independently of test opt-out variables.
 func primeScenarioNoTelemetryInIsolatedHome(t *testing.T, binPath, workDir string) {
 	home := t.TempDir()
 

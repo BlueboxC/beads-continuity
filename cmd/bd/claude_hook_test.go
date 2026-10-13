@@ -331,9 +331,6 @@ func TestClaudeHookCommandSkipsStoreInit(t *testing.T) {
 	if !commandOptsOutOfStore(claudeHookCmd) {
 		t.Fatal("claude-hook must not open the beads store on every Stop")
 	}
-	if !firstRunNoticeSuppressedCommands["claude-hook"] {
-		t.Fatal("claude-hook must suppress the first-run metrics notice")
-	}
 }
 
 func TestClaudeHookStopRecoversAfterMalformedLine(t *testing.T) {

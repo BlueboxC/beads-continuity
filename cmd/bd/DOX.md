@@ -72,6 +72,8 @@ Root DOX.md and the parent chain remain binding.
 
 - Advisory Git remote-ref probes use the existing signal-aware root context with a ten-second deadline and two-second retained-pipe wait. Disable terminal/askpass prompts (including core.askPass) but retain credential.helper. Errors, cancellation and incomplete output remain UNKNOWN; init and configured-bootstrap safety/local-recovery policies stay unchanged. WaitDelay bounds pipes without guaranteeing descendant termination.
 
+- Usage metrics cannot collect or upload. `metrics`/`off`/`example` report the policy without writing configuration; `on` fails and legacy `send-metrics` does nothing. Existing config and historical queues remain untouched.
+
 ## Work Guidance
 
 Keep existing CLI primitives and machine-readable output stable. Follow AGENTS.md and ../../engdocs/TESTING.md.

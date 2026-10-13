@@ -1073,24 +1073,6 @@ var rootCmd = &cobra.Command{
 		// span.
 		initTelemetry(rootCtx, Version)
 
-		// Materialize the user-level metrics config only when metrics are
-		// actually enabled. When metrics are disabled (BD_DISABLE_METRICS or a
-		// user-global metrics.disabled), there is nothing to bootstrap. The
-		// send-metrics flusher is exempt so it never recurses into bootstrap.
-		// This mirrors the resolveMetricsEnabled() gate on the first-run notice
-		// below. (~/.config/bd/ lives outside the repo, so this write is not a
-		// stealth/per-repository trace; stealth init is handled by suppressing
-		// the first-run notice, not by skipping this user-global bootstrap.)
-		if cmd.Name() != metrics.SendMetricsSubcommand && resolveMetricsEnabled() {
-			if err := metrics.EnsureUserConfigDefaults(); err != nil {
-				debug.Logf("warning: ensure user config defaults failed: %v", err)
-			}
-		}
-
-		if _, err := metrics.Init(Version, resolveMetricsEnabled(), resolveMetricsEndpoint()); err != nil {
-			debug.Logf("warning: metrics init failed: %v", err)
-		}
-
 		if cmd.Name() == metrics.SendMetricsSubcommand {
 			return nil
 		}
@@ -1307,13 +1289,6 @@ var rootCmd = &cobra.Command{
 		if commandOptsOutOfStore(cmd) {
 			skipsStoreInit = true
 		}
-
-		// One-time friendly heads-up about anonymous usage metrics. Placed after
-		// the config-derived json/quiet rebind and command classification above so
-		// it can read the real output mode and command identity — that is how it
-		// stays suppressed in JSON/hook/protocol/quiet/stealth contexts and never
-		// corrupts machine-readable output. No-op after the first run.
-		maybeShowMetricsFirstRunNotice(cmd)
 
 		// Commands that skip store initialization still need early config/env
 		// setup before they inspect server mode or per-project Dolt settings.
@@ -2485,37 +2460,6 @@ func main() {
 		}
 		os.Exit(1)
 	}
-}
-
-func resolveMetricsEnabled() bool {
-	if v, ok := os.LookupEnv(metrics.EnvDisableMetrics); ok {
-		return !envTruthyValue(v)
-	}
-	// DO_NOT_TRACK is a disable-only alias: a truthy value opts out, but a
-	// falsey or empty value (DO_NOT_TRACK=0/false/"") must fall through to the
-	// user's saved preference instead of forcing metrics back on over a saved
-	// `bd metrics off`. Only BD_DISABLE_METRICS (checked first) is a
-	// bidirectional override.
-	if v, ok := os.LookupEnv(metrics.EnvDoNotTrack); ok && envTruthyValue(v) {
-		return false
-	}
-	// Consent is the user's own global choice: resolve it from the user-global
-	// config only, never merged project/BEADS_DIR config. Otherwise a
-	// repository's .beads/config.yaml (highest viper precedence) could re-enable
-	// metrics for a user who ran `bd metrics off`.
-	return !config.MetricsDisabledByUserConfig()
-}
-
-func resolveMetricsEndpoint() string {
-	if v := os.Getenv(metrics.EnvEndpoint); v != "" {
-		return v
-	}
-	// Like enablement, the endpoint is resolved from env + user-global config
-	// only so a repository can never redirect where a user's metrics are sent.
-	if ep := config.UserMetricsEndpoint(); ep != "" {
-		return ep
-	}
-	return metrics.DefaultEndpoint
 }
 
 func envTruthyValue(v string) bool {

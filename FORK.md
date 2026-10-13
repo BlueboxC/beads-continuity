@@ -14,6 +14,25 @@ Upstream attribution and the MIT license remain intact. Fork additions are
 available on `codex/project-continuity`; upstream installation channels do not
 contain them. See [installation and workflow](docs/core-concepts/fork-continuity.md).
 
+## Network privacy
+
+This fork removes anonymous command-usage collection and upload, including
+machine identifiers, event queues, config bootstrap and detached flushers.
+Saved upstream preferences and environment overrides cannot enable it.
+`bd metrics on` fails; other metrics commands are read-only compatibility
+endpoints. Existing user configuration and old queues remain untouched.
+
+Beads version diagnostics are local. Managed Dolt version probes isolate their
+cwd/configuration and disable metrics and update checks. The ordinary test
+runner seeds those settings in its private Dolt root. This governs fork-owned
+invocations, not independently launched upstream binaries. Explicit sync,
+integrations, downloads and operator-enabled OpenTelemetry retain their network
+behavior.
+
+Upstream already discloses command-usage metrics in its
+[metrics reference](https://github.com/gastownhall/beads/blob/main/docs/cli-reference/metrics.md).
+This is an intentional fork policy difference.
+
 ## Added capabilities
 
 | Area | Added behavior | Boundary |

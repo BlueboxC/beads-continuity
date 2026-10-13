@@ -10,6 +10,20 @@ and source-backed solutions matters across sessions. [FORK.md](https://github.co
 identifies the upstream baseline, implemented additions and remaining limits.
 All project data stays in that project's existing Beads Dolt.
 
+## Network privacy
+
+Anonymous usage metrics are removed: no machine ID, event queue or uploader is
+created. Saved opt-ins and environment overrides cannot enable it. `bd metrics`
+explains the policy, `off` and `example` read it without changing configuration,
+and `on` fails. Legacy `send-metrics` does nothing; old queues are retained.
+
+Version diagnostics are local. Fork-managed Dolt version probes and the ordinary
+test runner use private configuration with metrics and update checks disabled.
+Your global Dolt configuration remains unchanged. Independently launched Dolt
+or upstream Beads retain their own behavior. Explicit sync, provider integrations
+and downloads still use the network. OpenTelemetry remains separate and opt-in;
+it can send data to your chosen exporter.
+
 ## Optional Graph Preview
 
 The fork also includes an explicit experimental graph workspace format. It adds

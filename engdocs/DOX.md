@@ -14,7 +14,7 @@ Root DOX.md and the parent chain remain binding.
 
 ## Work Guidance
 
-TESTING.md owns test selection and fixture isolation, including command-line suppression of automatic Git maintenance before worktree creation. PROJECT_CHARTER.md defines the upstream core boundary; root FORK.md defines the fork objective.
+TESTING.md owns test selection and fixture isolation, including private Dolt metrics/update suppression and command-line suppression of automatic Git maintenance before worktree creation. PROJECT_CHARTER.md defines the upstream core boundary; root FORK.md defines the fork objective.
 
 design/graph-preview-conversion.md owns explicit embedded adoption, preservation, rehearsal, publication/recovery and rollback gates for existing projects; no existing project changes format implicitly.
 

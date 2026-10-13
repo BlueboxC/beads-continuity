@@ -118,7 +118,29 @@ func Probe(ctx context.Context, path string) (Identity, error) {
 		defer cancel()
 	}
 
+	privacyRoot, err := os.MkdirTemp("", "beads-dolt-version-*")
+	if err != nil {
+		return id, fmt.Errorf("%w: private version config: %v", ErrProbeFailed, err)
+	}
+	defer func() { _ = os.RemoveAll(privacyRoot) }()
+	configDir := filepath.Join(privacyRoot, ".dolt")
+	if err := os.Mkdir(configDir, 0700); err != nil {
+		return id, fmt.Errorf("%w: private version config: %v", ErrProbeFailed, err)
+	}
+	if err := os.WriteFile(filepath.Join(configDir, "config_global.json"), []byte(`{"metrics.disabled":"true","versioncheck.disabled":"true"}`), 0600); err != nil {
+		return id, fmt.Errorf("%w: private version config: %v", ErrProbeFailed, err)
+	}
 	cmd := exec.CommandContext(ctx, path, "version") //nolint:gosec // G204: path is caller-resolved and pre-exec-validated above, not user-request input
+	cmd.Dir = privacyRoot                            // Exclude a caller's local .dolt/config.json overrides.
+	cmd.Env = make([]string, 0, len(os.Environ())+2)
+	for _, entry := range os.Environ() {
+		key, _, _ := strings.Cut(entry, "=")
+		if strings.EqualFold(key, "DOLT_ROOT_PATH") || strings.EqualFold(key, "DOLT_DISABLE_EVENT_FLUSH") {
+			continue
+		}
+		cmd.Env = append(cmd.Env, entry)
+	}
+	cmd.Env = append(cmd.Env, "DOLT_ROOT_PATH="+privacyRoot, "DOLT_DISABLE_EVENT_FLUSH=1")
 	// WaitDelay bounds how long Wait() waits for the child's I/O pipes to
 	// close after the context is done / the process is signaled. Without
 	// it, a child that ignores SIGKILL's effect on its own goroutines (or

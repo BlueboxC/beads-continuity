@@ -12,7 +12,6 @@ require (
 	github.com/anthropics/anthropic-sdk-go v1.61.0
 	github.com/cenkalti/backoff/v4 v4.3.0
 	github.com/dolthub/driver/v2 v2.2.0
-	github.com/dolthub/eventkit v0.0.0-20260611184414-99f5693e696a
 	github.com/go-sql-driver/mysql v1.10.0
 	github.com/gowebpki/jcs v1.0.1
 	github.com/invopop/jsonschema v0.14.0

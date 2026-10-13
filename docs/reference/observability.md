@@ -5,6 +5,10 @@ description: Exporting bd metrics and traces over OpenTelemetry (OTLP), with a l
 
 Beads exports metrics via OTLP HTTP. Telemetry is **disabled by default** — zero overhead when no variable is set.
 
+The fork removes the separate upstream anonymous command-usage uploader.
+These OpenTelemetry settings enable only the operator-configured observability
+path; they do not restore anonymous usage collection.
+
 ## Recommended local stack
 
 | Service | Port | Role |

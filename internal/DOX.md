@@ -21,11 +21,13 @@ Root DOX.md and the parent chain remain binding.
 - HTTP event streams revalidate bearer credentials before delivery and around journal reads, including idle and backlog passes. Successful removal terminates the stream; failed token-file reloads retain the last-good token set.
 - Terminal Markdown rendering removes raw controls and numeric entities that decode into controls before Glamour parsing; renderer-generated styles and printable entities remain supported.
 
-- Telemetry remains opt-in. Its default resource collects host, process identity and runtime metadata without argv or process owner; explicit environment attributes still override/extend defaults. Command spans retain credential-scrubbed arguments in local console traces only.
+- OpenTelemetry remains opt-in and separate from removed anonymous usage metrics. Its default resource collects host, process identity and runtime metadata without argv or process owner; explicit environment attributes still override/extend defaults. Command spans retain credential-scrubbed arguments in local console traces only.
 
 - Recipe SharedPaths explicitly declare section-managed instruction files; other paths retain their existing whole-file ownership semantics.
 
 - AI issue compaction uses the first text response block without reading thinking/redacted contents. Missing/blank text or max_tokens replies fail before compaction; malformed replies do not retry. Existing transport retry and optional audit behavior remain.
+
+- `metrics` owns inert compatibility hooks without collection, transport, queue, machine identifier or process launch. All Dolt version callers reuse the private-cwd/config probe, disabling metrics/update checks without changing operator settings.
 
 ## Work Guidance
 

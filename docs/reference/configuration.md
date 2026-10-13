@@ -18,6 +18,15 @@ The split is deliberate: tool settings are user-specific; project config is team
 
 Dolt is the only storage backend. Embedded mode (the default) stores data at `.beads/embeddeddolt/`; server mode (`bd init --server` or `BEADS_DOLT_SERVER_MODE=1`) uses `.beads/dolt/`. See [Dolt architecture](/architecture/dolt).
 
+## Fork usage-metrics policy
+
+Beads Continuity removes anonymous usage collection and uploads. Historical
+`metrics.*` settings may still be read or edited for configuration compatibility,
+but neither saved settings nor environment variables can enable an uploader.
+`bd metrics on` fails explicitly; other metrics commands report the policy
+without changing user configuration. See [fork privacy](/core-concepts/fork-continuity#network-privacy).
+OpenTelemetry is a separate explicit opt-in in [observability](/reference/observability).
+
 ## Configuration Locations
 
 `config.yaml` is searched in this order, with later files overriding earlier ones:
