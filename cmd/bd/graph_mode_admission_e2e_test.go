@@ -55,3 +55,29 @@ func TestGraphModeCLIRefusesLegacyStoreWithoutWorkspaceEffects(t *testing.T) {
 		}
 	}
 }
+
+func TestVersionFlagsIgnoreWorkspaceStorage(t *testing.T) {
+	bd := buildBDUnderTest(t)
+	for _, metadata := range []string{`{"backend":"dolt","dolt_mode":"embedded","graph_mode":"link"}`, `{"backend":"dolt","graph_mode":"future-format"}`, `{broken`} {
+		for _, flag := range []string{"--version", "-V"} {
+			t.Run(metadata+"/"+flag, func(t *testing.T) {
+				dir := t.TempDir()
+				beadsDir := filepath.Join(dir, ".beads")
+				writeFile(t, filepath.Join(beadsDir, "metadata.json"), []byte(metadata))
+				before := legacyUpgradeTreeDigest(t, beadsDir)
+				ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+				defer cancel()
+				cmd := exec.CommandContext(ctx, bd, flag)
+				cmd.Dir = dir
+				cmd.Env = append(os.Environ(), "HOME="+t.TempDir(), "BEADS_DIR="+beadsDir, "BD_DISABLE_METRICS=1", "BEADS_DOLT_AUTO_START=0")
+				out, err := cmd.CombinedOutput()
+				if err != nil || !strings.Contains(string(out), "bd version ") {
+					t.Fatalf("version diagnostic failed: %v / %s", err, out)
+				}
+				if after := legacyUpgradeTreeDigest(t, beadsDir); after != before {
+					t.Fatal("version flag changed workspace")
+				}
+			})
+		}
+	}
+}

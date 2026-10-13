@@ -172,13 +172,13 @@ func computeParserHash(language string) string {
 	}
 	switch language {
 	case "python":
-		return digest([]byte(parserScript))
+		return digest([]byte(parserOutputBudgetRevision + parserScript))
 	case "xml":
 		return digest([]byte(xmlParserSource + runtime.Version()))
 	case "go":
 		return digest([]byte(goParserSource + runtime.Version()))
 	default:
-		return digest(append([]byte(scriptParser), typescriptBundle...))
+		return digest(append([]byte(parserOutputBudgetRevision+scriptParser), typescriptBundle...))
 	}
 }
 func manifestParser(languages []string, version int) string {
@@ -192,6 +192,12 @@ func manifestParser(languages []string, version int) string {
 	return digest([]byte(s.String()))
 }
 func parseScripts(ctx context.Context, executable string, inputs []parserInput) (parserOutput, error) {
+	return parseBoundedBatch(inputs, func(batch []parserInput) (parserOutput, error) {
+		return parseScriptsBatch(ctx, executable, batch)
+	})
+}
+
+func parseScriptsBatch(ctx context.Context, executable string, inputs []parserInput) (parserOutput, error) {
 	if executable == "" {
 		executable = "node"
 	}

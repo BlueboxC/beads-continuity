@@ -12,6 +12,8 @@ Commands, flags, help, output and CLI fixtures.
 
 Root DOX.md and the parent chain remain binding.
 
+- Root --version and -V remain store-free before graph metadata, marker or route admission. They do not provision, migrate or read a database, including incomplete/future/corrupt workspaces; data commands retain their admission guards.
+
 - Recall, bare-key remember and forget distinguish missing rows from imported empty values. Presence follows the memory role result; empty rows can be recalled and forgotten.
 - Bare lowercase memory keys may contain dots and exceed the automatic 50-character write-key truncation; recall-shaped misses remain read-only. Explicit `--key` writes retain their existing semantics.
 - Local backup restore refuses missing/non-directory sources and missing, empty or non-regular manifests before the existing Dolt restore call. This is structural preflight, not full backup integrity or atomic restore qualification.

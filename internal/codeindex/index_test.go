@@ -353,8 +353,12 @@ func TestIsolatedParserRunnerHonorsCancellationAndOutputBounds(t *testing.T) {
 			size = 4097
 		}
 		script := fmt.Sprintf("import sys; sys.%s.write('x' * %d)", stream, size)
-		if _, err := runParser(context.Background(), python, []string{"-I", "-S", "-c", script}, nil); err == nil {
+		_, err := runParser(context.Background(), python, []string{"-I", "-S", "-c", script}, nil)
+		if err == nil {
 			t.Fatalf("%s bound lost", stream)
+		}
+		if errors.Is(err, errParserStdoutLimit) != (stream == "stdout") {
+			t.Fatalf("%s overflow classification: %v", stream, err)
 		}
 	}
 	for _, raw := range []string{`not json`, `{"files":[]}`, `{"files":[{"path":"foreign.py"}]}`} {

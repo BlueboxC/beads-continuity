@@ -5,6 +5,7 @@ package main
 import (
 	"bytes"
 	"encoding/json"
+	"fmt"
 	"os"
 	"strings"
 	"testing"
@@ -219,11 +220,15 @@ func TestVersionFlag(t *testing.T) {
 		resetCommandContext()
 	})
 
+	oldVersion, _ := rootCmd.Flags().GetBool("version")
+	t.Cleanup(func() { _ = rootCmd.Flags().Set("version", fmt.Sprint(oldVersion)) })
+
 	// Save original stdout
 	oldStdout := os.Stdout
 	defer func() { os.Stdout = oldStdout }()
 
 	t.Run("--version flag", func(t *testing.T) {
+		_ = rootCmd.Flags().Set("version", "false")
 		// Create a pipe to capture output
 		r, w, err := os.Pipe()
 		if err != nil {
@@ -253,7 +258,8 @@ func TestVersionFlag(t *testing.T) {
 		rootCmd.SetArgs(nil)
 	})
 
-	t.Run("-v shorthand", func(t *testing.T) {
+	t.Run("-V shorthand", func(t *testing.T) {
+		_ = rootCmd.Flags().Set("version", "false")
 		// Create a pipe to capture output
 		r, w, err := os.Pipe()
 		if err != nil {
@@ -262,7 +268,7 @@ func TestVersionFlag(t *testing.T) {
 		os.Stdout = w
 
 		// Set version flag and run root command
-		rootCmd.SetArgs([]string{"-v"})
+		rootCmd.SetArgs([]string{"-V"})
 		rootCmd.Execute()
 
 		// Close writer and read output

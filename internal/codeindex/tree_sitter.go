@@ -52,6 +52,7 @@ func grammarName(language string) string {
 }
 func treeParserHash(language string) string {
 	var data bytes.Buffer
+	data.WriteString(parserOutputBudgetRevision)
 	data.WriteString(treeParserScript(language))
 	for _, name := range []string{"tree-sitter.js.gz", "tree-sitter.wasm.gz", "tree-sitter-" + grammarName(language) + ".wasm.gz"} {
 		asset, _ := treeBundles.ReadFile(name) // Embedded names are fixed and covered by asset tests.
@@ -79,6 +80,12 @@ func treeAsset(name string) ([]byte, error) {
 	return data, nil
 }
 func parseTrees(ctx context.Context, executable, language string, inputs []parserInput) (parserOutput, error) {
+	return parseBoundedBatch(inputs, func(batch []parserInput) (parserOutput, error) {
+		return parseTreesBatch(ctx, executable, language, batch)
+	})
+}
+
+func parseTreesBatch(ctx context.Context, executable, language string, inputs []parserInput) (parserOutput, error) {
 	if executable == "" {
 		executable = "node"
 	}

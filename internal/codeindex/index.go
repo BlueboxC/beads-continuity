@@ -473,14 +473,18 @@ type parserOutput struct {
 	Files      []File `json:"files"`
 }
 
+var errParserStdoutLimit = errors.New("AST parser stdout exceeds bound")
+
 // A named buffer avoids promoting ReaderFrom, which would bypass the write bound.
 type boundedBuffer struct {
-	buffer bytes.Buffer
-	limit  int
+	buffer   bytes.Buffer
+	limit    int
+	exceeded bool
 }
 
 func (b *boundedBuffer) Write(data []byte) (int, error) {
 	if b.buffer.Len()+len(data) > b.limit {
+		b.exceeded = true
 		return 0, errors.New("AST parser output exceeds bound")
 	}
 	return b.buffer.Write(data)
@@ -499,6 +503,9 @@ func runParser(ctx context.Context, path string, args []string, input []byte) ([
 	stdout.limit, stderr.limit = maxJSONBytes, 4096
 	cmd.Stdout, cmd.Stderr = &stdout, &stderr
 	if err := cmd.Run(); err != nil {
+		if stdout.exceeded && ctx.Err() == nil {
+			return nil, errors.Join(err, errParserStdoutLimit)
+		}
 		return nil, err
 	}
 	return stdout.Bytes(), nil
@@ -523,6 +530,12 @@ func decodeParser(raw []byte, inputs []parserInput, name string) (parserOutput, 
 }
 
 func parse(ctx context.Context, executable string, inputs []parserInput) (parserOutput, error) {
+	return parseBoundedBatch(inputs, func(batch []parserInput) (parserOutput, error) {
+		return parsePythonBatch(ctx, executable, batch)
+	})
+}
+
+func parsePythonBatch(ctx context.Context, executable string, inputs []parserInput) (parserOutput, error) {
 	if executable == "" {
 		executable = "python3"
 	}

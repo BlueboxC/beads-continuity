@@ -220,6 +220,11 @@ func admitGraphPreview(cmd *cobra.Command) (handled bool, admissionErr error) {
 	format, _ := cmd.Flags().GetString("format")
 	graphPreviewStructuredErrors = (cmd == memoriesCmd && format == "records-json") || (cmd == listCmd && (format == "records-json" || strings.EqualFold(format, "json")))
 	graphPreviewActive, graphPreviewConfig, graphPreviewDir = false, nil, ""
+	if cmd.Parent() == nil {
+		if version, _ := cmd.Flags().GetBool("version"); version {
+			return true, nil
+		}
+	}
 	flag, _ := cmd.Flags().GetString("graph-mode")
 	env := os.Getenv("BD_GRAPH_MODE")
 	if flag != "" && env != "" && flag != env {
