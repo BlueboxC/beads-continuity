@@ -16,6 +16,8 @@ Root DOX.md and the parent chain remain binding.
 
 - The ordinary test environment seeds its private Dolt root with metrics/version checks disabled and suppresses event flushing. Do not rely on or mutate operator opt-outs to qualify tests.
 
+- `fmt-check` and `fmt` share the Git source inventory: existing regular tracked Go files (including ignored paths) and nonignored untracked Go files. Exclude private ignored artifacts, deleted files and symlinks; inventory/gofmt failures remain fatal. Preserve historical evidence bytes.
+
 ## Work Guidance
 
 Generated CLI freshness checks compare generated pages while excluding DOX.md work contracts; DOX reachability is checked separately.

@@ -1,6 +1,6 @@
 # Linting Policy
 
-Last reviewed: 2026-08-10
+Last reviewed: 2026-10-13
 
 Freshness source: `.golangci.yml`, `scripts/ci/pr-lint.sh`, `Makefile`,
 `.github/workflows/pr.yml`, and `.github/workflows/main.yml`.
@@ -43,6 +43,12 @@ The wrapper runs:
   `BD_LINT_NEW_FROM_MERGE_BASE` names a ref; and
 - a second non-CGO Windows cross-lint pass, on the same scope, when the native
   host does not already cover that target.
+
+`make fmt-check` and `make fmt` use the same Git file inventory: existing
+regular tracked Go files, even under ignored paths, plus nonignored untracked
+Go files. Ignored private artifacts, deleted files and symlinks are excluded.
+An unavailable Git inventory fails the check; it does not fall back to scanning
+the whole directory. Keep historical evidence outside the source inventory.
 
 ## Policy
 

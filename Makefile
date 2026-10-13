@@ -342,11 +342,9 @@ endif
 
 install: check-up-to-date
 
-# Format all Go files
+# Format tracked and nonignored new Go source files.
 fmt:
-	@echo "Formatting Go files..."
-	@gofmt -w .
-	@echo "Done"
+	@./scripts/ci/fmt-check.sh --write
 
 # Check that all Go files are properly formatted (for CI)
 fmt-check:
