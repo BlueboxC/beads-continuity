@@ -8,6 +8,8 @@ import (
 	"github.com/spf13/cobra"
 	"github.com/steveyegge/beads/internal/metrics"
 	"github.com/steveyegge/beads/internal/storage"
+	"github.com/steveyegge/beads/internal/storage/uow"
+	"github.com/steveyegge/beads/internal/types"
 	"github.com/steveyegge/beads/internal/ui"
 )
 
@@ -114,9 +116,6 @@ func init() {
 }
 
 func runMergeSlotCreate(cmd *cobra.Command, args []string) error {
-	if usesProxiedServer() {
-		return HandleErrorRespectJSON("merge-slot create is not supported in proxied-server mode")
-	}
 	CheckReadonly("merge-slot create")
 
 	evt := metrics.NewCommandEvent("merge-slot-create")
@@ -126,7 +125,13 @@ func runMergeSlotCreate(cmd *cobra.Command, args []string) error {
 		}
 	}()
 
-	issue, err := store.MergeSlotCreate(rootCtx, actor)
+	var issue *types.Issue
+	var err error
+	if usesProxiedServer() {
+		issue, err = uow.MergeSlotCreate(rootCtx, uowProvider, actor)
+	} else {
+		issue, err = store.MergeSlotCreate(rootCtx, actor)
+	}
 	if err != nil {
 		return HandleErrorRespectJSON("%v", err)
 	}
@@ -148,9 +153,6 @@ func runMergeSlotCreate(cmd *cobra.Command, args []string) error {
 }
 
 func runMergeSlotCheck(cmd *cobra.Command, args []string) error {
-	if usesProxiedServer() {
-		return HandleErrorRespectJSON("merge-slot check is not supported in proxied-server mode")
-	}
 	evt := metrics.NewCommandEvent("merge-slot-check")
 	defer func() {
 		if c := metrics.Global(); c != nil {
@@ -158,10 +160,21 @@ func runMergeSlotCheck(cmd *cobra.Command, args []string) error {
 		}
 	}()
 
-	status, err := store.MergeSlotCheck(rootCtx)
+	var status *storage.MergeSlotStatus
+	var err error
+	if usesProxiedServer() {
+		status, err = uow.MergeSlotCheck(rootCtx, uowProvider)
+	} else {
+		status, err = store.MergeSlotCheck(rootCtx)
+	}
 	if err != nil {
 		if isNotFoundErr(err) {
-			slotID := storage.MergeSlotID(rootCtx, store)
+			var slotID string
+			if usesProxiedServer() && status != nil {
+				slotID = status.SlotID
+			} else {
+				slotID = storage.MergeSlotID(rootCtx, store)
+			}
 			if jsonOutput {
 				result := map[string]interface{}{
 					"id":        slotID,
@@ -208,9 +221,6 @@ func runMergeSlotCheck(cmd *cobra.Command, args []string) error {
 }
 
 func runMergeSlotAcquire(cmd *cobra.Command, args []string) error {
-	if usesProxiedServer() {
-		return HandleErrorRespectJSON("merge-slot acquire is not supported in proxied-server mode")
-	}
 	CheckReadonly("merge-slot acquire")
 
 	evt := metrics.NewCommandEvent("merge-slot-acquire")
@@ -228,7 +238,13 @@ func runMergeSlotAcquire(cmd *cobra.Command, args []string) error {
 		return HandleError("no holder specified; use --holder or set BEADS_ACTOR env var")
 	}
 
-	result, err := store.MergeSlotAcquire(rootCtx, holder, actor, mergeSlotAddWaiter)
+	var result *storage.MergeSlotResult
+	var err error
+	if usesProxiedServer() {
+		result, err = uow.MergeSlotAcquire(rootCtx, uowProvider, holder, actor, mergeSlotAddWaiter)
+	} else {
+		result, err = store.MergeSlotAcquire(rootCtx, holder, actor, mergeSlotAddWaiter)
+	}
 	if err != nil {
 		return HandleErrorRespectJSON("%v", err)
 	}
@@ -293,9 +309,6 @@ func runMergeSlotAcquire(cmd *cobra.Command, args []string) error {
 }
 
 func runMergeSlotRelease(cmd *cobra.Command, args []string) error {
-	if usesProxiedServer() {
-		return HandleErrorRespectJSON("merge-slot release is not supported in proxied-server mode")
-	}
 	CheckReadonly("merge-slot release")
 
 	evt := metrics.NewCommandEvent("merge-slot-release")
@@ -305,14 +318,21 @@ func runMergeSlotRelease(cmd *cobra.Command, args []string) error {
 		}
 	}()
 
-	if err := store.MergeSlotRelease(rootCtx, mergeSlotHolder, actor); err != nil {
+	var slotID string
+	var err error
+	if usesProxiedServer() {
+		slotID, err = uow.MergeSlotRelease(rootCtx, uowProvider, mergeSlotHolder, actor)
+	} else {
+		slotID = storage.MergeSlotID(rootCtx, store)
+		err = store.MergeSlotRelease(rootCtx, mergeSlotHolder, actor)
+	}
+	if err != nil {
 		return HandleErrorRespectJSON("%v", err)
 	}
 
 	commandDidWrite.Store(true)
 
 	if jsonOutput {
-		slotID := storage.MergeSlotID(rootCtx, store)
 		out := map[string]interface{}{
 			"id":       slotID,
 			"released": true,
@@ -322,7 +342,6 @@ func runMergeSlotRelease(cmd *cobra.Command, args []string) error {
 		return encoder.Encode(out)
 	}
 
-	slotID := storage.MergeSlotID(rootCtx, store)
 	fmt.Printf("%s Released merge slot: %s\n", ui.RenderPass("✓"), slotID)
 	return nil
 }

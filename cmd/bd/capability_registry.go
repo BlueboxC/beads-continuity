@@ -432,10 +432,10 @@ var proxyCapabilityRegistry = []capabilityRow{
 	refusedPath("ship", "proxy.formula.unsupported", ProxyReasonUnimplemented, trackLongTail),
 	refusedPath("swarm create", "proxy.swarm.unsupported", ProxyReasonUnimplemented, trackLongTail),
 	refusedPath("swarm list", "proxy.swarm.unsupported", ProxyReasonUnimplemented, trackLongTail),
-	refusedPath("merge-slot create", "proxy.merge_slot.unsupported", ProxyReasonUnimplemented, trackLongTail),
-	refusedPath("merge-slot check", "proxy.merge_slot.unsupported", ProxyReasonUnimplemented, trackLongTail),
-	refusedPath("merge-slot acquire", "proxy.merge_slot.unsupported", ProxyReasonUnimplemented, trackLongTail),
-	refusedPath("merge-slot release", "proxy.merge_slot.unsupported", ProxyReasonUnimplemented, trackLongTail),
+	{Path: "merge-slot create", Rule: proxyCapabilityRule{Outcome: ProxyOutcomeHonored}},
+	{Path: "merge-slot check", Rule: proxyCapabilityRule{Outcome: ProxyOutcomeHonored}},
+	{Path: "merge-slot acquire", Rule: proxyCapabilityRule{Outcome: ProxyOutcomeHonored}},
+	{Path: "merge-slot release", Rule: proxyCapabilityRule{Outcome: ProxyOutcomeHonored}},
 
 	// --- transforms ---------------------------------------------------------
 	// ID rewrites walk every reference in the store. They need a routed
@@ -449,8 +449,8 @@ var proxyCapabilityRegistry = []capabilityRow{
 	refusedArgs("rename-prefix", "--dry-run --repair", "proxy.transform.unsupported", ProxyReasonUnimplemented, trackLongTail),
 	refusedPath("duplicate", "proxy.transform.unsupported", ProxyReasonUnimplemented, trackLongTail),
 	refusedArgs("duplicate", "--of", "proxy.transform.unsupported", ProxyReasonUnimplemented, trackLongTail),
-	refusedPath("supersede", "proxy.transform.unsupported", ProxyReasonUnimplemented, trackLongTail),
-	refusedArgs("supersede", "--with", "proxy.transform.unsupported", ProxyReasonUnimplemented, trackLongTail),
+	{Path: "supersede", Rule: proxyCapabilityRule{Outcome: ProxyOutcomeHonored}},
+	{Path: "supersede", ArgSet: "--with", Rule: proxyCapabilityRule{Outcome: ProxyOutcomeHonored}},
 	refusedArgs("duplicates", "--auto-merge", "proxy.transform.unsupported", ProxyReasonUnimplemented, trackLongTail),
 	// The dry run reports what the merge WOULD do without writing anything, so
 	// it rides the read path plain `duplicates` already uses.

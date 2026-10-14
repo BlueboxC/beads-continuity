@@ -90,6 +90,8 @@ Root DOX.md and the parent chain remain binding.
 
 - db-proxy-child forwards the existing debug posture to optional connection tracing; ordinary traffic does not emit per-connection log lines. No new service, flag or project activation is introduced.
 
+- Proxied merge-slot create/check/acquire/release use the same holder/waiter rules through one UOW per operation; only committed attempts report acquisition. Proxied supersede resolves both IDs and adds the supersedes edge plus checked closure in one retried transaction; refusal rolls both back. No automatic holder expiry, queue scheduling or project conversion.
+
 ## Work Guidance
 
 Keep existing CLI primitives and machine-readable output stable. Follow AGENTS.md and ../../engdocs/TESTING.md.

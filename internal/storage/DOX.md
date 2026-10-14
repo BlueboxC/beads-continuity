@@ -23,6 +23,8 @@ Root DOX.md and the parent chain remain binding.
 
 - The proxy logs lifecycle and backend failures normally; per-connection tracing is opt-in through the existing debug posture. Runtime rotation bounds proxy.log and its single retained tail to 4 MiB each, including oversized startup logs. Log failures report once without replaying traffic or altering backend lifecycle.
 
+- Merge-slot holder and waiter mutations share a narrow transaction helper across native and UOW adapters. The transaction owner controls commit, conflict retry and rollback; callers never announce an uncommitted acquisition.
+
 ## Work Guidance
 
 Memory namespace selectors preserve exact prefix semantics across adapters. All three adapters select namespaces in SQL before transferring values; the unit-of-work adapter uses ConfigUseCase/repository within its existing read transaction. Case-insensitive memory search remains in Go.

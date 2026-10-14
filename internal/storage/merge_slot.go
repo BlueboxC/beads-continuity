@@ -25,7 +25,9 @@ type slotMeta struct {
 // MergeSlotID returns the canonical merge slot bead ID for the store,
 // derived from the issue_prefix config key (e.g. "gt" → "gt-merge-slot").
 // Falls back to "bd-merge-slot" when the prefix is not configured.
-func MergeSlotID(ctx context.Context, s Storage) string {
+func MergeSlotID(ctx context.Context, s interface {
+	GetConfig(context.Context, string) (string, error)
+}) string {
 	prefix := "bd"
 	if p, err := s.GetConfig(ctx, "issue_prefix"); err == nil && p != "" {
 		prefix = strings.TrimSuffix(p, "-")
@@ -92,60 +94,78 @@ func MergeSlotAcquireImpl(ctx context.Context, s Storage, holder, actor string, 
 	err := s.RunInTransaction(ctx,
 		fmt.Sprintf("bd: acquire merge slot %s for %s", slotID, holder),
 		func(tx Transaction) error {
-			slot, err := tx.GetIssue(ctx, slotID)
-			if err != nil || slot == nil {
-				return fmt.Errorf("merge slot not found: %s (run 'bd merge-slot create' first)", slotID)
+			attempt, err := MergeSlotAcquireInTx(ctx, tx, slotID, holder, actor, wait)
+			if attempt != nil {
+				result = *attempt
 			}
-
-			meta := parseSlotMeta(slot)
-			result.Holder = meta.Holder
-
-			if slot.Status != types.StatusOpen {
-				// Slot is held.
-				if wait {
-					alreadyWaiting := false
-					for _, w := range meta.Waiters {
-						if w == holder {
-							alreadyWaiting = true
-							break
-						}
-					}
-					if !alreadyWaiting {
-						meta.Waiters = append(meta.Waiters, holder)
-					}
-					metaStr, err := encodeSlotMeta(meta)
-					if err != nil {
-						return fmt.Errorf("failed to encode slot metadata: %w", err)
-					}
-					if err := tx.UpdateIssue(ctx, slot.ID, map[string]interface{}{"metadata": metaStr}, actor); err != nil {
-						return fmt.Errorf("failed to add to waiters: %w", err)
-					}
-					result.Waiting = true
-					result.Position = len(meta.Waiters)
-				}
-				return nil
-			}
-
-			// Slot is available — acquire it atomically.
-			newMeta := slotMeta{Holder: holder, Waiters: meta.Waiters}
-			metaStr, err := encodeSlotMeta(newMeta)
-			if err != nil {
-				return fmt.Errorf("failed to encode slot metadata: %w", err)
-			}
-			if err := tx.UpdateIssue(ctx, slot.ID, map[string]interface{}{
-				"status":   types.StatusInProgress,
-				"metadata": metaStr,
-			}, actor); err != nil {
-				return fmt.Errorf("failed to acquire slot: %w", err)
-			}
-			result.Acquired = true
-			result.Holder = holder
-			return nil
-		},
-	)
+			return err
+		})
 	if err != nil {
 		return nil, err
 	}
+	return &result, nil
+}
+
+// MergeSlotTransaction is the existing issue mutation seam needed by a slot.
+type MergeSlotTransaction interface {
+	GetIssue(context.Context, string) (*types.Issue, error)
+	UpdateIssue(context.Context, string, map[string]interface{}, string) error
+}
+
+// MergeSlotAcquireInTx runs on the caller's transaction; it never commits it.
+func MergeSlotAcquireInTx(ctx context.Context, tx MergeSlotTransaction, slotID, holder, actor string, wait bool) (*MergeSlotResult, error) {
+	if holder == "" {
+		return nil, fmt.Errorf("merge-slot acquire: holder must not be empty")
+	}
+	result := MergeSlotResult{SlotID: slotID}
+	slot, err := tx.GetIssue(ctx, slotID)
+	if err != nil || slot == nil {
+		return nil, fmt.Errorf("merge slot not found: %s (run 'bd merge-slot create' first)", slotID)
+	}
+
+	meta := parseSlotMeta(slot)
+	result.Holder = meta.Holder
+
+	if slot.Status != types.StatusOpen {
+		// Slot is held.
+		if wait {
+			alreadyWaiting := false
+			for _, w := range meta.Waiters {
+				if w == holder {
+					alreadyWaiting = true
+					break
+				}
+			}
+			if !alreadyWaiting {
+				meta.Waiters = append(meta.Waiters, holder)
+			}
+			metaStr, err := encodeSlotMeta(meta)
+			if err != nil {
+				return nil, fmt.Errorf("failed to encode slot metadata: %w", err)
+			}
+			if err := tx.UpdateIssue(ctx, slot.ID, map[string]interface{}{"metadata": metaStr}, actor); err != nil {
+				return nil, fmt.Errorf("failed to add to waiters: %w", err)
+			}
+			result.Waiting = true
+			result.Position = len(meta.Waiters)
+		}
+		return &result, nil
+	}
+
+	// Slot is available — acquire it atomically.
+	newMeta := slotMeta{Holder: holder, Waiters: meta.Waiters}
+	metaStr, err := encodeSlotMeta(newMeta)
+	if err != nil {
+		return nil, fmt.Errorf("failed to encode slot metadata: %w", err)
+	}
+	if err := tx.UpdateIssue(ctx, slot.ID, map[string]interface{}{
+		"status":   types.StatusInProgress,
+		"metadata": metaStr,
+	}, actor); err != nil {
+		return nil, fmt.Errorf("failed to acquire slot: %w", err)
+	}
+	result.Acquired = true
+	result.Holder = holder
 	return &result, nil
 }
 
@@ -153,36 +173,37 @@ func MergeSlotAcquireImpl(ctx context.Context, s Storage, holder, actor string, 
 func MergeSlotReleaseImpl(ctx context.Context, s Storage, holder, actor string) error {
 	slotID := MergeSlotID(ctx, s)
 
-	return s.RunInTransaction(ctx,
-		fmt.Sprintf("bd: release merge slot %s", slotID),
-		func(tx Transaction) error {
-			slot, err := tx.GetIssue(ctx, slotID)
-			if err != nil || slot == nil {
-				return fmt.Errorf("merge slot not found: %s", slotID)
-			}
+	return s.RunInTransaction(ctx, fmt.Sprintf("bd: release merge slot %s", slotID),
+		func(tx Transaction) error { return MergeSlotReleaseInTx(ctx, tx, slotID, holder, actor) })
+}
 
-			meta := parseSlotMeta(slot)
+// MergeSlotReleaseInTx shares holder checks and waiter preservation across adapters.
+func MergeSlotReleaseInTx(ctx context.Context, tx MergeSlotTransaction, slotID, holder, actor string) error {
+	slot, err := tx.GetIssue(ctx, slotID)
+	if err != nil || slot == nil {
+		return fmt.Errorf("merge slot not found: %s", slotID)
+	}
 
-			if holder != "" && meta.Holder != holder {
-				return fmt.Errorf("slot held by %s, not %s", meta.Holder, holder)
-			}
+	meta := parseSlotMeta(slot)
 
-			if slot.Status == types.StatusOpen {
-				// Already released; idempotent.
-				return nil
-			}
+	if holder != "" && meta.Holder != holder {
+		return fmt.Errorf("slot held by %s, not %s", meta.Holder, holder)
+	}
 
-			newMeta := slotMeta{Waiters: meta.Waiters}
-			metaStr, err := encodeSlotMeta(newMeta)
-			if err != nil {
-				return fmt.Errorf("failed to encode slot metadata: %w", err)
-			}
-			return tx.UpdateIssue(ctx, slot.ID, map[string]interface{}{
-				"status":   types.StatusOpen,
-				"metadata": metaStr,
-			}, actor)
-		},
-	)
+	if slot.Status == types.StatusOpen {
+		// Already released; idempotent.
+		return nil
+	}
+
+	newMeta := slotMeta{Waiters: meta.Waiters}
+	metaStr, err := encodeSlotMeta(newMeta)
+	if err != nil {
+		return fmt.Errorf("failed to encode slot metadata: %w", err)
+	}
+	return tx.UpdateIssue(ctx, slot.ID, map[string]interface{}{
+		"status":   types.StatusOpen,
+		"metadata": metaStr,
+	}, actor)
 }
 
 // parseSlotMeta extracts the holder and waiters from an issue's Metadata field.

@@ -14,6 +14,8 @@ Root DOX.md and the parent chain remain binding.
 
 - Managed and external SQL providers resolve the authenticated workspace proxy for each new physical pooled connection. Preserve selected database, credentials, TLS and upstream identity; do not replay queries/transactions or disable idle limits. Schema bootstrap keeps its pinned endpoint and existing migration authority.
 
+- Merge-slot create is idempotent and creates its label atomically; check and an unchanged create do not mint history. Acquire/release share native holder/waiter rules and use the existing transaction runner; retry results belong only to the committed attempt. Supersede edge and checked closure must commit together or roll back together.
+
 ## Work Guidance
 
 Verify commit, rollback and failure behavior at the affected transaction boundary.
