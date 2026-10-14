@@ -88,6 +88,8 @@ Root DOX.md and the parent chain remain binding.
 
 - Native create --graph timestamps creation from the same clock read when backfilling a closed/started timestamp, so the status cannot predate creation. Open nodes leave creation to the insert/server as before. Existing explicit timestamps and ordinary graph-format boundaries remain unchanged.
 
+- db-proxy-child forwards the existing debug posture to optional connection tracing; ordinary traffic does not emit per-connection log lines. No new service, flag or project activation is introduced.
+
 ## Work Guidance
 
 Keep existing CLI primitives and machine-readable output stable. Follow AGENTS.md and ../../engdocs/TESTING.md.

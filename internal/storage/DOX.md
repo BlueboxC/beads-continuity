@@ -21,6 +21,8 @@ Root DOX.md and the parent chain remain binding.
 
 - External blocks are evaluated from a caller-bound read-only resolver before ready limits/counts/atomic selection. Unresolved prerequisites and active parent-child descendants stay blocked across issue/wisp planes; do not materialize remote status into the local is_blocked cache.
 
+- The proxy logs lifecycle and backend failures normally; per-connection tracing is opt-in through the existing debug posture. Runtime rotation bounds proxy.log and its single retained tail to 4 MiB each, including oversized startup logs. Log failures report once without replaying traffic or altering backend lifecycle.
+
 ## Work Guidance
 
 Memory namespace selectors preserve exact prefix semantics across adapters. All three adapters select namespaces in SQL before transferring values; the unit-of-work adapter uses ConfigUseCase/repository within its existing read transaction. Case-insensitive memory search remains in Go.
