@@ -37,7 +37,7 @@ Root DOX.md and the parent chain remain binding.
 
 ## Work Guidance
 
-Tracker adapters share configuration resolution: YAML-only secrets never query Dolt, while ordinary values keep storage-first/environment fallback including store errors.
+Tracker adapters share configuration resolution: local integration credentials never query Dolt, including Notion authentication; ordinary values keep storage-first/environment fallback including store errors. Credential classification also recognizes case and surrounding-space variants without normalizing ordinary stored keys.
 
 Keep orchestration policy outside the issue-tracking core; follow ../engdocs/PROJECT_CHARTER.md.
 

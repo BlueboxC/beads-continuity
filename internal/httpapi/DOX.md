@@ -11,6 +11,7 @@ Listener, Host allowlist, optional bearer authentication, request/concurrency li
 ## Local Contracts
 
 - Normal API mode retains its complete provider/roles source requirement and per-request atomic writes. Embedded Dolt remains refused for that mode.
+- Workspace settings writes reject local-only keys before opening storage, including integration credentials. Historical reads keep wire redaction and deletion remains available; accepting a write and merely redacting its response does not protect synced storage.
 - GraphViewer is exclusive: register only GET /viewer, GET /viewer/graph and liveness /healthz. Refuse any simultaneous provider, issue role or events journal. Do not advertise issue-write capabilities or expose v0 routes.
 - Reuse the existing bind, Host, auth, request deadline, semaphore and shutdown controls. The generic bootstrap is public and contains no workspace data; graph data requires bearer authentication when configured. Loopback retains the existing default trust boundary.
 

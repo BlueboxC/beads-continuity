@@ -76,6 +76,9 @@ func (r *configSQLRepositoryImpl) GetConfig(ctx context.Context, key string) (st
 }
 
 func (r *configSQLRepositoryImpl) SetConfig(ctx context.Context, key, value string) error {
+	if err := config.ValidateSyncedConfigKey(key); err != nil {
+		return err
+	}
 	if key == "issue_prefix" {
 		value = strings.TrimSuffix(value, "-")
 	}

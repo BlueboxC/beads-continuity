@@ -14,6 +14,7 @@ import (
 	"testing"
 
 	"github.com/spf13/cobra"
+	"github.com/steveyegge/beads/internal/config"
 	"github.com/steveyegge/beads/internal/notion"
 	"github.com/steveyegge/beads/internal/storage"
 	"github.com/steveyegge/beads/internal/tracker"
@@ -220,7 +221,7 @@ func TestRunNotionInitPersistsTargetConfig(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			recorder := &notionConfigRecorder{
-				reads:   []notionConfigOperation{{key: "notion.token"}},
+
 				sets:    tt.sets,
 				deletes: tt.deletes,
 			}
@@ -276,7 +277,7 @@ func TestRunNotionInitPersistsTargetConfig(t *testing.T) {
 				t.Fatalf("stdout unexpectedly contains launch URL: %q", stdout.String())
 			}
 			assertNotionConfigCalls(t, recorder,
-				[]notionConfigCall{{key: "notion.token"}}, tt.wantSets, tt.wantDelete)
+				nil, tt.wantSets, tt.wantDelete)
 		})
 	}
 }
@@ -284,7 +285,7 @@ func TestRunNotionInitPersistsTargetConfig(t *testing.T) {
 func TestRunNotionConnectResolvesDataSourceURL(t *testing.T) {
 	url := "https://www.notion.so/workspace/329e5bf97fae8080bb4ad94e1387655d"
 	recorder := &notionConfigRecorder{
-		reads: []notionConfigOperation{{key: "notion.token"}},
+
 		sets: []notionConfigOperation{
 			{key: "notion.data_source_id", value: "329e5bf9-7fae-8080-bb4a-d94e1387655d"},
 			{key: "notion.view_url", value: url},
@@ -324,7 +325,7 @@ func TestRunNotionConnectResolvesDataSourceURL(t *testing.T) {
 		t.Fatalf("stdout = %q", stdout.String())
 	}
 	assertNotionConfigCalls(t, recorder,
-		[]notionConfigCall{{key: "notion.token"}},
+		nil,
 		[]notionConfigCall{{key: "notion.data_source_id", value: "329e5bf9-7fae-8080-bb4a-d94e1387655d"}, {key: "notion.view_url", value: url}}, nil)
 }
 
@@ -418,7 +419,16 @@ func TestRunNotionStatusUsesHTTPClient(t *testing.T) {
 }
 
 func TestResolveNotionAuthPrefersConfigTokenOverEnv(t *testing.T) {
-	recorder := &notionConfigRecorder{reads: []notionConfigOperation{{key: "notion.token", value: "config-token"}}}
+	t.Chdir(t.TempDir())
+	config.ResetForTesting()
+	if err := config.Initialize(); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(config.ResetForTesting)
+	recorder := &notionConfigRecorder{}
+	oldToken := config.GetString("notion.token")
+	config.Set("notion.token", "config-token")
+	t.Cleanup(func() { config.Set("notion.token", oldToken) })
 	installNotionRecorderStore(t, recorder, false)
 	t.Setenv("NOTION_TOKEN", "env-token")
 
@@ -429,7 +439,7 @@ func TestResolveNotionAuthPrefersConfigTokenOverEnv(t *testing.T) {
 	if auth == nil || auth.Token != "config-token" || auth.Source != notion.AuthSourceConfigToken {
 		t.Fatalf("auth = %+v", auth)
 	}
-	assertNotionConfigCalls(t, recorder, []notionConfigCall{{key: "notion.token"}}, nil, nil)
+	assertNotionConfigCalls(t, recorder, nil, nil, nil)
 }
 
 func TestRenderNotionSyncResultUsesPhaseStats(t *testing.T) {

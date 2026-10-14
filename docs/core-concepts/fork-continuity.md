@@ -238,6 +238,18 @@ It is independent of viewer polling and prime/hooks. See
 
 ## Preserve privacy and evidence
 
+Integration credentials belong in untracked local configuration or their
+documented environment variables. The settings API rejects local-only keys;
+configuration SQL writers also reject reserved integration credential keys,
+including case variants. This includes `notion.token`: Notion no longer reads
+authentication from the synced database. Its data-source and view settings
+retain their existing database behavior.
+
+Existing secret rows or history are not automatically removed. If a credential
+was previously stored in a synchronized database, revoke/rotate it, configure
+its replacement locally and coordinate removal of the old row and retained
+history with every remote. Deleting a current row alone does not erase history.
+
 Session capture requires opt-in settings and delivered supported PostToolUse,
 Stop and SessionEnd hooks. It stores bounded observed metadata, payload hashes
 and redacted reported handoffs; raw commands, tool responses, prompts and

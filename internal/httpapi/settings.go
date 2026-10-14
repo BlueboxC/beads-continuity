@@ -35,14 +35,8 @@ import (
 // read. A withheld value is OMITTED rather than masked, so a client can never
 // mistake a placeholder for configuration.
 //
-// REDACTION IS A RULE ABOUT DISCLOSURE, WHICH IS WHY IT DOES NOT REACH THE
-// WRITES. A credential-bearing key is writable and removable here: the role
-// refuses no such key, a writer already holds the value, and a refusal would
-// leave a workspace's credentials visible as PRESENT and permanently
-// unconfigurable through this door. What the writes owe is the projection —
-// every answer that carries a stored value goes through wireSetting, so there is
-// one statement of the rule and the response to a write is what the read that
-// follows it returns.
+// The workspace role refuses local-only integration credentials before storage.
+// Redaction still protects historical rows and ordinary credential-looking keys.
 
 // handleListSettings answers GET /v0/beads/config.
 func (s *Server) handleListSettings(w http.ResponseWriter, r *http.Request) {
@@ -118,16 +112,7 @@ var setSettingRequestMembers = []string{setSettingValueMember}
 // A handler that projected for itself would put the table write outside that
 // transaction, which is the split the projection exists to prevent.
 //
-// THE REDACTION IS THIS FILE'S, and the write half reuses it rather than
-// restating it. A key whose NAME marks it credential-bearing is perfectly
-// writable — the role refuses no such key, and refusing here would protect
-// nothing the caller does not already hold while leaving a workspace's
-// credentials permanently unconfigurable through this door. What the wire owes
-// is that the RESPONSE not hand the value back: wireSetting is the same
-// projection the read uses, so the answer to a write is byte-identical to the
-// read that follows it, and redaction stays one rule decided on the key alone.
-// The echo costs nothing either — the role promises the stored value equals the
-// value sent for every key it accepts.
+// Accepted values and historical reads share the same wire redaction.
 func (s *Server) handleSetSetting(w http.ResponseWriter, r *http.Request) {
 	if !s.requireNoQuery(w, r) {
 		return

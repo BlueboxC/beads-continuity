@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/steveyegge/beads/internal/config"
 	"github.com/steveyegge/beads/internal/storage/kvkeys"
 	"github.com/steveyegge/beads/internal/types"
 	"github.com/steveyegge/beads/issueops"
@@ -41,6 +42,9 @@ func ValidateSettingKey(key string) (string, error) {
 func ValidateSettingWrite(key, value string) (string, error) {
 	if _, err := ValidateSettingKey(key); err != nil {
 		return "", err
+	}
+	if config.IsYamlOnlyKey(key) {
+		return "", fmt.Errorf("%w: %q is local-only; use config.yaml or its environment variable, not the synced settings API", issueops.ErrValidation, key)
 	}
 	// The prefix is owned by bd init --prefix, bd bootstrap and bd
 	// rename-prefix. Refused HERE rather than at the front door because `bd

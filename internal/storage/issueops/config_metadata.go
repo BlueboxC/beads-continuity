@@ -5,11 +5,16 @@ import (
 	"database/sql"
 	"fmt"
 	"strings"
+
+	"github.com/steveyegge/beads/internal/config"
 )
 
 // SetConfigInTx sets a configuration value within an existing transaction.
 // Normalizes issue_prefix by stripping trailing hyphens.
 func SetConfigInTx(ctx context.Context, tx DBTX, key, value string) error {
+	if err := config.ValidateSyncedConfigKey(key); err != nil {
+		return err
+	}
 	if key == "issue_prefix" {
 		value = strings.TrimSuffix(value, "-")
 	}

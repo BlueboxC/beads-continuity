@@ -4,6 +4,8 @@ import (
 	"context"
 	"os"
 	"strings"
+
+	"github.com/steveyegge/beads/internal/config"
 )
 
 const configKeyToken = "notion.token"
@@ -25,15 +27,11 @@ type ConfigReader interface {
 	GetConfig(ctx context.Context, key string) (string, error)
 }
 
-// ResolveAuth resolves a configured Notion token before the environment fallback.
-func ResolveAuth(ctx context.Context, reader ConfigReader) (*ResolvedAuth, error) {
-	if reader != nil {
-		if token, err := reader.GetConfig(ctx, configKeyToken); err == nil && strings.TrimSpace(token) != "" {
-			return &ResolvedAuth{
-				Token:  strings.TrimSpace(token),
-				Source: AuthSourceConfigToken,
-			}, nil
-		}
+// ResolveAuth uses only local configuration and environment, never synced rows.
+// Keep the reader argument for callers compiled against the existing signature.
+func ResolveAuth(_ context.Context, _ ConfigReader) (*ResolvedAuth, error) {
+	if token := strings.TrimSpace(config.GetString(configKeyToken)); token != "" {
+		return &ResolvedAuth{Token: token, Source: AuthSourceConfigToken}, nil
 	}
 
 	if token := strings.TrimSpace(os.Getenv("NOTION_TOKEN")); token != "" {

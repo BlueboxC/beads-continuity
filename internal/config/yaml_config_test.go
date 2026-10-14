@@ -938,7 +938,7 @@ func TestCheckSecretKeyGitSafety_AllowsDatabaseBackedSecretKey(t *testing.T) {
 	}
 
 	// Secret-looking keys that are not YAML-backed do not write to config.yaml.
-	err := checkSecretGitTracked(configPath, "notion.token")
+	err := checkSecretGitTracked(configPath, "custom.token")
 	if err != nil {
 		t.Fatalf("expected no error for database-backed secret key, got: %v", err)
 	}

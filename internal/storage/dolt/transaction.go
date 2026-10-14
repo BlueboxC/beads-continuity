@@ -12,6 +12,7 @@ import (
 
 	"github.com/cenkalti/backoff/v4"
 
+	"github.com/steveyegge/beads/internal/config"
 	"github.com/steveyegge/beads/internal/storage"
 	"github.com/steveyegge/beads/internal/storage/domain"
 	"github.com/steveyegge/beads/internal/storage/issueops"
@@ -1182,6 +1183,9 @@ func (t *doltTransaction) RemoveLabel(ctx context.Context, issueID, label, actor
 
 // SetConfig sets a config value within the transaction
 func (t *doltTransaction) SetConfig(ctx context.Context, key, value string) error {
+	if err := config.ValidateSyncedConfigKey(key); err != nil {
+		return err
+	}
 	_, err := t.regularTx.ExecContext(ctx, `
 		INSERT INTO config (`+"`key`"+`, value) VALUES (?, ?)
 		ON DUPLICATE KEY UPDATE value = VALUES(value)

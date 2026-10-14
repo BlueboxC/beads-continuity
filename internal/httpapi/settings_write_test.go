@@ -146,7 +146,7 @@ func TestSetSettingAnswersWhatTheReadWouldAnswer(t *testing.T) {
 		value string
 	}{
 		{name: "an ordinary key", key: "status.custom", value: "awaiting_review:active"},
-		{name: "a credential-bearing key", key: "notion.token", value: "shhh-real-secret"},
+		{name: "a credential-bearing key", key: "custom.token", value: "shhh-real-secret"},
 		{name: "a key stored empty", key: "notes", value: ""},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
@@ -172,18 +172,10 @@ func TestSetSettingAnswersWhatTheReadWouldAnswer(t *testing.T) {
 	}
 }
 
-// TestSetSettingWithholdsACredentialItJustAccepted is the doctrine, asserted
-// directly rather than only through the equality above: the write is PERMITTED
-// and the value does not come back.
-//
-// PERMITTED because redaction is a rule about DISCLOSURE. The role refuses no
-// credential-bearing key — `bd config set`'s own secret guard is about writing
-// one into a git-tracked config.yaml, a different plane with a different hazard —
-// and a writer already holds the value, so refusing here would protect nothing
-// while leaving a workspace's credentials visible as PRESENT and permanently
-// unconfigurable through this door.
+// Custom credential-looking keys retain their wire redaction. Local-only
+// integration credentials are refused through the real role in a separate test.
 func TestSetSettingWithholdsACredentialItJustAccepted(t *testing.T) {
-	const key = "notion.token"
+	const key = "custom.token"
 	if !config.IsSecretKey(key) {
 		t.Fatalf("%q is no longer a credential-bearing key; this test proves nothing", key)
 	}

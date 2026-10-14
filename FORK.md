@@ -37,6 +37,7 @@ This is an intentional fork policy difference.
 
 | Area | Added behavior | Boundary |
 | --- | --- | --- |
+| [#7559](https://github.com/gastownhall/beads/issues/7559) | Settings API refuses local-only credentials before storage; native and UOW SQL config writers also reject reserved integration credential keys. Notion authentication uses local YAML/environment. | Fork correction; existing replicated secrets/history are not automatically migrated or scrubbed |
 | Documents and DOX | Selected document catalogs, source hashes and explicit objectives, constraints, decisions, modules and solutions | A scanned document is source material; scanning does not extract or certify a learning. |
 | Supervised learning | Source-backed pending proposals, explicit accept/reject reviews, immutable history and pinned activity origins | A supervising human or agent reviews evidence. Existing solutions and historical verification scopes are preserved. |
 | Code structure | Incremental structure in 23 languages/formats: Python/Go/JS/TS/Java/C#/Rust/C++, PHP/C, Bash/PowerShell, HTML/CSS, GraphQL/XML, Kotlin/Swift/Dart and SQL/JSON/YAML/TOML; named symbols, source locations, conservative references and reviewed learning links | Static references are not runtime proof. Markup/configuration retain names and hierarchy, not scalar values. Dynamic or ambiguous references remain unresolved. |

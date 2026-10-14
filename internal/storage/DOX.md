@@ -12,6 +12,8 @@ Storage interfaces, backend selection and persistence operations.
 
 Root DOX.md and the parent chain remain binding.
 
+- All three config SQL write paths reject locally reserved integration credentials before mutation. Preserve ordinary settings, bootstrap writes, KV/memory namespaces and deletion of historical rows. Raw SQL, replicated rows and retained history are administrative data and are not scrubbed by these write guards.
+
 - Context-aware proxy discovery retains authenticated adoption, upstream matching and owned-child cleanup. Cancellation stops polling/readiness and does not signal an adopted process; existing identity probes retain their 500 ms bound. The legacy API remains a background-context wrapper.
 
 - Empty-parent updates on dotted IDs fail before any patch mutation; legacy implicit ancestry remains supported. Nonempty reparenting and detachment of nondotted IDs retain their contracts. Do not silently remove the explicit edge and claim detachment.

@@ -104,11 +104,28 @@ var YamlOnlyKeys = map[string]bool{
 	"jira.api_token":             true,
 	"gitlab.token":               true,
 	"ado.pat":                    true,
+	"notion.token":               true,
+}
+
+// IsLocalCredentialKey identifies integration credentials reserved for local
+// configuration. Ordinary settings and user KV keys keep their existing rules.
+func IsLocalCredentialKey(key string) bool {
+	key = strings.ToLower(strings.TrimSpace(key))
+	return IsYamlOnlyKey(key) && (IsSecretKey(key) || key == "linear.oauth_client_id")
+}
+
+// ValidateSyncedConfigKey refuses credentials before a config-table mutation.
+func ValidateSyncedConfigKey(key string) error {
+	if IsLocalCredentialKey(key) {
+		return fmt.Errorf("%q must be set locally in config.yaml or its environment variable, not the synced database", key)
+	}
+	return nil
 }
 
 // IsYamlOnlyKey returns true if the given key should be stored in config.yaml
 // rather than the Dolt database.
 func IsYamlOnlyKey(key string) bool {
+	key = strings.ToLower(strings.TrimSpace(key))
 	// Check exact match
 	if YamlOnlyKeys[key] {
 		return true

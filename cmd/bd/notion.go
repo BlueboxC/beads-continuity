@@ -186,20 +186,7 @@ func getNotionConfigValue(ctx context.Context, reader notion.ConfigReader, key, 
 }
 
 func resolveNotionAuth(ctx context.Context) (*notion.ResolvedAuth, error) {
-	if store != nil {
-		return notion.ResolveAuth(ctx, store)
-	}
-	if dbPath != "" {
-		tempStore, err := openReadOnlyStoreForDBPath(ctx, dbPath)
-		if err == nil {
-			defer func() { _ = tempStore.Close() }()
-			return notion.ResolveAuth(ctx, tempStore)
-		}
-	}
-	if token := strings.TrimSpace(os.Getenv("NOTION_TOKEN")); token != "" {
-		return &notion.ResolvedAuth{Token: token, Source: notion.AuthSourceEnv}, nil
-	}
-	return nil, nil
+	return notion.ResolveAuth(ctx, nil)
 }
 
 func validateNotionConfig(cfg notionConfig, auth *notion.ResolvedAuth) error {

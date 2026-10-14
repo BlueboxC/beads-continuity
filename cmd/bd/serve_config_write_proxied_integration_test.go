@@ -27,8 +27,8 @@ import (
 //   - the ROLE's refusals are real refusals against a real workspace: writing
 //     `issue_prefix` is a 400 and the prefix is unchanged, and an unparseable
 //     `status.custom` writes NOTHING — not the row and not the table;
-//   - a CREDENTIAL-BEARING key is WRITABLE and its value never comes back, on
-//     either the write or the read that follows it;
+//   - local integration credentials are refused before persistence; custom
+//     credential-looking settings and historical reads retain redaction;
 //   - the removal is idempotent against the table, not merely against the
 //     handler.
 
@@ -178,13 +178,41 @@ func TestProxiedServerServeSettingsWrites(t *testing.T) {
 		}
 	})
 
-	// THE DOCTRINE, against a real workspace: a credential-bearing key is
-	// WRITABLE, and neither the write nor the read hands the value back. Refusing
-	// the write would protect nothing a writer does not already hold; withholding
-	// it from every reader is what redaction actually is.
-	t.Run("a credential key is writable and is never handed back", func(t *testing.T) {
+	t.Run("local credentials are refused without rows or history", func(t *testing.T) {
+		before := bdProxiedSQLJSON(t, bd, p.dir, "SELECT DOLT_HASHOF('HEAD') AS head")[0]["head"]
+		for _, key := range []string{"github.token", "linear.api_key", "jira.api_token", "gitlab.token", "ado.pat", "notion.token", "github%2Etoken", "AI.api_key"} {
+			status, body := sp.putJSON(t, "/v0/beads/config/"+key, `{"value":"synthetic-only"}`)
+			if status != http.StatusBadRequest {
+				t.Fatalf("%s: status=%d: %v", key, status, body)
+			}
+		}
+		rows := bdProxiedSQLJSON(t, bd, p.dir, "SELECT `key` FROM config WHERE `key` IN ('github.token','linear.api_key','jira.api_token','gitlab.token','ado.pat','notion.token','AI.api_key')")
+		if len(rows) != 0 {
+			t.Fatalf("refused credentials persisted: %v", rows)
+		}
+		after := bdProxiedSQLJSON(t, bd, p.dir, "SELECT DOLT_HASHOF('HEAD') AS head")[0]["head"]
+		if before != after {
+			t.Fatal("refused writes changed history")
+		}
+	})
+	t.Run("historical credential reads are redacted and deletion remains available", func(t *testing.T) {
+		bdProxiedSQL(t, bd, p.dir, "INSERT INTO config (`key`, value) VALUES ('notion.token', 'synthetic-legacy')")
+		status, body, _ := sp.get(t, "/v0/beads/config/notion.token")
+		if status != http.StatusOK || body["redacted"] != true || body["value"] != nil {
+			t.Fatalf("historical read: %d %v", status, body)
+		}
+		status, body = sp.deleteAt(t, "/v0/beads/config/notion.token")
+		if status != http.StatusOK {
+			t.Fatalf("historical cleanup: %d %v", status, body)
+		}
+		if rows := bdProxiedSQLJSON(t, bd, p.dir, "SELECT `key` FROM config WHERE `key`='notion.token'"); len(rows) != 0 {
+			t.Fatalf("historical row was not deleted: %v", rows)
+		}
+	})
+
+	t.Run("a custom credential-looking key retains redaction", func(t *testing.T) {
 		const secret = "not-a-real-token-9f13"
-		status, body := sp.putJSON(t, "/v0/beads/config/notion.token", `{"value":"`+secret+`"}`)
+		status, body := sp.putJSON(t, "/v0/beads/config/custom.token", `{"value":"`+secret+`"}`)
 		if status != http.StatusOK {
 			t.Fatalf("status = %d, want 200 — a credential-bearing key is writable: %v", status, body)
 		}
@@ -197,7 +225,7 @@ func TestProxiedServerServeSettingsWrites(t *testing.T) {
 
 		// The read agrees, and the enumeration agrees: one rule, decided on the
 		// key, for every operation that could carry the value.
-		readStatus, read, _ := sp.get(t, "/v0/beads/config/notion.token")
+		readStatus, read, _ := sp.get(t, "/v0/beads/config/custom.token")
 		if readStatus != http.StatusOK {
 			t.Fatalf("read back: status = %d", readStatus)
 		}
@@ -216,7 +244,7 @@ func TestProxiedServerServeSettingsWrites(t *testing.T) {
 
 		// And the CLI, which holds the database, prints it: the withholding is
 		// this SURFACE's and not a claim that the value was not stored.
-		out, err := bdProxiedRun(t, bd, p.dir, "config", "get", "notion.token")
+		out, err := bdProxiedRun(t, bd, p.dir, "config", "get", "custom.token")
 		if err != nil {
 			t.Fatalf("bd config get: %v\n%s", err, out)
 		}

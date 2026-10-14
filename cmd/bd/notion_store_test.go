@@ -16,9 +16,6 @@ func TestGetNotionConfigReadsDBPathWhenStoreUnset(t *testing.T) {
 	defer testStore.Close()
 
 	ctx := context.Background()
-	if err := testStore.SetConfig(ctx, "notion.token", "path-token"); err != nil {
-		t.Fatalf("SetConfig(notion.token): %v", err)
-	}
 	if err := testStore.SetConfig(ctx, "notion.data_source_id", "path-ds"); err != nil {
 		t.Fatalf("SetConfig(notion.data_source_id): %v", err)
 	}

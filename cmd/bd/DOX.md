@@ -98,6 +98,8 @@ Root DOX.md and the parent chain remain binding.
 
 Keep existing CLI primitives and machine-readable output stable. Follow AGENTS.md and ../../engdocs/TESTING.md.
 
+Integration credentials, including notion.token, route only to local YAML/environment in single and batch configuration. Notion authentication uses that source even without an open database; its data-source/view metadata remains database-backed.
+
 Memory diagnostics expose literal key-prefix inclusion/exclusion without changing default enumeration. Knowledge reads exclude derived code namespaces; symbol-link validation reads only selected indexed files and applicable provenance, retaining the proposal/review guards.
 
 ## Verification
