@@ -29,6 +29,8 @@ Root DOX.md and the parent chain remain binding.
 
 - `metrics` owns inert compatibility hooks without collection, transport, queue, machine identifier or process launch. All Dolt version callers reuse the private-cwd/config probe, disabling metrics/update checks without changing operator settings.
 
+- Query lexing decodes UTF-8 while retaining byte offsets and whole-rune backup. Quoted strings preserve consumed bytes, including invalid UTF-8 and unknown escaped bytes; invalid bytes outside quotes are rejected. Numeric, duration and identifier grammar remain unchanged.
+
 ## Work Guidance
 
 Tracker adapters share configuration resolution: YAML-only secrets never query Dolt, while ordinary values keep storage-first/environment fallback including store errors.
