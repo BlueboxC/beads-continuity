@@ -43,6 +43,11 @@ that has been GC'd before (bd gc, or a previous flatten or compact), only a
 full collection reclaims the squashed history. A full GC can take minutes on
 multi-gigabyte stores.
 
+History compaction requires exclusive embedded access and a clean tracked
+working set. A stale plan is refused without resetting main. Server/proxy
+history rewrites are unavailable because the engine cannot compare-and-reset
+atomically; --dry-run remains available. Semantic issue compaction is separate.
+
 Examples:
   bd compact --dry-run               # Preview: show commit breakdown
   bd compact --force                 # Squash commits older than 30 days

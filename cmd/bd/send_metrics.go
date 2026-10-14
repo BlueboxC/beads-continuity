@@ -1,27 +1,17 @@
 package main
 
 import (
-	"os"
-
 	"github.com/spf13/cobra"
 	"github.com/steveyegge/beads/internal/metrics"
 )
 
+// Retain the old internal command as a no-op for queued upstream invocations.
 var sendMetricsCmd = &cobra.Command{
 	Use:    metrics.SendMetricsSubcommand,
-	Short:  "Internal: flush queued telemetry events (spawned by bd)",
+	Short:  "Internal compatibility no-op; usage metrics are removed",
 	Hidden: true,
 	Args:   cobra.NoArgs,
-	Run: func(cmd *cobra.Command, args []string) {
-		// os.Exit here is intentional: the flusher child must not fall through to
-		// main()'s post-command metrics.MaybeSpawnFlusher tail and spawn another
-		// send-metrics. MaybeSpawnFlusher also refuses to spawn when EnvIsFlusher
-		// is set on this process, so the no-recursion guarantee is structural and
-		// not solely dependent on this exit.
-		os.Exit(metrics.RunSendMetrics())
-	},
+	Run:    func(cmd *cobra.Command, args []string) {},
 }
 
-func init() {
-	rootCmd.AddCommand(sendMetricsCmd)
-}
+func init() { rootCmd.AddCommand(sendMetricsCmd) }

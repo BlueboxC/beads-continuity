@@ -82,7 +82,10 @@ func TestProxyMaintenanceAllowsTheSharedConsentVerb(t *testing.T) {
 }
 
 func TestProxyCapabilityMatrix(t *testing.T) {
-	for _, cap := range []ProxyCapability{ProxyCapReadonly, ProxyCapMaxRows} {
+	if err := AssertProxyCapability(ProxyModeProxied, ProxyCapReadonly); err != nil {
+		t.Fatal(err)
+	}
+	for _, cap := range []ProxyCapability{ProxyCapMaxRows} {
 		err := AssertProxyCapability(ProxyModeProxied, cap)
 		if err == nil {
 			t.Errorf("%s unexpectedly honored", cap)
@@ -165,8 +168,8 @@ func TestProxyMaintenanceNestedPathsRefuseBeforeProvider(t *testing.T) {
 	}
 }
 
-func TestProxyFormulaSwarmMergeSlotRefusals(t *testing.T) {
-	for _, path := range []string{"cook", "ship", "swarm create", "swarm list", "merge-slot create", "merge-slot check", "merge-slot acquire", "merge-slot release"} {
+func TestProxyFormulaSwarmRefusals(t *testing.T) {
+	for _, path := range []string{"cook", "ship", "swarm create", "swarm list"} {
 		parts := strings.Split(path, " ")
 		root := &cobra.Command{Use: "bd"}
 		cmd := &cobra.Command{Use: parts[0]}
@@ -193,7 +196,6 @@ func TestProxyWorkflowRefusalContractAndNoMutation(t *testing.T) {
 		{"cook", "proxy.formula.unsupported", "cook is not supported in proxied-server mode"},
 		{"ship", "proxy.formula.unsupported", "ship is not supported in proxied-server mode"},
 		{"swarm create", "proxy.swarm.unsupported", "swarm create is not supported in proxied-server mode"},
-		{"merge-slot acquire", "proxy.merge_slot.unsupported", "merge-slot acquire is not supported in proxied-server mode"},
 	}
 	for _, tc := range cases {
 		t.Run(tc.path, func(t *testing.T) {

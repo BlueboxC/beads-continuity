@@ -9,6 +9,7 @@ import (
 
 	"github.com/spf13/cobra"
 	"github.com/steveyegge/beads/internal/metrics"
+	"github.com/steveyegge/beads/internal/storage/doltutil"
 	"github.com/steveyegge/beads/internal/ui"
 	"github.com/steveyegge/beads/issueops"
 )
@@ -210,7 +211,7 @@ func runPurgeOrPrune(cmd *cobra.Command, scope purgeScope) error {
 	case dryRun:
 		return emitSweepDryRun(scope, limit, result)
 	case !force:
-		return emitSweepConfirm(scope, olderThan, pattern, result)
+		return emitSweepConfirm(scope, olderThan, pattern, limit, result)
 	}
 
 	commandDidWrite.Store(true)
@@ -354,7 +355,7 @@ func emitSweepDryRun(scope purgeScope, limit int, result issueops.SweepResult) e
 	return nil
 }
 
-func emitSweepConfirm(scope purgeScope, olderThan, pattern string, result issueops.SweepResult) error {
+func emitSweepConfirm(scope purgeScope, olderThan, pattern string, limit int, result issueops.SweepResult) error {
 	fmt.Printf("Found %d %s(s) to %s\n", result.Swept, scope.subjectNoun, scope.cmdName)
 	if result.Skipped.Pinned > 0 {
 		fmt.Printf("Skipping %d pinned bead(s)\n", result.Skipped.Pinned)
@@ -365,19 +366,30 @@ func emitSweepConfirm(scope purgeScope, olderThan, pattern string, result issueo
 	if result.Skipped.Referenced > 0 {
 		fmt.Println(ui.MutedStyle.Render(fmt.Sprintf("Skipping %d referenced bead(s)", result.Skipped.Referenced)))
 	}
+	return HandleErrorWithHint(
+		fmt.Sprintf("would %s %d bead(s)", scope.cmdName, result.Swept),
+		fmt.Sprintf("Use --force to confirm or --dry-run to preview.\n  %s", sweepConfirmHint(scope, olderThan, pattern, limit)))
+}
+
+// sweepConfirmHint preserves the preview's selection when adding --force.
+func sweepConfirmHint(scope purgeScope, olderThan, pattern string, limit int) string {
 	hint := fmt.Sprintf("bd %s --force", scope.cmdName)
 	if scope.tier == issueops.SweepWispsPlane {
 		hint += " --wisps-plane"
 	}
 	if olderThan != "" {
-		hint += " --older-than " + olderThan
+		hint += " --older-than " + doltutil.ShellQuote(olderThan)
 	}
 	if pattern != "" {
-		hint += " --pattern " + pattern
+		hint += " --pattern " + doltutil.ShellQuote(pattern)
 	}
-	return HandleErrorWithHint(
-		fmt.Sprintf("would %s %d bead(s)", scope.cmdName, result.Swept),
-		fmt.Sprintf("Use --force to confirm or --dry-run to preview.\n  %s", hint))
+	if limit > 0 {
+		hint += fmt.Sprintf(" --limit %d", limit)
+	}
+	if scope.reportsReferences && !scope.protectReferenced {
+		hint += " --ignore-references"
+	}
+	return hint
 }
 
 func emitSweepResult(scope purgeScope, limit int, result issueops.SweepResult) error {
@@ -472,6 +484,9 @@ const maxOlderThanDays = math.MaxInt64 / int64(24*time.Hour)
 var errOlderThanRange = fmt.Errorf("duration out of range (at most %d days)", maxOlderThanDays)
 
 func daysAge(days int64) (time.Duration, error) {
+	if days <= 0 {
+		return 0, fmt.Errorf("duration must be positive")
+	}
 	if days > maxOlderThanDays {
 		return 0, errOlderThanRange
 	}

@@ -113,6 +113,7 @@ var scannedPackages = map[string]string{
 // The staleness check below fails if an exemption stops matching a real
 // construction site, so an exemption cannot rot into a permanent excuse.
 var constructionExemptions = map[string]string{
+	"graph_conversion_prune_cgo.go:graphConversionPruneCandidate": "isolated restored candidate applies only guarded obsolete-code config deletion; exact surviving config, Issue fields and every other table are verified against the source",
 	// Non-mutating opens. Every arm returns a store that refuses writes
 	// (OpenReadOnly / OpenForPreviewCommand / a ReadOnly server config), so
 	// there is no mutation for a journal row to accompany.

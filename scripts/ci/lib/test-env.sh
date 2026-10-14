@@ -41,6 +41,9 @@ beads_test_env_enter() {
     export USERPROFILE="$root/home"
     export XDG_CONFIG_HOME="$root/xdg-config"
     export DOLT_ROOT_PATH="$root/dolt-root"
+    export DOLT_DISABLE_EVENT_FLUSH=1
+    mkdir -p "$DOLT_ROOT_PATH/.dolt"
+    printf '%s\n' '{"metrics.disabled":"true","versioncheck.disabled":"true"}' >"$DOLT_ROOT_PATH/.dolt/config_global.json"
     export GIT_CONFIG_NOSYSTEM=1
     export GIT_CONFIG_GLOBAL="$root/gitconfig"
     export BEADS_TEST_IGNORE_REPO_CONFIG=1

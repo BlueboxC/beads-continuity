@@ -456,12 +456,16 @@ func parseMarkdownDependencies(deps []string, templateTitle string) ([]issueops.
 
 		var depType types.DependencyType
 		var target string
+		var reverse bool
 		if strings.Contains(raw, ":") {
 			parts := strings.SplitN(raw, ":", 2)
 			if len(parts) != 2 {
 				return nil, fmt.Errorf("invalid dependency format %q for issue %q", raw, templateTitle)
 			}
 			depType = types.DependencyType(strings.TrimSpace(parts[0]))
+			// Only explicit "blocks:" reverses the edge; aliases keep direction.
+			reverse = depType == types.DepBlocks
+			depType = canonicalDependencyType(depType)
 			target = strings.TrimSpace(parts[1])
 		} else {
 			depType = types.DepBlocks
@@ -470,7 +474,7 @@ func parseMarkdownDependencies(deps []string, templateTitle string) ([]issueops.
 		if !depType.IsValid() {
 			return nil, fmt.Errorf("invalid dependency type %q for issue %q", depType, templateTitle)
 		}
-		out = append(out, issueops.CreateDependency{Type: depType, TargetID: target})
+		out = append(out, issueops.CreateDependency{Type: depType, TargetID: target, Reverse: reverse})
 	}
 	return out, nil
 }
@@ -483,7 +487,7 @@ func reportMarkdownBatch(issues []*types.Issue, in createInput) error {
 	}
 	fmt.Printf("%s Created %d issues from %s:\n", ui.RenderPass("✓"), len(issues), in.markdownFile)
 	for _, issue := range issues {
-		fmt.Printf("  %s: %s [P%d, %s]\n", issue.ID, issue.Title, issue.Priority, issue.IssueType)
+		fmt.Printf("  %s: %s [P%d, %s]\n", issue.ID, ui.SanitizeForTerminal(issue.Title), issue.Priority, issue.IssueType)
 	}
 	return nil
 }

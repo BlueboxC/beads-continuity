@@ -49,6 +49,26 @@ Package gate wrappers validate publishable/package-adjacent surfaces:
 Set `BEADS_TEST_BD_BINARY=/path/to/bd` for MCP and npm package gates to reuse a
 prebuilt candidate binary instead of rebuilding it inside the wrapper.
 
+## update-nix-vendorhash.sh
+
+From the repository root, run one updater per checkout:
+
+```bash
+./scripts/update-nix-vendorhash.sh
+```
+
+It uses local Nix, or Docker with the existing Nix image fallback. The hash
+probe retains Nix's exit status; missing hash output cannot turn a failed
+build into success. Every successful path builds the restored or updated real
+`default.nix`, and the Dependabot workflow independently builds it before
+reporting a match or pushing.
+
+Until verification succeeds, the updater retains the original bytes and mode.
+Handled errors restore them, leave an existing `default.nix.backup` untouched,
+and retain diagnostics in a unique `beads-nix-vendorhash.*` directory under
+`${TMPDIR:-/tmp}`. Success removes that directory. Force-kill can bypass cleanup;
+inspect the retained original and current file before manual recovery.
+
 ## pr-preflight.sh
 
 Read-only PR safety check for agents and maintainers.

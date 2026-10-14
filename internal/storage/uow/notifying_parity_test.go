@@ -328,11 +328,14 @@ func TestNotifyingProviderBuildsRolesOnItself(t *testing.T) {
 // passed a use case. A caller that reaches the transaction directly — by
 // peeling the decorator with unwrapUOW, or by asserting the concrete unit of
 // work — writes rows no hook is fired for, and nothing about that is visible in
-// a method set. Today there is exactly one such caller, and it is deliberate;
-// the guard is here so that the SECOND one is a decision rather than an
-// accident.
+// a method set. Each deliberate bypass must explain why it fires no hook;
+// the guard keeps new bypasses an explicit decision.
 func TestUnitOfWorkBypassesAreAccountedFor(t *testing.T) {
 	bypasses := map[string]string{
+		"NewReadOnlyProxyUOWProvider": "startup verifies selected database, current schema and project identity " +
+			"on its pinned readonly connection before returning a provider. It writes no bead; " +
+			"the strict driver guard rejects write SQL and its transaction cannot commit, " +
+			"so there is no mutation notification to record.",
 		"importStatementRunner": "the import role runs the shared batch-upsert engine on the " +
 			"transaction's statement runner (importer.go), so its writes never pass a use case. " +
 			"Import fires no hooks on the DoltStorage plumbing either — it runs the same engine " +

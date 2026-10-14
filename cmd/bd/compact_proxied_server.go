@@ -22,7 +22,6 @@ func runCompactProxiedServer(ctx context.Context) error {
 	if !compactDoltDryRun {
 		CheckReadonly("compact")
 	}
-	start := time.Now()
 
 	if compactDoltDays < 0 {
 		return HandleError("--days must be non-negative")
@@ -126,61 +125,6 @@ func runCompactProxiedServer(ctx context.Context) error {
 			"Use --force to confirm or --dry-run to preview.")
 	}
 
-	if !jsonOutput {
-		fmt.Printf("Compacting: %d old commits → 1, preserving %d recent\n",
-			oldCommits, recentCommits)
-	}
-
-	var pruned, tags []string
-	if err := runProxiedNonTx(ctx, func(ctx context.Context, conn *sql.Conn) error {
-		if err := versioncontrolops.Compact(ctx, conn, initialHash, boundaryHash, oldCommits, recentHashes); err != nil {
-			return err
-		}
-		var perr error
-		if pruned, perr = versioncontrolops.PruneRemoteRefs(ctx, conn); perr != nil {
-			WarnError("pruning remote-tracking refs before GC: %v (GC may reclaim little)", perr)
-		}
-		if tags, perr = versioncontrolops.ListTags(ctx, conn); perr != nil {
-			WarnError("listing tags before GC: %v", perr)
-		}
-		// Full pass: the squash orphans a commit chain that any earlier GC
-		// already promoted to the old generation, which a default pass never
-		// revisits.
-		if !jsonOutput {
-			fmt.Println("  Running full Dolt GC (all generations; can take minutes on large stores)...")
-		}
-		if perr := versioncontrolops.DoltGCFull(ctx, conn); perr != nil {
-			WarnError("dolt gc after compact failed: %v", perr)
-		}
-		return nil
-	}); err != nil {
-		return HandleError("compact failed: %v", err)
-	}
-
-	elapsed := time.Since(start)
-	resultCommits := recentCommits + 1
-
-	if !jsonOutput {
-		printPruneReport(pruned, tags)
-	}
-
-	if jsonOutput {
-		return outputJSON(map[string]interface{}{
-			"success":            true,
-			"commits_before":     totalCommits,
-			"commits_after":      resultCommits,
-			"old_squashed":       oldCommits,
-			"recent_kept":        recentCommits,
-			"remote_refs_pruned": pruned,
-			"tags_anchoring":     tags,
-			"gc_mode":            gcModeFull,
-			"elapsed_ms":         elapsed.Milliseconds(),
-		})
-	}
-
-	fmt.Printf("✓ Compacted %d commits → %d\n", totalCommits, resultCommits)
-	fmt.Printf("  Squashed: %d old commits → 1 base\n", oldCommits)
-	fmt.Printf("  Preserved: %d recent commits\n", recentCommits)
-	fmt.Printf("  Time: %v\n", elapsed.Round(time.Millisecond))
-	return nil
+	return HandleErrorWithHint(versioncontrolops.ErrOnlineCompaction.Error(),
+		"Keep --dry-run for previews. Back up and stop all writers before using a local embedded workspace for history compaction.")
 }

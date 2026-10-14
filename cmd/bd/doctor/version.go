@@ -1,77 +1,21 @@
 package doctor
 
 import (
-	"encoding/json"
 	"fmt"
-	"io"
-	"net/http"
 	"os"
 	"path/filepath"
 	"strings"
-	"time"
 )
 
-var latestGitHubReleaseFetcher = fetchLatestGitHubRelease
-
-// CheckCLIVersion checks if the CLI version is up to date.
-// Takes cliVersion parameter since it can't access the Version variable from main package.
+// CheckCLIVersion reports the installed CLI version without a network request.
 func CheckCLIVersion(cliVersion string) DoctorCheck {
-	// A Homebrew --HEAD build carries no orderable version — CompareVersions
-	// would read it as 0.0.0 and warn "update available" forever, and the
-	// suggested upgrade would actually move the user off HEAD.
-	if IsBrewHeadVersion(cliVersion) {
-		return DoctorCheck{
-			Name:    "CLI Version",
-			Status:  StatusOK,
-			Message: fmt.Sprintf("%s (Homebrew --HEAD build; release comparison skipped)", cliVersion),
-		}
-	}
-
-	latestVersion, err := latestGitHubReleaseFetcher()
-	if err != nil {
-		// Network error or API issue - don't fail, just warn
-		return DoctorCheck{
-			Name:    "CLI Version",
-			Status:  StatusOK,
-			Message: fmt.Sprintf("%s (unable to check for updates)", cliVersion),
-		}
-	}
-
-	if latestVersion == "" || latestVersion == cliVersion {
-		return DoctorCheck{
-			Name:    "CLI Version",
-			Status:  StatusOK,
-			Message: fmt.Sprintf("%s (latest)", cliVersion),
-		}
-	}
-
-	// Compare versions using simple semver-aware comparison
-	if CompareVersions(latestVersion, cliVersion) > 0 {
-		upgradeCmd := getUpgradeCommand()
-		return DoctorCheck{
-			Name:    "CLI Version",
-			Status:  StatusWarning,
-			Message: fmt.Sprintf("%s (latest: %s; update: %s)", cliVersion, latestVersion, upgradeCmd),
-			Fix:     fmt.Sprintf("Upgrade: %s", upgradeCmd),
-		}
-	}
-
-	return DoctorCheck{
-		Name:    "CLI Version",
-		Status:  StatusOK,
-		Message: fmt.Sprintf("%s (latest)", cliVersion),
-	}
+	return CheckCLIVersionLocalOnly(cliVersion)
 }
 
-// CheckCLIVersionLocalOnly reports the local CLI version without making
-// network calls. This is intended for machine-readable or other
-// non-interactive contexts where deterministic exit behavior matters more than
-// update discovery.
 func CheckCLIVersionLocalOnly(cliVersion string) DoctorCheck {
 	return DoctorCheck{
-		Name:    "CLI Version",
-		Status:  StatusOK,
-		Message: fmt.Sprintf("%s (update check skipped in non-interactive mode)", cliVersion),
+		Name: "CLI Version", Status: StatusOK,
+		Message: fmt.Sprintf("%s (automatic update checks removed in Beads Continuity)", cliVersion),
 	}
 }
 
@@ -225,54 +169,7 @@ func CheckMetadataVersionTracking(path string, currentVersion string) DoctorChec
 	}
 }
 
-// fetchLatestGitHubRelease fetches the latest release version from GitHub API.
-func fetchLatestGitHubRelease() (string, error) {
-	url := "https://api.github.com/repos/steveyegge/beads/releases/latest"
-
-	client := &http.Client{
-		Timeout: 5 * time.Second,
-	}
-
-	req, err := http.NewRequest("GET", url, nil)
-	if err != nil {
-		return "", err
-	}
-
-	// Set User-Agent as required by GitHub API
-	req.Header.Set("User-Agent", "beads-cli-doctor")
-
-	resp, err := client.Do(req)
-	if err != nil {
-		return "", err
-	}
-	defer func() { _ = resp.Body.Close() }()
-
-	if resp.StatusCode != http.StatusOK {
-		return "", fmt.Errorf("github api returned status %d", resp.StatusCode)
-	}
-
-	body, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return "", err
-	}
-
-	var release struct {
-		TagName string `json:"tag_name"`
-	}
-
-	if err := json.Unmarshal(body, &release); err != nil {
-		return "", err
-	}
-
-	// Strip 'v' prefix if present
-	version := strings.TrimPrefix(release.TagName, "v")
-
-	return version, nil
-}
-
-// CompareVersions compares two semantic version strings.
-// Returns: -1 if v1 < v2, 0 if v1 == v2, 1 if v1 > v2
-// Handles versions like "0.20.1", "1.2.3", etc.
+// CompareVersions returns -1, 0 or 1 for semantic version ordering.
 func CompareVersions(v1, v2 string) int {
 	// Split versions into parts
 	parts1 := strings.Split(v1, ".")

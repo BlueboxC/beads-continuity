@@ -1,7 +1,6 @@
 package doctor
 
 import (
-	"errors"
 	"os"
 	"path/filepath"
 	"strings"
@@ -133,57 +132,17 @@ func TestCheckCLIVersionLocalOnly(t *testing.T) {
 	if check.Status != StatusOK {
 		t.Fatalf("Status = %q, want %q", check.Status, StatusOK)
 	}
-	if !strings.Contains(check.Message, "skipped in non-interactive mode") {
+	if !strings.Contains(check.Message, "automatic update checks removed") {
 		t.Fatalf("Message = %q, want skip notice", check.Message)
 	}
 }
 
-func TestCheckCLIVersionUsesFetcher(t *testing.T) {
-	orig := latestGitHubReleaseFetcher
-	latestGitHubReleaseFetcher = func() (string, error) {
-		return "", errors.New("boom")
-	}
-	t.Cleanup(func() { latestGitHubReleaseFetcher = orig })
-
-	check := CheckCLIVersion("1.0.0")
-	if check.Status != StatusOK {
-		t.Fatalf("Status = %q, want %q", check.Status, StatusOK)
-	}
-	if !strings.Contains(check.Message, "unable to check for updates") {
-		t.Fatalf("Message = %q, want network fallback notice", check.Message)
-	}
-}
-
-// TestCheckCLIVersionBrewHeadBuild verifies that a --HEAD build is not told to
-// run `brew upgrade beads`. CompareVersions reads the stamp as 0.0.0, so every
-// release looks newer forever, and taking the advice would move the user off
-// HEAD entirely.
-func TestCheckCLIVersionBrewHeadBuild(t *testing.T) {
-	orig := latestGitHubReleaseFetcher
-	fetched := false
-	latestGitHubReleaseFetcher = func() (string, error) {
-		fetched = true
-		return "1.3.0", nil
-	}
-	t.Cleanup(func() { latestGitHubReleaseFetcher = orig })
-
-	for _, stamp := range []string{"HEAD-f925f3f", "HEAD", "HEAD-f925f3f_1"} {
-		t.Run(stamp, func(t *testing.T) {
-			check := CheckCLIVersion(stamp)
-			if check.Status != StatusOK {
-				t.Fatalf("Status = %q, want %q (message: %q)", check.Status, StatusOK, check.Message)
-			}
-			if check.Fix != "" {
-				t.Fatalf("Fix = %q, want no upgrade advice for a --HEAD build", check.Fix)
-			}
-			if !strings.Contains(check.Message, stamp) {
-				t.Fatalf("Message = %q, want it to name the stamp", check.Message)
-			}
-		})
-	}
-
-	if fetched {
-		t.Error("CheckCLIVersion fetched the latest release for a --HEAD build; there is nothing to compare against")
+func TestCheckCLIVersionAlwaysLocal(t *testing.T) {
+	for _, version := range []string{"1.0.0", "HEAD", "HEAD-f925f3f"} {
+		check := CheckCLIVersion(version)
+		if check.Status != StatusOK || check.Fix != "" || !strings.Contains(check.Message, version) || !strings.Contains(check.Message, "automatic update checks removed") {
+			t.Fatalf("unexpected check: %#v", check)
+		}
 	}
 }
 

@@ -97,6 +97,8 @@ var ErrBusy = errors.New("workspace gate busy")
 // Options tunes acquisition. The zero value means a single non-blocking
 // attempt with no diagnostics callback.
 type Options struct {
+	// ExistingOnly takes a shared lock on an existing file without creating or opening it for writing.
+	ExistingOnly bool
 	// Wait bounds how long Acquire keeps retrying after the first busy
 	// attempt. Zero or negative means exactly one non-blocking try.
 	// The underlying blocking lock primitives have no deadline support,
@@ -387,7 +389,14 @@ func (g Gate) Acquire(ctx context.Context, mode Mode, opts Options) (*Handle, er
 	}
 	deadline := time.Now().Add(opts.Wait)
 
-	f, err := os.OpenFile(g.path, os.O_CREATE|os.O_RDWR, 0o600)
+	flags := os.O_CREATE | os.O_RDWR
+	if opts.ExistingOnly {
+		if mode != Shared {
+			return nil, errors.New("workspacegate: existing-only acquisition must be shared")
+		}
+		flags = os.O_RDONLY
+	}
+	f, err := os.OpenFile(g.path, flags, 0o600)
 	if err != nil {
 		return nil, fmt.Errorf("workspacegate: open gate %s: %w", g.path, err)
 	}

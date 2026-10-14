@@ -61,6 +61,8 @@ func runFmtCheck(t *testing.T, gofmtBody string) (string, error) {
 		t.Fatal(err)
 	}
 	writeShellExecutable(t, bash, filepath.Join(shimDir, "gofmt"), "#!/usr/bin/env bash\nset -euo pipefail\n"+gofmtBody)
+	fixture := formatterFixture(t)
+	writeFormatterFile(t, fixture, "source.go", "package fixture\n")
 
 	path := shimDir + string(os.PathListSeparator) + os.Getenv("PATH")
 	if runtime.GOOS == "windows" {
@@ -71,9 +73,9 @@ func runFmtCheck(t *testing.T, gofmtBody string) (string, error) {
 		"--noprofile",
 		"--norc",
 		"--",
-		shellVisiblePath(filepath.Join(sourceRepoRoot(), "scripts", "ci", "fmt-check.sh")),
+		shellVisiblePath(filepath.Join(fixture, "scripts", "ci", "fmt-check.sh")),
 	)
-	cmd.Dir = sourceRepoRoot()
+	cmd.Dir = fixture
 	cmd.Env = environment(map[string]string{
 		"BASH_ENV":  "",
 		"BASHOPTS":  "",

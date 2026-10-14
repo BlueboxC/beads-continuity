@@ -9,6 +9,7 @@ import (
 	"sort"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/steveyegge/beads/internal/types"
 )
@@ -1004,6 +1005,39 @@ func TestGraphApplyNodeCoversCreateIssueParams(t *testing.T) {
 		}
 		if _, ok := nodeType.FieldByName(name); !ok {
 			t.Errorf("createIssueParams field %q is not addressable from graph plans; add it to GraphApplyNode (or the exclusion list with a reason)", name)
+		}
+	}
+}
+
+// TestGraphApplyNodeIssueStampsCreatedAtWithStatusTimestamps pins GH#7519: a
+// node born closed or in_progress carries a created_at no later than its
+// closed_at/started_at, instead of leaving created_at for the insert to stamp
+// after the status timestamp was already taken.
+func TestGraphApplyNodeIssueStampsCreatedAtWithStatusTimestamps(t *testing.T) {
+	for _, status := range []string{"closed", "in_progress", "open"} {
+		issue, err := graphApplyNodeIssue(GraphApplyNode{Key: "n", Title: "n", Status: status}, GraphApplyOptions{}, "", "")
+		if err != nil {
+			t.Fatalf("%s: %v", status, err)
+		}
+		if status == "open" {
+			// The served create item does not carry created_at (GH#7519 CI).
+			if !issue.CreatedAt.IsZero() {
+				t.Fatalf("open: created_at stamped; the served wire refuses it")
+			}
+			continue
+		}
+		if issue.CreatedAt.IsZero() {
+			t.Fatalf("%s: created_at left zero for the insert to stamp", status)
+		}
+		var stamp *time.Time
+		switch status {
+		case "closed":
+			stamp = issue.ClosedAt
+		case "in_progress":
+			stamp = issue.StartedAt
+		}
+		if stamp == nil || stamp.Before(issue.CreatedAt) {
+			t.Fatalf("%s: status timestamp %v before created_at %v", status, stamp, issue.CreatedAt)
 		}
 	}
 }

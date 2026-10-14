@@ -144,6 +144,7 @@ var mutationEntryPoints = []string{
 // create/update/close/delete/dep/label op vocabulary. The staleness check fails
 // if any stops being flagged, so an exemption cannot rot.
 var beadDMLExemptions = map[string]string{
+	"AdoptVersionInTx": "isolated graph conversion seeds only participation/history bookkeeping; preserves original Issue fields and events, without replaying create",
 	// (1) Child counters are derived CLI acceleration state. In contrast,
 	// is_blocked is part of the exported bead snapshot and its recompute helpers
 	// structurally journal every value that actually changes.
@@ -171,6 +172,9 @@ var beadDMLExemptions = map[string]string{
 	"DeleteWispFromDependenciesInTx":         "cleans up dep rows during a delete that journals the delete",
 	"DeleteWispsFromDependenciesInTx":        "cleans up dep rows during a delete that journals the delete",
 	"DeleteWispAuxRowsInTx":                  "cleans up wisp label/event/comment/counter rows during a delete that journals the delete",
+	"RecordVersionForCreateInTx":             "records the accepted create postimage and revision bookkeeping; the calling create journals the logical mutation",
+	"RecordVersionAtInTx":                    "records an accepted postimage and revision bookkeeping; the calling mutation journals it",
+	"RecordVersionInTx":                      "records an accepted postimage and revision bookkeeping; the calling mutation journals it",
 
 	// (4) compaction maintenance — a lossy content rewrite outside the
 	// create/update/close/delete/dep/label op vocabulary. Carried from the

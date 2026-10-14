@@ -11,8 +11,9 @@ import (
 )
 
 type doltServerTx struct {
-	conn *sql.Conn
-	done bool
+	conn     *sql.Conn
+	done     bool
+	readOnly bool
 	// clearJournalScope releases the events-journal activation BeginTx bound to
 	// conn. It is called from the two places the connection leaves this tx —
 	// releaseConn and poisonConn — so the activation entry cannot outlive the
@@ -31,6 +32,9 @@ func (t *doltServerTx) Runner() db.Runner {
 }
 
 func (t *doltServerTx) Commit(ctx context.Context, message string) error {
+	if t.readOnly {
+		return errors.New("strict readonly transaction cannot commit")
+	}
 	if t.done {
 		return errors.New("uow: commit: already done")
 	}

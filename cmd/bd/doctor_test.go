@@ -138,7 +138,7 @@ func TestDoctorJSONOutput(t *testing.T) {
 	}
 }
 
-func TestRunDiagnostics_JSONSkipsNetworkUpdateChecks(t *testing.T) {
+func TestRunDiagnostics_JSONHasNoAutomaticUpdateChecks(t *testing.T) {
 	tmpDir := t.TempDir()
 	beadsDir := filepath.Join(tmpDir, ".beads")
 	if err := os.Mkdir(beadsDir, 0750); err != nil {
@@ -164,8 +164,8 @@ func TestRunDiagnostics_JSONSkipsNetworkUpdateChecks(t *testing.T) {
 	if versionMessage == "" {
 		t.Fatal("CLI Version check not found")
 	}
-	if !strings.Contains(versionMessage, "skipped in non-interactive mode") {
-		t.Fatalf("CLI Version message = %q, want non-interactive skip notice", versionMessage)
+	if !strings.Contains(versionMessage, "automatic update checks removed in Beads Continuity") {
+		t.Fatalf("CLI Version message = %q, want the fork local-only version policy", versionMessage)
 	}
 }
 

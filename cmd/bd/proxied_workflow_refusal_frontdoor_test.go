@@ -51,19 +51,16 @@ func TestProxiedWorkflowRefusalsFrontDoor(t *testing.T) {
 		b, _ := os.ReadFile(filepath.Join(p.beadsDir, name))
 		artifactBefore[name] = b
 	}
-	commands := [][]string{{"cook", formula, "--persist"}, {"ship", "refusal"}, {"swarm", "create", epic.ID}, {"swarm", "list"}, {"merge-slot", "create"}, {"merge-slot", "check"}, {"merge-slot", "acquire"}, {"merge-slot", "release"}}
+	commands := [][]string{{"cook", formula, "--persist"}, {"ship", "refusal"}, {"swarm", "create", epic.ID}, {"swarm", "list"}}
 	expectedCode := func(args []string) string {
 		if args[0] == "swarm" {
 			return "proxy.swarm.unsupported"
-		}
-		if args[0] == "merge-slot" {
-			return "proxy.merge_slot.unsupported"
 		}
 		return "proxy.formula.unsupported"
 	}
 	expectedMessage := func(args []string) string {
 		name := args[0]
-		if (args[0] == "swarm" || args[0] == "merge-slot") && len(args) > 1 {
+		if args[0] == "swarm" && len(args) > 1 {
 			name += " " + args[1]
 		}
 		return name + " is not supported in proxied-server mode"

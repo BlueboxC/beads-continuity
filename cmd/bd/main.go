@@ -44,6 +44,8 @@ import (
 	"github.com/steveyegge/beads/internal/telemetry"
 	"github.com/steveyegge/beads/internal/ui"
 	"github.com/steveyegge/beads/internal/utils"
+	"github.com/steveyegge/beads/issueops"
+	"github.com/steveyegge/beads/journalops"
 	"go.opentelemetry.io/otel/attribute"
 	oteltrace "go.opentelemetry.io/otel/trace"
 )
@@ -414,6 +416,16 @@ func renderTypedOpenError(err error) bool {
 		}
 		return true
 	}
+	var permissionErr *embeddeddolt.OpenPermissionError
+	if errors.As(err, &permissionErr) {
+		if jsonOutput {
+			handleEmbeddedOpenPermissionJSON(permissionErr)
+		} else {
+			fmt.Fprintf(os.Stderr, "%s\n\n%s\n", permissionErr.Error(), permissionErr.Hint())
+		}
+		return true
+	}
+
 	return false
 }
 
@@ -460,18 +472,42 @@ func applyNoColorFlag() {
 }
 
 // loadBeadsEnvFile loads .beads/.env into process environment for per-project
-// Dolt credentials (GH#2520). Uses gotenv.Load which is non-overriding —
-// existing shell env vars always take precedence.
+// Dolt credentials (GH#2520). Only passive connection and selector settings
+// are imported; executable settings must come from the operator's environment.
+// Existing shell env vars, including explicit empty values, take precedence.
 // Safe to call with an empty beadsDir (no-op).
 func loadBeadsEnvFile(beadsDir string) {
 	if beadsDir == "" {
 		return
 	}
 	envFile := filepath.Join(beadsDir, ".env")
-	if _, err := os.Stat(envFile); err != nil {
+	pairs, err := gotenv.Read(envFile)
+	if err != nil {
 		return
 	}
-	_ = gotenv.Load(envFile)
+	keys := make([]string, 0, len(pairs))
+	for key := range pairs {
+		keys = append(keys, key)
+	}
+	slices.Sort(keys)
+	for _, key := range keys {
+		allowedKey := key
+		if runtime.GOOS == "windows" {
+			allowedKey = strings.ToUpper(key)
+		}
+		switch allowedKey {
+		case "BEADS_DIR", "BEADS_DB", "BD_DB",
+			"BEADS_DOLT_PASSWORD", "BEADS_DOLT_SERVER_MODE", "BEADS_DOLT_SHARED_SERVER",
+			"BEADS_DOLT_SERVER_HOST", "BEADS_DOLT_SERVER_PORT", "BEADS_DOLT_PORT",
+			"BEADS_DOLT_SERVER_SOCKET", "BEADS_DOLT_SERVER_USER", "BEADS_DOLT_SERVER_DATABASE",
+			"BEADS_DOLT_SERVER_TLS":
+			if _, present := os.LookupEnv(key); !present {
+				_ = os.Setenv(key, pairs[key])
+			}
+		default:
+			fmt.Fprintf(os.Stderr, "bd: ignored unsupported project .env key %q; set it in the operator environment if needed\n", key)
+		}
+	}
 }
 
 func logConfigDiscovery(beadsDir, reason string) {
@@ -501,7 +537,7 @@ func loadBeadsSelectionEnvFile(beadsDir string) {
 		return
 	}
 	for _, key := range []string{"BEADS_DIR", "BEADS_DB", "BD_DB"} {
-		if os.Getenv(key) != "" {
+		if _, present := os.LookupEnv(key); present {
 			continue
 		}
 		if value, ok := pairs[key]; ok && strings.TrimSpace(value) != "" {
@@ -723,10 +759,9 @@ func prepareSelectedCommandContext(beadsDir string, loadEnv bool) {
 	}
 	config.CheckBeadsDirPermissions(beadsDir)
 	if err := loadServerModeFromBeadsDir(beadsDir); err != nil {
-		// Warn, don't fatal: this context also serves no-DB commands —
-		// doctor, init, bootstrap, config — which are exactly the repair
-		// paths for a corrupt metadata.json. Data commands stay protected
-		// by the hard error at store init and in the store factories.
+		// Context preparation also serves store-free commands. Backend-
+		// selecting commands (including doctor/init/bootstrap) enforce their
+		// own metadata guard; data store factories reject the load failure.
 		fmt.Fprintf(os.Stderr, "warning: %v\n", err)
 	}
 }
@@ -754,7 +789,7 @@ func refreshBoundCommandConfig(cmd *cobra.Command) {
 		readonlyMode = config.GetBool("readonly")
 	}
 	if !root.PersistentFlags().Changed("actor") {
-		actor = resolveConfiguredActor()
+		actor, actorSource = resolveConfiguredActorIdentity()
 	}
 	if !root.PersistentFlags().Changed("dolt-auto-commit") {
 		doltAutoCommit = config.GetString("dolt.auto-commit")
@@ -800,45 +835,52 @@ func resolveCommandBeadsDir(dbPath string) string {
 // BEADS_ACTOR is also set, silently letting the deprecated alias win (GH#4645).
 // Check BEADS_ACTOR explicitly first so the primary override outranks it.
 func resolveConfiguredActor() string {
-	if beadsActor := os.Getenv("BEADS_ACTOR"); beadsActor != "" {
-		return beadsActor
-	}
-	return config.GetString("actor")
+	value, _ := resolveConfiguredActorIdentity()
+	return value
 }
 
-// getActorWithGit returns the actor for audit trails with git config fallback.
-// Priority: --actor flag > BEADS_ACTOR env > BD_ACTOR env (deprecated) > git config user.name > $USER > "unknown"
-// This provides a sensible default for developers: their git identity is used unless
-// explicitly overridden
-func getActorWithGit() string {
-	// If actor is already set (from --actor flag), use it
+func resolveConfiguredActorIdentity() (string, string) {
+	if value := os.Getenv("BEADS_ACTOR"); value != "" {
+		return value, "env"
+	}
+	if value := os.Getenv("BD_ACTOR"); value != "" {
+		return value, "env"
+	}
+	if value := config.GetString("actor"); value != "" {
+		return value, "config"
+	}
+	return "", ""
+}
+
+var actorSource string
+
+// resolveActorIdentity preserves the existing name fallback and carries its source.
+// A source is provenance, not proof of a human or permission to act.
+func resolveActorIdentity() (string, string) {
 	if actor != "" {
-		return actor
+		source := actorSource
+		if source == "" {
+			source = "provided"
+		}
+		return actor, source
 	}
-
-	// Check BEADS_ACTOR env var (primary env override)
-	if beadsActor := os.Getenv("BEADS_ACTOR"); beadsActor != "" {
-		return beadsActor
+	if value, source := resolveConfiguredActorIdentity(); value != "" {
+		return value, source
 	}
-
-	// Check BD_ACTOR env var (deprecated alias, kept for backwards compatibility)
-	if bdActor := os.Getenv("BD_ACTOR"); bdActor != "" {
-		return bdActor
-	}
-
-	// Try git config user.name - the natural default for a git-native tool
 	if out, err := exec.Command("git", "config", "user.name").Output(); err == nil {
-		if gitUser := strings.TrimSpace(string(out)); gitUser != "" {
-			return gitUser
+		if value := strings.TrimSpace(string(out)); value != "" {
+			return value, "git"
 		}
 	}
-
-	// Fall back to system username
-	if user := os.Getenv("USER"); user != "" {
-		return user
+	if value := os.Getenv("USER"); value != "" {
+		return value, "user"
 	}
+	return "unknown", "unknown"
+}
 
-	return "unknown"
+func getActorWithGit() string {
+	value, _ := resolveActorIdentity()
+	return value
 }
 
 // getOwner returns the human owner for CV attribution.
@@ -1031,24 +1073,6 @@ var rootCmd = &cobra.Command{
 		// span.
 		initTelemetry(rootCtx, Version)
 
-		// Materialize the user-level metrics config only when metrics are
-		// actually enabled. When metrics are disabled (BD_DISABLE_METRICS or a
-		// user-global metrics.disabled), there is nothing to bootstrap. The
-		// send-metrics flusher is exempt so it never recurses into bootstrap.
-		// This mirrors the resolveMetricsEnabled() gate on the first-run notice
-		// below. (~/.config/bd/ lives outside the repo, so this write is not a
-		// stealth/per-repository trace; stealth init is handled by suppressing
-		// the first-run notice, not by skipping this user-global bootstrap.)
-		if cmd.Name() != metrics.SendMetricsSubcommand && resolveMetricsEnabled() {
-			if err := metrics.EnsureUserConfigDefaults(); err != nil {
-				debug.Logf("warning: ensure user config defaults failed: %v", err)
-			}
-		}
-
-		if _, err := metrics.Init(Version, resolveMetricsEnabled(), resolveMetricsEndpoint()); err != nil {
-			debug.Logf("warning: metrics init failed: %v", err)
-		}
-
 		if cmd.Name() == metrics.SendMetricsSubcommand {
 			return nil
 		}
@@ -1064,6 +1088,11 @@ var rootCmd = &cobra.Command{
 		if err := applyChangeDirSelection(); err != nil {
 			return err
 		}
+
+		if handled, err := admitGraphPreview(cmd); handled || err != nil {
+			return err
+		}
+		gateNativeContinuityCommand(cmd)
 
 		// Block dangerous env var overrides that could cause data fragmentation (bd-hevyw).
 		if err := checkBlockedEnvVars(); err != nil {
@@ -1128,8 +1157,9 @@ var rootCmd = &cobra.Command{
 			}{dbPath, true}
 		}
 		if !cmd.Root().PersistentFlags().Changed("actor") && actor == "" {
-			actor = resolveConfiguredActor()
+			actor, actorSource = resolveConfiguredActorIdentity()
 		} else if cmd.Root().PersistentFlags().Changed("actor") {
+			actorSource = "flag"
 			flagOverrides["actor"] = struct {
 				Value  interface{}
 				WasSet bool
@@ -1260,13 +1290,6 @@ var rootCmd = &cobra.Command{
 			skipsStoreInit = true
 		}
 
-		// One-time friendly heads-up about anonymous usage metrics. Placed after
-		// the config-derived json/quiet rebind and command classification above so
-		// it can read the real output mode and command identity — that is how it
-		// stays suppressed in JSON/hook/protocol/quiet/stealth contexts and never
-		// corrupts machine-readable output. No-op after the first run.
-		maybeShowMetricsFirstRunNotice(cmd)
-
 		// Commands that skip store initialization still need early config/env
 		// setup before they inspect server mode or per-project Dolt settings.
 		// Rebind them to the selected workspace so explicit --db / BEADS_DB
@@ -1320,6 +1343,9 @@ var rootCmd = &cobra.Command{
 		}
 
 		// Performance profiling setup
+		if cpuProfileEnabled && readonlyMode {
+			return HandleErrorRespectJSON("strict readonly does not write profiling files")
+		}
 		if cpuProfileEnabled {
 			timestamp := time.Now().Format("20060102-150405")
 			if f, _ := os.Create(fmt.Sprintf("bd-profile-%s-%s.prof", cmd.Name(), timestamp)); f != nil {
@@ -1493,7 +1519,11 @@ var rootCmd = &cobra.Command{
 		// any store construction. PostgreSQL/MySQL values are retained as metadata
 		// tombstones so an existing workspace fails closed instead of falling through
 		// to a new, empty Dolt database.
-		cfg, cfgErr := configfile.Load(beadsDir)
+		loadConfig := configfile.Load
+		if readonlyMode {
+			loadConfig = configfile.LoadForDiscovery
+		}
+		cfg, cfgErr := loadConfig(beadsDir)
 		if cfgErr != nil {
 			return HandleError("failed to load beads config from %s: %v (refusing to fall back to the embedded store; fix or restore metadata.json and retry)", beadsDir, cfgErr)
 		}
@@ -1512,16 +1542,10 @@ var rootCmd = &cobra.Command{
 				return err
 			}
 		}
-		// The proxied provider cannot guarantee strict read-only semantics. Refuse
-		// before provider construction so no connection, migration, or mutation
-		// is attempted; expose the same stable capability code as other proxy
-		// front-door refusals.
-		if readonlyMode && cfg != nil && cfg.IsDoltProxiedServerMode() {
-			return HandleProxyCapabilityError(AssertProxyCapability(ProxyModeProxied, ProxyCapReadonly))
-		}
 
 		// Set actor for audit trail
-		actor = getActorWithGit()
+		actor, actorSource = resolveActorIdentity()
+		setRootContext(issueops.WithExternalResolver(journalops.WithActorSource(rootCtx, actor, actorSource), configuredExternalResolver()), rootCancel)
 		// Attach actor to the command span now that we have it.
 		if commandSpan != nil {
 			commandSpan.SetAttributes(attribute.String("bd.actor", actor))
@@ -1636,7 +1660,9 @@ var rootCmd = &cobra.Command{
 		// apply schema migrations before RunE validates arguments or renders a
 		// dry-run plan. frozenForMaintenance excludes it for the same reason
 		// as the trackBdVersion call above — see that comment.
-		if policy.runMaintenance && !previewMode && !frozenForMaintenance {
+		// The explicit schema verb owns migration and version reconciliation.
+		// An auxiliary open would consume its applied count first (#7283).
+		if policy.runMaintenance && !previewMode && !frozenForMaintenance && !isSchemaMigrateVerb(cmd) {
 			autoMigrateOnVersionBump(beadsDir)
 		}
 
@@ -1806,7 +1832,7 @@ var rootCmd = &cobra.Command{
 			// call below. With hooks disabled the sinks are empty and the
 			// provider comes back unwrapped.
 			var uowSinks uow.Sinks
-			if beadsDir != "" && !config.GetBool("no-hooks") {
+			if beadsDir != "" && !readonlyMode && !config.GetBool("no-hooks") {
 				hookRunner = hooks.NewRunner(filepath.Join(beadsDir, "hooks"))
 				uowSinks.Hook = hookRunner
 			}
@@ -1822,7 +1848,7 @@ var rootCmd = &cobra.Command{
 				return HandleError("failed to resolve dolt auto-commit policy: %v", err)
 			}
 
-			if !previewMode {
+			if !previewMode && !readonlyMode {
 				reconcileVersionProxiedServer(rootCtx)
 			}
 
@@ -1967,6 +1993,9 @@ var rootCmd = &cobra.Command{
 			setRootContext(nil, nil)
 		}()
 		defer restoreChangeDirSelection()
+		if graphPreviewActive {
+			return nil
+		}
 		// Give the hooks this command fired their moment before the process
 		// exits. Both plumbings run them fire-and-forget on their own
 		// goroutines, and a bd command is short enough that returning from main
@@ -2417,6 +2446,12 @@ func main() {
 	metrics.CloseAndFlush()
 
 	if err != nil {
+		if executedCmd == primeCmd && primeRequireMemoryLoad {
+			if code, ok := primeMemoryFailureExitCode(err); ok {
+				fmt.Fprintf(os.Stderr, "Error: %s\n", err.Error())
+				os.Exit(code)
+			}
+		}
 		if code, ok := exitCodeFromError(err); ok {
 			os.Exit(code)
 		}
@@ -2425,37 +2460,6 @@ func main() {
 		}
 		os.Exit(1)
 	}
-}
-
-func resolveMetricsEnabled() bool {
-	if v, ok := os.LookupEnv(metrics.EnvDisableMetrics); ok {
-		return !envTruthyValue(v)
-	}
-	// DO_NOT_TRACK is a disable-only alias: a truthy value opts out, but a
-	// falsey or empty value (DO_NOT_TRACK=0/false/"") must fall through to the
-	// user's saved preference instead of forcing metrics back on over a saved
-	// `bd metrics off`. Only BD_DISABLE_METRICS (checked first) is a
-	// bidirectional override.
-	if v, ok := os.LookupEnv(metrics.EnvDoNotTrack); ok && envTruthyValue(v) {
-		return false
-	}
-	// Consent is the user's own global choice: resolve it from the user-global
-	// config only, never merged project/BEADS_DIR config. Otherwise a
-	// repository's .beads/config.yaml (highest viper precedence) could re-enable
-	// metrics for a user who ran `bd metrics off`.
-	return !config.MetricsDisabledByUserConfig()
-}
-
-func resolveMetricsEndpoint() string {
-	if v := os.Getenv(metrics.EnvEndpoint); v != "" {
-		return v
-	}
-	// Like enablement, the endpoint is resolved from env + user-global config
-	// only so a repository can never redirect where a user's metrics are sent.
-	if ep := config.UserMetricsEndpoint(); ep != "" {
-		return ep
-	}
-	return metrics.DefaultEndpoint
 }
 
 func envTruthyValue(v string) bool {

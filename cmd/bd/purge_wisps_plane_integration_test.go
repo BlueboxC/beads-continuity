@@ -117,6 +117,26 @@ func runPurgeRetentionScenario(t *testing.T, r purgeScenarioRunner) {
 			r.mode, preview)
 	}
 
+	stdout, stderr, err := r.run(t, "purge", "--wisps-plane", "--older-than", "1s", "--limit", "1")
+	if err == nil || !strings.Contains(stdout+stderr, "--limit 1") {
+		t.Fatalf("%s: unconfirmed purge lost its limit: err=%v\n%s%s", r.mode, err, stdout, stderr)
+	}
+	if !r.exists(t, wisp) || !r.exists(t, noHistory) {
+		t.Fatalf("%s: unconfirmed purge deleted a candidate", r.mode)
+	}
+
+	for _, command := range []string{"purge", "prune"} {
+		for _, age := range []string{"-213503d", "-213503", "-9223372036854775808", "0"} {
+			stdout, stderr, err := r.run(t, command, "--older-than="+age, "--force")
+			if err == nil || !strings.Contains(stdout+stderr, "invalid --older-than") {
+				t.Fatalf("%s: %s accepted invalid age %q: err=%v\n%s%s", r.mode, command, age, err, stdout, stderr)
+			}
+		}
+	}
+	if !r.exists(t, wisp) || !r.exists(t, noHistory) || !r.exists(t, durable) {
+		t.Fatalf("%s: invalid age deleted a candidate", r.mode)
+	}
+
 	// --limit drains in bounded runs and says whether more remain.
 	first := r.purgeJSON(t, "--wisps-plane", "--older-than", "1s", "--limit", "1", "--force")
 	if jsonCount(first, "purged_count") != 1 || jsonCount(first, "remaining") != 1 || first["has_more"] != true {

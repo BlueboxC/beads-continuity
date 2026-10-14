@@ -10,6 +10,7 @@ import (
 	"os"
 	"path/filepath"
 	"strconv"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -239,7 +240,7 @@ func TestProxy_PublishesVerifiableIdentity(t *testing.T) {
 	ts := server.New()
 	h := runProxy(t, proxy.ProxyOpts{
 		RootDir: root,
-		Port:    freeTCPPort(t),
+		Port:    0,
 		Server:  ts,
 	})
 	waitListening(t, root, listenWait)
@@ -308,11 +309,10 @@ func TestProxy_BackendStartError(t *testing.T) {
 	ts := server.New()
 	ts.StartErr = errors.New("boom")
 	stats := &proxy.Stats{}
-	port := freeTCPPort(t)
 	root := t.TempDir()
 
 	h := runProxy(t, proxy.ProxyOpts{
-		RootDir: root, Port: port, Server: ts, Stats: stats,
+		RootDir: root, Port: 0, Server: ts, Stats: stats,
 	})
 	err := h.waitErr(t, shutdownWait)
 	require.Error(t, err)
@@ -333,11 +333,10 @@ func TestProxy_BackendNotReady_CtxCancel(t *testing.T) {
 	ts := server.New()
 	ts.DialErr = errors.New("not ready")
 	stats := &proxy.Stats{}
-	port := freeTCPPort(t)
 	root := t.TempDir()
 
 	h := runProxy(t, proxy.ProxyOpts{
-		RootDir: root, Port: port, Server: ts, Stats: stats,
+		RootDir: root, Port: 0, Server: ts, Stats: stats,
 	})
 	// The pidfile is written only after readiness succeeds, but DialErr
 	// keeps readiness failing — so waitListening would hang. Wait until
@@ -458,11 +457,10 @@ func TestProxy_IdleTimeout_Fires(t *testing.T) {
 
 	ts := server.New()
 	stats := &proxy.Stats{}
-	port := freeTCPPort(t)
 	root := t.TempDir()
 
 	h := runProxy(t, proxy.ProxyOpts{
-		RootDir: root, Port: port,
+		RootDir: root, Port: 0,
 		IdleTimeout: 2 * time.Second,
 		Server:      ts, Stats: stats,
 	})
@@ -705,7 +703,6 @@ func TestProxy_ConcurrentInstantiation_OnlyOneWinsLock(t *testing.T) {
 	t.Parallel()
 
 	root := t.TempDir()
-	port := freeTCPPort(t)
 
 	const N = 5
 	const settle = 500 * time.Millisecond
@@ -723,7 +720,7 @@ func TestProxy_ConcurrentInstantiation_OnlyOneWinsLock(t *testing.T) {
 			ts := server.New()
 			stats := &proxy.Stats{}
 			p := proxy.NewProxyServer(proxy.ProxyOpts{
-				RootDir: root, Port: port,
+				RootDir: root, Port: 0,
 				Server: ts, Stats: stats,
 			})
 			ctx, cancel := context.WithCancel(context.Background())
@@ -773,7 +770,6 @@ func TestProxy_LockHeld_ReturnsSentinel(t *testing.T) {
 	t.Parallel()
 
 	root := t.TempDir()
-	port := freeTCPPort(t)
 
 	held, err := util.TryLock(filepath.Join(root, proxy.LockFileName))
 	require.NoError(t, err)
@@ -782,7 +778,7 @@ func TestProxy_LockHeld_ReturnsSentinel(t *testing.T) {
 	ts := server.New()
 	stats := &proxy.Stats{}
 	p := proxy.NewProxyServer(proxy.ProxyOpts{
-		RootDir: root, Port: port,
+		RootDir: root, Port: 0,
 		Server: ts, Stats: stats,
 	})
 	err = p.ListenAndServe(context.Background())
@@ -811,7 +807,7 @@ func TestProxy_TraceLog_LifecycleEvents(t *testing.T) {
 	h := runProxy(t, proxy.ProxyOpts{
 		RootDir: root, Port: port,
 		IdleTimeout: idle,
-		Server:      ts, Stats: stats,
+		Server:      ts, Stats: stats, Trace: true,
 	})
 	waitListening(t, root, listenWait)
 
@@ -850,4 +846,39 @@ func TestProxy_TraceLog_LifecycleEvents(t *testing.T) {
 	} {
 		assert.Contains(t, text, want, "log missing %q", want)
 	}
+}
+
+// Normal connection churn must not write a trace for every accepted connection.
+// Echo, counts, lifecycle and shutdown still cross the real TCP boundary.
+func TestProxy_DefaultLogIsQuietUnderConnectionChurn(t *testing.T) {
+	t.Parallel()
+	root := t.TempDir()
+	stats := &proxy.Stats{}
+	h := runProxy(t, proxy.ProxyOpts{RootDir: root, Port: 0, Server: server.New(), Stats: stats})
+	waitListening(t, root, listenWait)
+	pf, err := pidfile.Read(root, proxy.PIDFileName)
+	require.NoError(t, err)
+	require.NotNil(t, pf)
+	for i := 0; i < 200; i++ {
+		conn := dialProxy(t, pf.Port)
+		_, err := conn.Write([]byte("ping"))
+		require.NoError(t, err)
+		buf := make([]byte, 4)
+		_, err = io.ReadFull(conn, buf)
+		require.NoError(t, err)
+		require.Equal(t, "ping", string(buf))
+		require.NoError(t, conn.Close())
+	}
+	h.Cancel()
+	require.NoError(t, h.waitErr(t, shutdownWait))
+	data, err := os.ReadFile(filepath.Join(root, proxy.LogFileName))
+	require.NoError(t, err)
+	text := string(data)
+	assert.NotContains(t, text, "acceptLoop accepted")
+	assert.NotContains(t, text, "handleConn(")
+	assert.Contains(t, text, "acceptLoop start")
+	assert.Contains(t, text, "acceptLoop exit")
+	assert.Less(t, strings.Count(text, "\n"), 20, "ordinary connections enlarged the log")
+	assert.Equal(t, int64(200), stats.Snapshot().HandledConns)
+	t.Logf("200 verified echo connections: %d log bytes, %d lines", len(data), strings.Count(text, "\n"))
 }

@@ -10,6 +10,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/steveyegge/beads/internal/configfile"
+	"github.com/steveyegge/beads/internal/debug"
 	"github.com/steveyegge/beads/internal/storage/dbproxy/proxy"
 	"github.com/steveyegge/beads/internal/storage/dbproxy/server"
 )
@@ -42,6 +43,9 @@ not intended to be invoked directly by users.`,
 	PersistentPostRun: func(cmd *cobra.Command, args []string) {},
 
 	RunE: func(cmd *cobra.Command, _ []string) error {
+		if _, err := admitGraphPreview(cmd); err != nil {
+			return err
+		}
 		backend := proxy.Backend(dbProxyChildBackend)
 		if err := backend.Validate(); err != nil {
 			return err
@@ -66,6 +70,7 @@ not intended to be invoked directly by users.`,
 			IdleTimeout: dbProxyChildIdleTimeout,
 			Server:      srv,
 			StopEpoch:   dbProxyChildStopEpoch,
+			Trace:       debug.Enabled(),
 		})
 		if err := p.ListenAndServe(cmd.Context()); err != nil {
 			if errors.Is(err, proxy.ErrLockHeld) {

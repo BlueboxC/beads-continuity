@@ -230,8 +230,8 @@ func reportFindDuplicates(ctx context.Context, issues []*types.Issue, method str
 	for i, p := range pairs {
 		pct := p.Similarity * 100
 		fmt.Printf("%s Pair %d (%.0f%% similar):\n", ui.RenderAccent("━━"), i+1, pct)
-		fmt.Printf("  %s %s\n", ui.RenderPass(p.IssueA.ID), p.IssueA.Title)
-		fmt.Printf("  %s %s\n", ui.RenderPass(p.IssueB.ID), p.IssueB.Title)
+		fmt.Printf("  %s %s\n", ui.RenderPass(p.IssueA.ID), ui.SanitizeForTerminal(p.IssueA.Title))
+		fmt.Printf("  %s %s\n", ui.RenderPass(p.IssueB.ID), ui.SanitizeForTerminal(p.IssueB.Title))
 		if p.Reason != "" {
 			fmt.Printf("  %s %s\n", ui.RenderAccent("Reason:"), p.Reason)
 		}
@@ -492,13 +492,23 @@ func analyzeWithAI(ctx context.Context, client anthropic.Client, model anthropic
 	)
 	aiSpan.End()
 
-	if len(message.Content) == 0 || message.Content[0].Type != "text" {
-		fmt.Fprintf(os.Stderr, "Warning: unexpected AI response format\n")
+	if message.StopReason == anthropic.StopReasonMaxTokens {
+		fmt.Fprintf(os.Stderr, "Warning: AI response truncated (max_tokens); retaining mechanical scores\n")
 		return candidates
 	}
 
-	// Parse the JSON response
-	responseText := message.Content[0].Text
+	// The reply may lead with thinking blocks; use the first text block.
+	responseText, found := "", false
+	for _, block := range message.Content {
+		if block.Type == "text" {
+			responseText, found = block.Text, true
+			break
+		}
+	}
+	if !found {
+		fmt.Fprintf(os.Stderr, "Warning: unexpected AI response format: no text block\n")
+		return candidates
+	}
 
 	// Try to extract JSON from the response (handle markdown code blocks)
 	jsonText := responseText

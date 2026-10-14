@@ -89,7 +89,7 @@ func resolveBeadsDirForDBPath(dbPath string) string {
 	}
 
 	for _, beadsDir := range candidates {
-		cfg, err := configfile.Load(beadsDir)
+		cfg, err := configfile.LoadForDiscovery(beadsDir)
 		if err != nil || cfg == nil {
 			continue
 		}

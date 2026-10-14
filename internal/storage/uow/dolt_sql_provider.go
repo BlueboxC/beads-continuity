@@ -52,7 +52,8 @@ type doltSQLProvider struct {
 	// readOnly: the command that opened this provider only reads. Unlike
 	// preview it still bootstraps and migrates normally — it only changes what
 	// happens when the migration gate REFUSES; see providerOptions.readOnly.
-	readOnly bool
+	readOnly       bool
+	strictReadOnly bool
 	// proxiedServerMode: the workspace that opened this provider is in
 	// proxied-server mode, so the commands the proxied front door refuses are
 	// off the table for its operator; see providerOptions.proxiedServerMode.
@@ -192,7 +193,11 @@ func (p *doltSQLProvider) BeginTx(ctx context.Context) (Tx, error) {
 		return nil, fmt.Errorf("uow: pin connection: %w", err)
 	}
 
-	_, err = conn.ExecContext(ctx, "START TRANSACTION;")
+	statement := "START TRANSACTION;"
+	if p.strictReadOnly {
+		statement = "START TRANSACTION READ ONLY;"
+	}
+	_, err = conn.ExecContext(ctx, statement)
 	if err != nil {
 		_ = conn.Close()
 		return nil, fmt.Errorf("uow: failed to start transaction: %w", err)
@@ -207,6 +212,7 @@ func (p *doltSQLProvider) BeginTx(ctx context.Context) (Tx, error) {
 	// transaction has committed.
 	return &doltServerTx{
 		conn:              conn,
+		readOnly:          p.strictReadOnly,
 		clearJournalScope: issueops.ScopeEventsJournalTransaction(conn, p.eventsJournalEnabled.Load()),
 		clearRecheckScope: issueops.ScopeBlockedRecheckTransaction(conn),
 	}, nil
@@ -739,11 +745,40 @@ func assertSessionDatabaseOnPool(ctx context.Context, pool *sql.DB, want string)
 	return assertSessionDatabase(ctx, conn, want)
 }
 
-func openDB(ctx context.Context, dsn string) (*sql.DB, error) {
-	conn, err := sql.Open("mysql", dsn)
+// proxyDialContext resolves an authenticated workspace endpoint for each new
+// physical connection. It never retries a statement or changes pool limits.
+func proxyDialContext(root string, opts proxy.OpenOpts) func(context.Context, string, string) (net.Conn, error) {
+	return func(ctx context.Context, network, _ string) (net.Conn, error) {
+		ep, err := proxy.GetCreateDatabaseProxyServerEndpointContext(ctx, root, opts)
+		if err != nil {
+			return nil, fmt.Errorf("uow: resolve proxy endpoint: %w", err)
+		}
+		var dialer net.Dialer
+		return dialer.DialContext(ctx, network, ep.Address())
+	}
+}
+
+func openDB(ctx context.Context, dsn string, dial ...func(context.Context, string, string) (net.Conn, error)) (*sql.DB, error) {
+	return openDBWithPolicy(ctx, dsn, false, dial...)
+}
+
+func openDBWithPolicy(ctx context.Context, dsn string, strictReadOnly bool, dial ...func(context.Context, string, string) (net.Conn, error)) (*sql.DB, error) {
+	cfg, err := mysql.ParseDSN(dsn)
 	if err != nil {
 		return nil, fmt.Errorf("uow: open db: %w", err)
 	}
+	if len(dial) > 0 {
+		cfg.DialFunc = dial[0]
+	}
+	connector, err := mysql.NewConnector(cfg)
+	if err != nil {
+		return nil, fmt.Errorf("uow: open db: %w", err)
+	}
+	var guarded driver.Connector = connector
+	if strictReadOnly {
+		guarded = readOnlyConnector{Connector: connector}
+	}
+	conn := sql.OpenDB(guarded)
 	bo := backoff.NewExponentialBackOff()
 	bo.MaxElapsedTime = 30 * time.Second
 	if err := pingWithRetry(ctx, conn, bo, pingAttemptTimeout); err != nil {
@@ -752,7 +787,7 @@ func openDB(ctx context.Context, dsn string) (*sql.DB, error) {
 	return conn, nil
 }
 
-func openAndInitSchema(ctx context.Context, ep proxy.Endpoint, database, rootUser, rootPassword, tlsConfigName string, teamServer bool, expectedProjectID string, opts providerOptions) (UnitOfWorkProvider, error) {
+func openAndInitSchema(ctx context.Context, ep proxy.Endpoint, database, rootUser, rootPassword, tlsConfigName string, teamServer bool, expectedProjectID string, opts providerOptions, dial ...func(context.Context, string, string) (net.Conn, error)) (UnitOfWorkProvider, error) {
 	initDB, err := openDB(ctx, buildDSN(ep, "", rootUser, rootPassword, tlsConfigName))
 	if err != nil {
 		return nil, err
@@ -778,7 +813,7 @@ func openAndInitSchema(ctx context.Context, ep proxy.Endpoint, database, rootUse
 		return nil, fmt.Errorf("uow: close init db: %w", err)
 	}
 
-	dbConn, err := openDB(ctx, buildDSN(ep, database, rootUser, rootPassword, tlsConfigName))
+	dbConn, err := openDB(ctx, buildDSN(ep, database, rootUser, rootPassword, tlsConfigName), dial...)
 	if err != nil {
 		return nil, err
 	}

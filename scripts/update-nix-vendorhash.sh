@@ -1,26 +1,8 @@
 #!/bin/bash
 set -e
 
-# =============================================================================
-# UPDATE NIX VENDORHASH SCRIPT
-# =============================================================================
-#
-# Automatically updates the vendorHash in default.nix after go.mod changes.
-# This script:
-#   1. Sets vendorHash to a known-bad hash to trigger an error
-#   2. Runs nix build to get the actual hash from the error message
-#   3. Extracts the correct hash from the error
-#   4. Updates default.nix with the correct hash
-#   5. Verifies the update by rebuilding
-#
-# Requirements:
-#   - Either nix installed locally, OR
-#   - Docker (will automatically use nixos/nix Docker image)
-#
-# Usage:
-#   ./scripts/update-nix-vendorhash.sh
-#
-# =============================================================================
+# Update vendorHash from Nix output, then verify the resulting default.nix.
+# Run from the repository root with local Nix or Docker.
 
 # Colors for output
 RED='\033[0;31m'
@@ -53,7 +35,6 @@ fi
 
 # Determine if we should use Docker for Nix
 USE_DOCKER=false
-NIX_CMD="nix"
 
 if ! command -v nix &> /dev/null; then
     log_warning "nix command not found locally"
@@ -85,19 +66,19 @@ run_nix() {
 
         # Run nix in Docker container with current directory mounted
         # Mount at both /workspace and the original path (for git worktree compatibility)
-        DOCKER_VOLUMES="-v $ABS_PWD:/workspace -v $ABS_PWD:$ABS_PWD"
+        DOCKER_VOLUMES=(-v "$ABS_PWD:/workspace" -v "$ABS_PWD:$ABS_PWD")
 
         # If this is a git worktree, mount the main git directory too
         if [ -f .git ] && grep -q "^gitdir: " .git; then
             GIT_COMMON_DIR=$(git rev-parse --git-common-dir 2>/dev/null || echo "")
             if [ -n "$GIT_COMMON_DIR" ] && [ -d "$GIT_COMMON_DIR" ]; then
                 # Mount the main git directory at the same path
-                DOCKER_VOLUMES="$DOCKER_VOLUMES -v $GIT_COMMON_DIR:$GIT_COMMON_DIR"
+                DOCKER_VOLUMES+=(-v "$GIT_COMMON_DIR:$GIT_COMMON_DIR")
             fi
         fi
 
         docker run --rm \
-            $DOCKER_VOLUMES \
+            "${DOCKER_VOLUMES[@]}" \
             -w /workspace \
             nixos/nix:latest \
             nix "$@" --extra-experimental-features "nix-command flakes"
@@ -117,81 +98,83 @@ log_info "Current vendorHash: $CURRENT_HASH"
 log_info "Setting temporary bad hash to trigger error..."
 FAKE_HASH="sha256-AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA="
 
-# Backup the file
-cp default.nix default.nix.backup
+# Keep operator backups and concurrent runs' logs separate.
+WORK_DIR=$(mktemp -d "${TMPDIR:-/tmp}/beads-nix-vendorhash.XXXXXX")
+BACKUP="$WORK_DIR/default.nix"
+BUILD_LOG="$WORK_DIR/build.log"
+VERIFY_LOG="$WORK_DIR/verify.log"
+VERIFIED=false
+cp -p default.nix "$BACKUP"
+
+cleanup() {
+    status=$?
+    trap - EXIT
+    if [ "$VERIFIED" = false ]; then
+        if mv -f "$BACKUP" default.nix; then
+            log_info "Restored original default.nix"
+        else
+            log_error "Could not restore default.nix; backup retained at $BACKUP"
+            status=1
+        fi
+    fi
+    if [ "$status" -eq 0 ] && [ "$VERIFIED" = true ]; then
+        rm -rf "$WORK_DIR"
+    else
+        log_info "Logs and any recovery artifacts retained at $WORK_DIR"
+    fi
+    exit "$status"
+}
+trap cleanup EXIT
+trap 'exit 130' INT
+trap 'exit 143' TERM
 
 # Detect sed version (GNU vs BSD)
 if sed --version 2>/dev/null | grep -q "GNU sed"; then
-    SED_INPLACE="sed -i"
+    SED_INPLACE=(sed -i)
 else
-    SED_INPLACE="sed -i ''"
+    SED_INPLACE=(sed -i '')
 fi
 
 # Update to fake hash
-$SED_INPLACE "s|vendorHash = \".*\";|vendorHash = \"$FAKE_HASH\";|" default.nix
+"${SED_INPLACE[@]}" "s|vendorHash = \".*\";|vendorHash = \"$FAKE_HASH\";|" default.nix
 
 # Step 2: Run nix build and capture the error
 log_info "Building to get actual hash (this will fail intentionally)..."
-BUILD_LOG="/tmp/nix-vendorhash-build-$$.log"
-run_nix build > "$BUILD_LOG" 2>&1 || true
+# Preserve the real build status; missing hash output is not a success signal.
+BUILD_EXIT=0
+run_nix build > "$BUILD_LOG" 2>&1 || BUILD_EXIT=$?
 
-# Step 3: Extract the actual hash from the error message
-# Error format: "error: hash mismatch ... got:    sha256-ACTUAL_HASH" (note: multiple spaces)
-# Use portable grep + sed instead of grep -P (which requires GNU grep)
 ACTUAL_HASH=$(grep -o 'got:[[:space:]]*sha256-[A-Za-z0-9+/=]*' "$BUILD_LOG" | head -1 | sed 's/got:[[:space:]]*//')
-
 if [ -z "$ACTUAL_HASH" ]; then
-    log_error "Failed to extract hash from nix build output"
-    log_error "This might mean:"
-    log_error "  - Go dependencies haven't changed (no update needed)"
-    log_error "  - There's a different build error"
-    echo ""
-    log_info "Build output (last 30 lines):"
-    tail -30 "$BUILD_LOG"
-    echo ""
-    log_info "Full build log saved to: $BUILD_LOG"
-
-    # Restore backup
-    mv default.nix.backup default.nix
-    log_info "Restored original default.nix"
-
-    # Check if hash is actually the same
-    if grep -q "hash mismatch" "$BUILD_LOG"; then
-        log_error "Hash mismatch detected but couldn't extract hash"
-        log_error "Check the full log: $BUILD_LOG"
+    if [ "$BUILD_EXIT" -ne 0 ]; then
+        if grep -q "hash mismatch" "$BUILD_LOG"; then
+            log_error "Build reported a hash mismatch (exit $BUILD_EXIT) but no extractable got: hash"
+        else
+            log_error "Build failed for a reason other than a hash mismatch (exit $BUILD_EXIT)"
+        fi
+        tail -30 "$BUILD_LOG"
         exit 1
-    else
-        log_success "No hash mismatch - vendorHash is already correct!"
-        rm -f "$BUILD_LOG"
-        exit 0
     fi
+    # Even a successful fake-hash build must verify the restored real file.
+    cp -p "$BACKUP" default.nix
+    ACTUAL_HASH="$CURRENT_HASH"
+else
+    log_success "Extracted actual hash: $ACTUAL_HASH"
+    "${SED_INPLACE[@]}" "s|vendorHash = \".*\";|vendorHash = \"$ACTUAL_HASH\";|" default.nix
 fi
 
-log_success "Extracted actual hash: $ACTUAL_HASH"
-
-# Step 4: Update default.nix with the correct hash
-log_info "Updating default.nix with correct hash..."
-$SED_INPLACE "s|vendorHash = \".*\";|vendorHash = \"$ACTUAL_HASH\";|" default.nix
-
-# Remove backup
-rm default.nix.backup
-
-# Step 5: Verify the update by rebuilding
 log_info "Verifying update with a clean build..."
-if run_nix build 2>&1 | tee /tmp/nix-build-verify.log; then
-    log_success "Build successful! vendorHash updated correctly."
-    echo ""
-    log_info "Summary:"
+# Scope the contributor's pipefail guard to this verification pipeline.
+set -o pipefail
+if run_nix build 2>&1 | tee "$VERIFY_LOG"; then
+    set +o pipefail
+    VERIFIED=true
+    log_success "Build successful! vendorHash verified."
     echo "  Old hash: $CURRENT_HASH"
     echo "  New hash: $ACTUAL_HASH"
-    echo ""
-    log_success "default.nix has been updated"
-
-    # Clean up build logs
-    rm -f "$BUILD_LOG" /tmp/nix-build-verify.log
 else
-    log_error "Build failed after updating hash"
-    log_error "See /tmp/nix-build-verify.log for details"
-    log_error "Initial build log: $BUILD_LOG"
+    set +o pipefail
+    log_error "Build failed after updating or restoring the hash"
+    log_error "Verification log: $VERIFY_LOG"
     exit 1
 fi

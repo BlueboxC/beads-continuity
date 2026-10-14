@@ -1,11 +1,16 @@
 package main
 
 import (
+	"context"
+	"errors"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
+	"strconv"
 	"strings"
 	"testing"
+	"time"
 )
 
 func TestIsBareGitRepo(t *testing.T) {
@@ -220,5 +225,160 @@ func TestGitRemoteHasDoltDataRefStatusSurfacesGitStderr(t *testing.T) {
 	}
 	if !strings.Contains(msg, "repository") && !strings.Contains(msg, "fatal") {
 		t.Errorf("error %q does not look like it carries git's stderr", msg)
+	}
+}
+
+// Contributor regressions adapted from Vishnu Jayavel's PR #7511.
+func TestGitRemoteHasDoltDataRefStatusDisablesAskpass(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("fixture requires a POSIX shell")
+	}
+	dir := t.TempDir()
+	script := `#!/bin/sh
+if [ "$GIT_TERMINAL_PROMPT" != 0 ] || [ -n "$GIT_ASKPASS" ] || [ -n "$SSH_ASKPASS" ]; then
+ echo 'fatal: inherited credential prompt is enabled' >&2
+ exit 128
+fi
+printf '0123456789012345678901234567890123456789\trefs/dolt/data\n'
+`
+	if err := os.WriteFile(filepath.Join(dir, "git"), []byte(script), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PATH", dir+string(os.PathListSeparator)+os.Getenv("PATH"))
+	t.Setenv("GIT_TERMINAL_PROMPT", "1")
+	t.Setenv("GIT_ASKPASS", "/inherited/git-askpass")
+	t.Setenv("SSH_ASKPASS", "/inherited/ssh-askpass")
+	hasData, err := gitRemoteHasDoltDataRefStatus("origin")
+	if err != nil || !hasData {
+		t.Fatalf("noninteractive probe=(%v,%v), want true,nil", hasData, err)
+	}
+}
+func TestGitRemoteHasDoltDataRefStatusRetainedPipes(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("fixture requires a POSIX shell")
+	}
+	dir := t.TempDir()
+	pidPath := filepath.Join(dir, "child.pid")
+	script := `#!/bin/sh
+/bin/sleep 6 &
+printf '%s\n' "$!" > "$PROBE_CHILD_PID"
+printf '0123456789012345678901234567890123456789\trefs/dolt/data\n'
+exit 0
+`
+	if err := os.WriteFile(filepath.Join(dir, "git"), []byte(script), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PATH", dir+string(os.PathListSeparator)+os.Getenv("PATH"))
+	t.Setenv("PROBE_CHILD_PID", pidPath)
+	t.Cleanup(func() {
+		data, err := os.ReadFile(pidPath)
+		if err != nil {
+			return
+		}
+		pid, err := strconv.Atoi(strings.TrimSpace(string(data)))
+		if err == nil {
+			if child, err := os.FindProcess(pid); err == nil {
+				_ = child.Kill()
+			}
+		}
+	})
+	hasData, err := gitRemoteHasDoltDataRefStatus("origin")
+	if hasData || !errors.Is(err, exec.ErrWaitDelay) {
+		t.Fatalf("probe with retained pipes=(%v,%v), want UNKNOWN/ErrWaitDelay", hasData, err)
+	}
+}
+
+func TestGitRemoteHasDoltDataRefStatusRootCancellation(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("fixture requires a POSIX shell")
+	}
+	for _, tc := range []struct {
+		name                  string
+		deadline, preCanceled bool
+		want                  error
+	}{
+		{"already canceled", false, true, context.Canceled},
+		{"canceled with descendant pipes", false, false, context.Canceled},
+		{"deadline with descendant pipes", true, false, context.DeadlineExceeded},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			snapshotRootContext(t)
+			dir := t.TempDir()
+			pidPath := filepath.Join(dir, "child.pid")
+			started := filepath.Join(dir, "started")
+			script := `#!/bin/sh
+/bin/sleep 6 &
+printf '%s\n' "$!" > "$PROBE_CHILD_PID"
+printf '0123456789012345678901234567890123456789\trefs/dolt/data\n'
+printf started > "$PROBE_STARTED"
+wait
+`
+			if err := os.WriteFile(filepath.Join(dir, "git"), []byte(script), 0o755); err != nil {
+				t.Fatal(err)
+			}
+			t.Setenv("PATH", dir+string(os.PathListSeparator)+os.Getenv("PATH"))
+			t.Setenv("PROBE_CHILD_PID", pidPath)
+			t.Setenv("PROBE_STARTED", started)
+			t.Cleanup(func() {
+				data, err := os.ReadFile(pidPath)
+				if err == nil {
+					pid, err := strconv.Atoi(strings.TrimSpace(string(data)))
+					if err == nil {
+						if p, err := os.FindProcess(pid); err == nil {
+							_ = p.Kill()
+						}
+					}
+				}
+			})
+			var ctx context.Context
+			var cancel context.CancelFunc
+			if tc.deadline {
+				ctx, cancel = context.WithTimeout(context.Background(), 250*time.Millisecond)
+			} else {
+				ctx, cancel = context.WithCancel(context.Background())
+			}
+			defer cancel()
+			setRootContext(ctx, cancel)
+			if tc.preCanceled {
+				cancel()
+			} else if !tc.deadline {
+				finished := make(chan struct{})
+				defer close(finished)
+				go func() {
+					ticker := time.NewTicker(5 * time.Millisecond)
+					defer ticker.Stop()
+					for {
+						select {
+						case <-finished:
+							return
+						case <-ticker.C:
+							if _, err := os.Stat(started); err == nil {
+								cancel()
+								return
+							}
+						}
+					}
+				}()
+			}
+			start := time.Now()
+			hasData, err := gitRemoteHasDoltDataRefStatus("origin")
+			elapsed := time.Since(start)
+			if hasData || !errors.Is(err, tc.want) {
+				t.Fatalf("probe=(%v,%v), want UNKNOWN/%v", hasData, err, tc.want)
+			}
+			if !tc.preCanceled {
+				if _, err := os.Stat(pidPath); err != nil {
+					t.Fatalf("descendant fixture did not start: %v", err)
+				}
+			}
+			if elapsed > 4*time.Second {
+				t.Fatalf("canceled pipe wait unbounded: %s", elapsed)
+			}
+			if tc.preCanceled {
+				if _, err := os.Stat(started); !os.IsNotExist(err) {
+					t.Fatalf("pre-canceled probe executed git: %v", err)
+				}
+			}
+		})
 	}
 }

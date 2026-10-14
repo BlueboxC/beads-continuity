@@ -1,11 +1,13 @@
 package doltserver
 
 import (
+	"context"
 	"os"
-	"os/exec"
 	"strconv"
 	"strings"
 	"sync"
+
+	"github.com/steveyegge/beads/internal/doltversion"
 )
 
 // MinDoltVersionForArchiveLevelConfig is the earliest Dolt release known to
@@ -64,8 +66,8 @@ func SupportsArchiveLevelConfig(doltBin string) bool {
 		}
 	}
 
-	out, err := exec.Command(doltBin, "version").Output() //nolint:gosec // G204: doltBin is caller-resolved (PATH lookup or config), not user-request input
-	supported := err == nil && doltVersionAtLeast(string(out), MinDoltVersionForArchiveLevelConfig)
+	identity, err := doltversion.Probe(context.Background(), doltBin)
+	supported := err == nil && doltVersionAtLeast(identity.RawOutput, MinDoltVersionForArchiveLevelConfig)
 
 	if hasKey {
 		archiveLevelSupportCache.Store(key, supported)

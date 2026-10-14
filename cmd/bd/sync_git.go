@@ -119,10 +119,13 @@ func gitOriginHasDoltDataRefStatus() (bool, error) {
 // and the ref twice ("...on sync.remote \"X\": probe refs/dolt/data on X: exit
 // status 128").
 func gitRemoteHasDoltDataRefStatus(remote string) (bool, error) {
-	ctx, cancel := context.WithTimeout(context.Background(), gitDoltDataProbeTimeout)
+	ctx, cancel := context.WithTimeout(getRootContext(), gitDoltDataProbeTimeout)
 	defer cancel()
 	cmd := exec.CommandContext(ctx, "git", "ls-remote", gitRemoteURLForLsRemote(remote), "refs/dolt/data")
-	cmd.Env = append(os.Environ(), "GIT_TERMINAL_PROMPT=0")
+	// An empty GIT_ASKPASS also suppresses core.askPass; credential.helper remains.
+	cmd.Env = append(os.Environ(), "GIT_TERMINAL_PROMPT=0", "GIT_ASKPASS=", "SSH_ASKPASS=")
+	// Descendants can retain pipes after Git exits or its context expires.
+	cmd.WaitDelay = 2 * time.Second
 	output, err := cmd.Output()
 	if err != nil {
 		return false, gitLsRemoteProbeError(ctx, err)
@@ -139,7 +142,10 @@ const gitDoltDataProbeTimeout = 10 * time.Second
 // the equally opaque "signal: killed".
 func gitLsRemoteProbeError(ctx context.Context, err error) error {
 	if ctx.Err() == context.DeadlineExceeded {
-		return fmt.Errorf("git ls-remote did not answer within %s (network, or an SSH key that wants a passphrase)", gitDoltDataProbeTimeout)
+		return fmt.Errorf("git ls-remote did not answer within %s (network, or an SSH key that wants a passphrase): %w", gitDoltDataProbeTimeout, ctx.Err())
+	}
+	if ctx.Err() == context.Canceled {
+		return fmt.Errorf("git ls-remote canceled: %w", ctx.Err())
 	}
 	var exitErr *exec.ExitError
 	if errors.As(err, &exitErr) {

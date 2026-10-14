@@ -46,6 +46,8 @@ type ProxyOpts struct {
 	// against it; tests use Snapshot() to assert. Production code should
 	// leave this nil.
 	Stats *Stats
+	// Trace enables per-connection diagnostics; normal operation keeps lifecycle/errors.
+	Trace bool
 }
 
 type proxyServer struct {
@@ -56,6 +58,8 @@ type proxyServer struct {
 	stats       *Stats
 	stopEpoch   string
 
+	trace       bool
+	logError    sync.Once
 	logger      *log.Logger
 	listener    net.Listener
 	activeConns atomic.Int64
@@ -101,11 +105,20 @@ func NewProxyServer(opts ProxyOpts) *proxyServer {
 		server:      opts.Server,
 		stats:       opts.Stats,
 		stopEpoch:   opts.StopEpoch,
+		trace:       opts.Trace,
 	}
 }
 
 func (p *proxyServer) tracef(format string, args ...any) {
-	p.logger.Printf(format, args...)
+	if p.trace {
+		p.logf(format, args...)
+	}
+}
+
+func (p *proxyServer) logf(format string, args ...any) {
+	if err := p.logger.Output(2, fmt.Sprintf(format, args...)); err != nil {
+		p.logError.Do(func() { log.Printf("proxy log write failed: %v", err) })
+	}
 }
 
 func (p *proxyServer) ListenAndServe(parentCtx context.Context) error {
@@ -145,7 +158,7 @@ func (p *proxyServer) ListenAndServe(parentCtx context.Context) error {
 	}
 
 	logPath := filepath.Join(p.rootDir, LogFileName)
-	f, err := os.OpenFile(logPath, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0o600) // #nosec G304 -- logPath is derived from operator-supplied config, not untrusted request input
+	f, err := openProxyLog(logPath, maxProxyLogBytes)
 	if err != nil {
 		return fmt.Errorf("open proxy log %q: %w", logPath, err)
 	}
@@ -383,14 +396,14 @@ func (p *proxyServer) idleWatcher(ctx context.Context) error {
 	if interval < idleWatcherMinInterval {
 		interval = idleWatcherMinInterval
 	}
-	p.tracef("idleWatcher start (timeout=%s, tick=%s)", p.idleTimeout, interval)
+	p.logf("idleWatcher start (timeout=%s, tick=%s)", p.idleTimeout, interval)
 	tick := time.NewTicker(interval)
 	defer tick.Stop()
 	var idleSince time.Time
 	for {
 		select {
 		case <-ctx.Done():
-			p.tracef("idleWatcher exit (ctx done)")
+			p.logf("idleWatcher exit (ctx done)")
 			return nil
 		case <-tick.C:
 			if n := p.activeConns.Load(); n > 0 {
@@ -406,7 +419,7 @@ func (p *proxyServer) idleWatcher(ctx context.Context) error {
 				continue
 			}
 			if time.Since(idleSince) >= p.idleTimeout {
-				p.tracef("idleWatcher expired after %s, shutting down", p.idleTimeout)
+				p.logf("idleWatcher expired after %s, shutting down", p.idleTimeout)
 				p.stats.IncIdleTimeout()
 				return errIdleTimeout
 			}
@@ -415,19 +428,19 @@ func (p *proxyServer) idleWatcher(ctx context.Context) error {
 }
 
 func (p *proxyServer) acceptLoop(ctx context.Context) error {
-	p.tracef("acceptLoop start (addr=%s)", p.listener.Addr())
+	p.logf("acceptLoop start (addr=%s)", p.listener.Addr())
 	for {
 		conn, err := p.listener.Accept()
 		if err != nil {
 			if errors.Is(err, net.ErrClosed) || ctx.Err() != nil {
-				p.tracef("acceptLoop exit (ctx=%v)", ctx.Err())
+				p.logf("acceptLoop exit (ctx=%v)", ctx.Err())
 				return nil
 			}
 			// Surface non-shutdown accept errors to the errgroup so the
 			// proxy fails fast instead of busy-looping. Specific errors that
 			// warrant retry (e.g. transient EMFILE under load) can be added
 			// here as the need arises.
-			p.tracef("acceptLoop error: %v", err)
+			p.logf("acceptLoop error: %v", err)
 			p.stats.IncAcceptError()
 			return fmt.Errorf("accept: %w", err)
 		}
@@ -457,7 +470,7 @@ func (p *proxyServer) handleConn(ctx context.Context, client net.Conn) error {
 	backend, err := p.server.Dial(dialCtx)
 	cancelDial()
 	if err != nil {
-		p.tracef("handleConn(%s) backend dial error: %v", addr, err)
+		p.logf("handleConn(%s) backend dial error: %v", addr, err)
 		p.stats.IncBackendDialError()
 		_ = client.Close()
 		return err

@@ -242,6 +242,12 @@ const backupRemoteSchemeTracking = "open question, not a verdict: remote-scheme 
 // proxyCapabilityRegistry is the whole path-keyed policy. Rows for permitted
 // paths are appended from proxyPermittedPaths by init.
 var proxyCapabilityRegistry = []capabilityRow{
+	refusedPath("graph-convert plan", "proxy.graph_convert.unsupported", ProxyReasonUnimplemented, "explicit local embedded checkpoint/publication only"),
+	refusedPath("graph-convert prepare", "proxy.graph_convert.unsupported", ProxyReasonUnimplemented, "explicit local embedded checkpoint/publication only"),
+	refusedPath("graph-convert verify", "proxy.graph_convert.unsupported", ProxyReasonUnimplemented, "explicit local embedded checkpoint/publication only"),
+	refusedPath("graph-convert activate", "proxy.graph_convert.unsupported", ProxyReasonUnimplemented, "explicit local embedded checkpoint/publication only"),
+	refusedPath("graph-convert rollback", "proxy.graph_convert.unsupported", ProxyReasonUnimplemented, "explicit local embedded checkpoint/publication only"),
+
 	// --- doctor -------------------------------------------------------------
 	// Diagnosis needs no version-control surface; the checks simply have no
 	// proxied dual yet. S6 splits them into client-local and store-backed.
@@ -426,10 +432,10 @@ var proxyCapabilityRegistry = []capabilityRow{
 	refusedPath("ship", "proxy.formula.unsupported", ProxyReasonUnimplemented, trackLongTail),
 	refusedPath("swarm create", "proxy.swarm.unsupported", ProxyReasonUnimplemented, trackLongTail),
 	refusedPath("swarm list", "proxy.swarm.unsupported", ProxyReasonUnimplemented, trackLongTail),
-	refusedPath("merge-slot create", "proxy.merge_slot.unsupported", ProxyReasonUnimplemented, trackLongTail),
-	refusedPath("merge-slot check", "proxy.merge_slot.unsupported", ProxyReasonUnimplemented, trackLongTail),
-	refusedPath("merge-slot acquire", "proxy.merge_slot.unsupported", ProxyReasonUnimplemented, trackLongTail),
-	refusedPath("merge-slot release", "proxy.merge_slot.unsupported", ProxyReasonUnimplemented, trackLongTail),
+	{Path: "merge-slot create", Rule: proxyCapabilityRule{Outcome: ProxyOutcomeHonored}},
+	{Path: "merge-slot check", Rule: proxyCapabilityRule{Outcome: ProxyOutcomeHonored}},
+	{Path: "merge-slot acquire", Rule: proxyCapabilityRule{Outcome: ProxyOutcomeHonored}},
+	{Path: "merge-slot release", Rule: proxyCapabilityRule{Outcome: ProxyOutcomeHonored}},
 
 	// --- transforms ---------------------------------------------------------
 	// ID rewrites walk every reference in the store. They need a routed
@@ -443,8 +449,8 @@ var proxyCapabilityRegistry = []capabilityRow{
 	refusedArgs("rename-prefix", "--dry-run --repair", "proxy.transform.unsupported", ProxyReasonUnimplemented, trackLongTail),
 	refusedPath("duplicate", "proxy.transform.unsupported", ProxyReasonUnimplemented, trackLongTail),
 	refusedArgs("duplicate", "--of", "proxy.transform.unsupported", ProxyReasonUnimplemented, trackLongTail),
-	refusedPath("supersede", "proxy.transform.unsupported", ProxyReasonUnimplemented, trackLongTail),
-	refusedArgs("supersede", "--with", "proxy.transform.unsupported", ProxyReasonUnimplemented, trackLongTail),
+	{Path: "supersede", Rule: proxyCapabilityRule{Outcome: ProxyOutcomeHonored}},
+	{Path: "supersede", ArgSet: "--with", Rule: proxyCapabilityRule{Outcome: ProxyOutcomeHonored}},
 	refusedArgs("duplicates", "--auto-merge", "proxy.transform.unsupported", ProxyReasonUnimplemented, trackLongTail),
 	// The dry run reports what the merge WOULD do without writing anything, so
 	// it rides the read path plain `duplicates` already uses.
@@ -459,6 +465,12 @@ var proxyCapabilityRegistry = []capabilityRow{
 	// flush point dolt.auto-commit=batch/off defers to (GH#4995), so refusing it
 	// at the front door would leave those modes with no way to flush.
 	permitted("dolt commit").withHistory(HistoryProxySupported),
+
+	// Graph Preview uses direct workspace routes, never the proxy provider.
+	refusedPath("compare", "proxy.compare.unsupported", ProxyReasonUnimplemented, "generic graph CLI: gastownhall/beads#6703"),
+	refusedPath("links", "proxy.links.unsupported", ProxyReasonUnimplemented, "generic graph CLI: gastownhall/beads#6703"),
+	refusedPath("unlink", "proxy.unlink.unsupported", ProxyReasonUnimplemented, "generic graph CLI: gastownhall/beads#6703"),
+	refusedPath("versions", "proxy.versions.unsupported", ProxyReasonUnimplemented, "generic graph CLI: gastownhall/beads#6703"),
 
 	// --- untyped refusals inside RunE ---------------------------------------
 	// The gate permits these paths and the command refuses itself with a bare
@@ -539,6 +551,7 @@ var proxyPermittedPaths = []string{
 	"knowledge context", "knowledge graph", "knowledge list", "knowledge record", "knowledge scan",
 	"knowledge sources", "knowledge prepare", "knowledge propose", "knowledge proposals", "knowledge review",
 	"code", "code scan", "code status", "code query", "code graph",
+	"code impact", "code relink", "code prune",
 	"swarm status", "swarm validate",
 
 	// human-in-the-loop queue
@@ -554,7 +567,7 @@ var proxyPermittedPaths = []string{
 	"hooks install", "hooks list", "hooks run", "hooks uninstall",
 	"metrics", "metrics example", "metrics off", "metrics on",
 	"serve", "sql",
-	"codex-hook", "cursor-hook", "db-proxy-child", "send-metrics",
+	"claude-hook", "codex-hook", "cursor-hook", "db-proxy-child", "send-metrics",
 }
 
 func init() {
