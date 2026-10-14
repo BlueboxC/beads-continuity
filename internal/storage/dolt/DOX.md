@@ -18,6 +18,8 @@ Root DOX.md and the parent chain remain binding.
 
 - Compact refuses before acquiring a connection or issuing SQL: an online server does not provide atomic guarded publication of rewritten history. Existing signature and semantic issue-compaction operations remain.
 
+- Explicit config publication stages config and its custom-type/status projections without sweeping other dirty tables. User KV publication stages config only after checking for dirty non-kv keys; generic Commit keeps excluding config. Publication failures are not replayed, and batch/off context deferral remains effective. This table-level screen is not cross-session row isolation.
+
 ## Work Guidance
 
 Metadata field conversion delegates to shared issueops parsing; YAML numeric types, enum fallback and adapter-specific warning/error modes remain unchanged.

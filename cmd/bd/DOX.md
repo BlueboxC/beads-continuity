@@ -84,6 +84,8 @@ Root DOX.md and the parent chain remain binding.
 
 - Hook uninstall removes Beads sections from the effective directory, resets only selected common-local managed configuration, and cleans a different directory only when a successful reset makes it effective. Resolve Git paths afresh to avoid stale repository caches. Preserve foreign content, backups and user/global/worktree-private paths; failures after reset must not report success.
 
+- Direct configuration and user KV mutations mark real writes for embedded auto-commit. Direct SQL-server config/memory/KV verbs publish scoped config commits when policy is on; batch/off defer to the existing explicit commit. Proxied/Graph routes retain their own transaction ownership. User KV publication refuses observed dirty internal config keys and reports that the mutation remains in the working set.
+
 ## Work Guidance
 
 Keep existing CLI primitives and machine-readable output stable. Follow AGENTS.md and ../../engdocs/TESTING.md.
