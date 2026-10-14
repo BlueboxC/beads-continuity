@@ -82,6 +82,8 @@ Root DOX.md and the parent chain remain binding.
 
 - Purge/prune reject nonpositive day counts before duration multiplication. Confirmation commands retain the preview's limit, storage plane, age, pattern and explicit reference override; quote age/pattern as literal POSIX shell arguments. Preview and existing deletion protections remain unchanged.
 
+- Hook uninstall removes Beads sections from the effective directory, resets only selected common-local managed configuration, and cleans a different directory only when a successful reset makes it effective. Resolve Git paths afresh to avoid stale repository caches. Preserve foreign content, backups and user/global/worktree-private paths; failures after reset must not report success.
+
 ## Work Guidance
 
 Keep existing CLI primitives and machine-readable output stable. Follow AGENTS.md and ../../engdocs/TESTING.md.

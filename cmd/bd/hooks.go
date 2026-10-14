@@ -17,6 +17,7 @@ import (
 	"github.com/steveyegge/beads/internal/git"
 	"github.com/steveyegge/beads/internal/metrics"
 	"github.com/steveyegge/beads/internal/ui"
+	"github.com/steveyegge/beads/internal/utils"
 )
 
 // managedHookNames lists the git hooks managed by beads.
@@ -1319,14 +1320,55 @@ func configureBeadsHooksPath() error {
 }
 
 func uninstallHooks() error {
-	// Get hooks directory from common git dir (hooks are shared across worktrees)
-	hooksDir, err := git.GetGitHooksDir()
+	hooksDir, err := effectiveUninstallHooksDir()
 	if err != nil {
 		return err
 	}
-	hookNames := []string{"pre-commit", "post-merge", "pre-push", "post-checkout", "prepare-commit-msg"}
+	if err := removeHookShimsAt(hooksDir); err != nil {
+		return err
+	}
+	unset, err := resetHooksPathAndRole()
+	if err != nil {
+		return fmt.Errorf("hook files removed, but failed to reset beads-managed git config: %w", err)
+	}
+	if !unset {
+		return nil
+	}
+	// Clearing a managed override can reactivate an earlier install (GH#7531).
+	nowEffective, err := effectiveUninstallHooksDir()
+	if err != nil {
+		return fmt.Errorf("managed hooks path cleared, but failed to resolve reactivated hooks: %w", err)
+	}
+	if utils.PathsEqual(nowEffective, hooksDir) {
+		return nil
+	}
+	return removeHookShimsAt(nowEffective)
+}
 
-	for _, hookName := range hookNames {
+// Resolve afresh in Git's selected worktree, without the process-wide cache.
+func effectiveUninstallHooksDir() (string, error) {
+	cmd := exec.Command("git", "rev-parse", "--path-format=absolute", "--git-path", "hooks")
+	out, err := cmd.Output()
+	if err == nil {
+		path := strings.TrimSpace(string(out))
+		if path != "" {
+			return git.NormalizePath(path), nil
+		}
+		return "", fmt.Errorf("Git returned an empty hooks directory")
+	}
+	// Preserve standalone removal of an explicitly configured absolute path.
+	fallback := exec.Command("git", "config", "--path", "--get", "core.hooksPath")
+	if value, readErr := fallback.Output(); readErr == nil {
+		path := git.NormalizePath(strings.TrimSpace(string(value)))
+		if filepath.IsAbs(path) {
+			return path, nil
+		}
+	}
+	return "", fmt.Errorf("resolve Git hooks directory: %w", err)
+}
+
+func removeHookShimsAt(hooksDir string) error {
+	for _, hookName := range managedHookNames {
 		hookPath := filepath.Join(hooksDir, hookName)
 
 		// #nosec G304 -- hook path constrained to .git/hooks directory
@@ -1373,14 +1415,6 @@ func uninstallHooks() error {
 		// Not a bd hook at all — leave it alone
 	}
 
-	// Reset beads-managed git config (core.hooksPath, beads.role) now that the
-	// hook files themselves are removed. A failure here must not be a
-	// scrolling stderr warning — bd hooks uninstall must not report success
-	// while beads-managed config is still left behind (GH#4440).
-	if err := resetHooksPathIfBeadsManaged(); err != nil {
-		return fmt.Errorf("hook files removed, but failed to reset beads-managed git config: %w", err)
-	}
-
 	return nil
 }
 
@@ -1392,18 +1426,35 @@ func uninstallHooks() error {
 // was already cleared (e.g. by `bd doctor --fix`) would leave a stale
 // beads.role behind. A key that is already absent is not an error.
 func resetHooksPathIfBeadsManaged() error {
-	repoRoot, _ := git.GetMainRepoRoot()
-	if repoRoot == "" {
-		repoRoot = git.GetRepoRoot()
-	}
-	if repoRoot == "" {
-		return nil // not in a git repo
-	}
+	_, err := resetHooksPathAndRole()
+	return err
+}
 
+func resetHooksPathAndRole() (bool, error) {
+	cmd := exec.Command("git", "rev-parse", "--path-format=absolute", "--git-dir", "--git-common-dir", "--show-toplevel")
+	out, err := cmd.Output()
+	if err != nil {
+		return false, nil // Absolute hooks outside a repository have no config authority.
+	}
+	paths := strings.Split(strings.TrimSpace(string(out)), "\n")
+	if len(paths) != 3 {
+		return false, fmt.Errorf("unexpected Git repository paths")
+	}
+	gitDir, commonDir, repoRoot := git.NormalizePath(paths[0]), git.NormalizePath(paths[1]), git.NormalizePath(paths[2])
+	if !utils.PathsEqual(gitDir, commonDir) {
+		repoRoot = filepath.Dir(commonDir)
+	}
+	configCommand := func(args ...string) *exec.Cmd {
+		// --local binds both reads and unsets to the selected common config.
+		gitArgs := []string{"--git-dir", commonDir, "--work-tree", repoRoot, "config", "--local"}
+		cmd := exec.Command("git", append(gitArgs, args...)...)
+		cmd.Dir = repoRoot
+		return cmd
+	}
 	var failures []string
+	hooksPathWasUnset := false
 
-	cmd := exec.Command("git", "config", "--get", "core.hooksPath")
-	cmd.Dir = repoRoot
+	cmd = configCommand("--get", "core.hooksPath")
 	if out, err := cmd.Output(); err == nil {
 		hooksPath := strings.TrimSpace(string(out))
 		// Matches both relative (legacy) and absolute (GH#2414) beads hooks
@@ -1411,10 +1462,11 @@ func resetHooksPathIfBeadsManaged() error {
 		// doctor.CheckHooksPath/FixHooksPath so uninstall and `bd doctor --fix`
 		// cannot disagree about what "beads-managed" means.
 		if doctor.IsBeadsManagedHooksPath(repoRoot, hooksPath) {
-			unsetCmd := exec.Command("git", "config", "--unset", "core.hooksPath")
-			unsetCmd.Dir = repoRoot
+			unsetCmd := configCommand("--unset", "core.hooksPath")
 			if output, err := unsetCmd.CombinedOutput(); err != nil {
 				failures = append(failures, fmt.Sprintf("core.hooksPath: %v (output: %s)", err, strings.TrimSpace(string(output))))
+			} else {
+				hooksPathWasUnset = true
 			}
 		}
 	}
@@ -1426,21 +1478,19 @@ func resetHooksPathIfBeadsManaged() error {
 	// ambiguous unset" — a repo with a duplicated beads.role (bad merge, hand
 	// edit) would then report a clean uninstall while leaving the key set,
 	// which is the exact failure this is supposed to stop.
-	getRoleCmd := exec.Command("git", "config", "--get", "beads.role")
-	getRoleCmd.Dir = repoRoot
+	getRoleCmd := configCommand("--get", "beads.role")
 	if _, err := getRoleCmd.Output(); err == nil {
-		roleCmd := exec.Command("git", "config", "--unset", "beads.role")
-		roleCmd.Dir = repoRoot
+		roleCmd := configCommand("--unset", "beads.role")
 		if output, err := roleCmd.CombinedOutput(); err != nil {
 			failures = append(failures, fmt.Sprintf("beads.role: %v (output: %s)", err, strings.TrimSpace(string(output))))
 		}
 	}
 
 	if len(failures) > 0 {
-		return fmt.Errorf("%s", strings.Join(failures, "; "))
+		return hooksPathWasUnset, fmt.Errorf("%s", strings.Join(failures, "; "))
 	}
 
-	return nil
+	return hooksPathWasUnset, nil
 }
 
 // =============================================================================
