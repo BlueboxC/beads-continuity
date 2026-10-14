@@ -33,7 +33,7 @@ func resolveProxiedTopology(beadsDir string) ProxyTopology {
 	if beadsDir == "" {
 		return ProxyTopologyUnknown
 	}
-	cfg, err := configfile.Load(beadsDir)
+	cfg, err := configfile.LoadForDiscovery(beadsDir)
 	if err != nil {
 		return ProxyTopologyUnknown
 	}

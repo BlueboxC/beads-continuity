@@ -1343,6 +1343,9 @@ var rootCmd = &cobra.Command{
 		}
 
 		// Performance profiling setup
+		if cpuProfileEnabled && readonlyMode {
+			return HandleErrorRespectJSON("strict readonly does not write profiling files")
+		}
 		if cpuProfileEnabled {
 			timestamp := time.Now().Format("20060102-150405")
 			if f, _ := os.Create(fmt.Sprintf("bd-profile-%s-%s.prof", cmd.Name(), timestamp)); f != nil {
@@ -1516,7 +1519,11 @@ var rootCmd = &cobra.Command{
 		// any store construction. PostgreSQL/MySQL values are retained as metadata
 		// tombstones so an existing workspace fails closed instead of falling through
 		// to a new, empty Dolt database.
-		cfg, cfgErr := configfile.Load(beadsDir)
+		loadConfig := configfile.Load
+		if readonlyMode {
+			loadConfig = configfile.LoadForDiscovery
+		}
+		cfg, cfgErr := loadConfig(beadsDir)
 		if cfgErr != nil {
 			return HandleError("failed to load beads config from %s: %v (refusing to fall back to the embedded store; fix or restore metadata.json and retry)", beadsDir, cfgErr)
 		}
@@ -1534,13 +1541,6 @@ var rootCmd = &cobra.Command{
 			if err := validateProxyRegistryBeforeProvider(cmd, resolveProxiedTopology(beadsDir)); err != nil {
 				return err
 			}
-		}
-		// The proxied provider cannot guarantee strict read-only semantics. Refuse
-		// before provider construction so no connection, migration, or mutation
-		// is attempted; expose the same stable capability code as other proxy
-		// front-door refusals.
-		if readonlyMode && cfg != nil && cfg.IsDoltProxiedServerMode() {
-			return HandleProxyCapabilityError(AssertProxyCapability(ProxyModeProxied, ProxyCapReadonly))
 		}
 
 		// Set actor for audit trail
@@ -1832,7 +1832,7 @@ var rootCmd = &cobra.Command{
 			// call below. With hooks disabled the sinks are empty and the
 			// provider comes back unwrapped.
 			var uowSinks uow.Sinks
-			if beadsDir != "" && !config.GetBool("no-hooks") {
+			if beadsDir != "" && !readonlyMode && !config.GetBool("no-hooks") {
 				hookRunner = hooks.NewRunner(filepath.Join(beadsDir, "hooks"))
 				uowSinks.Hook = hookRunner
 			}
@@ -1848,7 +1848,7 @@ var rootCmd = &cobra.Command{
 				return HandleError("failed to resolve dolt auto-commit policy: %v", err)
 			}
 
-			if !previewMode {
+			if !previewMode && !readonlyMode {
 				reconcileVersionProxiedServer(rootCtx)
 			}
 

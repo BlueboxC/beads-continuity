@@ -82,7 +82,10 @@ func TestProxyMaintenanceAllowsTheSharedConsentVerb(t *testing.T) {
 }
 
 func TestProxyCapabilityMatrix(t *testing.T) {
-	for _, cap := range []ProxyCapability{ProxyCapReadonly, ProxyCapMaxRows} {
+	if err := AssertProxyCapability(ProxyModeProxied, ProxyCapReadonly); err != nil {
+		t.Fatal(err)
+	}
+	for _, cap := range []ProxyCapability{ProxyCapMaxRows} {
 		err := AssertProxyCapability(ProxyModeProxied, cap)
 		if err == nil {
 			t.Errorf("%s unexpectedly honored", cap)

@@ -25,6 +25,8 @@ Root DOX.md and the parent chain remain binding.
 
 - Merge-slot holder and waiter mutations share a narrow transaction helper across native and UOW adapters. The transaction owner controls commit, conflict retry and rollback; callers never announce an uncommitted acquisition.
 
+- Strict readonly proxy discovery authenticates an already-live endpoint and never spawns, repairs or quarantines. The readonly UOW uses existing current-schema data, read-only SQL transactions and a driver query guard; it cannot commit. SQL set-operation exports are writes, using the shared parser SelectStatement contract from rjgeng’s PR #7042.
+
 ## Work Guidance
 
 Memory namespace selectors preserve exact prefix semantics across adapters. All three adapters select namespaces in SQL before transferring values; the unit-of-work adapter uses ConfigUseCase/repository within its existing read transaction. Case-insensitive memory search remains in Go.

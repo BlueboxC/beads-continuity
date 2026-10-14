@@ -191,7 +191,7 @@ var proxyCapabilityMatrix = map[ProxyMode]map[ProxyCapability]proxyCapabilityRul
 		ProxyCapWatch: honored(), ProxyCapRepo: honored(),
 	},
 	ProxyModeProxied: {
-		ProxyCapReadonly: refused("proxy.readonly.unsupported", "strict readonly is unavailable for dolt proxied-server backend; refusing to open a store that cannot guarantee mutation-free access", ProxyReasonDesign, "1.4 candidate: read-only SQL principal on the backend"),
+		ProxyCapReadonly: honored(),
 		ProxyCapMaxRows:  maxRowsRefusal,
 		ProxyCapWatch:    watchRefusal,
 		ProxyCapRepo:     refused("proxy.repo.unsupported", "--repo is not supported with --proxied-server", ProxyReasonDesign, ""),

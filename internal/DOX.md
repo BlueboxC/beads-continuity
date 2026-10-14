@@ -31,6 +31,10 @@ Root DOX.md and the parent chain remain binding.
 
 - Query lexing decodes UTF-8 while retaining byte offsets and whole-rune backup. Quoted strings preserve consumed bytes, including invalid UTF-8 and unknown escaped bytes; invalid bytes outside quotes are rejected. Numeric, duration and identifier grammar remain unchanged.
 
+- Metadata-only fallback port discovery reads legacy configuration without migrating it.
+
+- Existing-only workspace gates acquire shared locks through read-only file handles and refuse absent files; they never create a gate. Writable callers retain their existing acquisition rules.
+
 ## Work Guidance
 
 Tracker adapters share configuration resolution: YAML-only secrets never query Dolt, while ordinary values keep storage-first/environment fallback including store errors.

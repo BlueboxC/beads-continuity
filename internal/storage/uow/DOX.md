@@ -16,6 +16,8 @@ Root DOX.md and the parent chain remain binding.
 
 - Merge-slot create is idempotent and creates its label atomically; check and an unchanged create do not mint history. Acquire/release share native holder/waiter rules and use the existing transaction runner; retry results belong only to the committed attempt. Supersede edge and checked closure must commit together or roll back together.
 
+- NewReadOnlyProxyUOWProvider never bootstraps, migrates or auto-starts; verify selected database, schema and configured project identity before returning. Its concrete preflight access is explicitly accounted for by the notification-bypass guard because it cannot mutate or commit. Each physical connection authenticates existing proxy discovery and retains credentials/TLS/upstream binding. Guard direct, query and prepared SQL before driver dispatch because Dolt READ ONLY alone permits DDL/procedures; allow classified reads plus internal READ ONLY/ROLLBACK controls, and reject UOW commit. This is a Beads connection contract, not a new database user or server-wide privilege policy.
+
 ## Work Guidance
 
 Verify commit, rollback and failure behavior at the affected transaction boundary.

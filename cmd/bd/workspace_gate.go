@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/spf13/cobra"
+	"github.com/steveyegge/beads/internal/configfile"
 	"github.com/steveyegge/beads/internal/doltserver"
 	"github.com/steveyegge/beads/internal/workspacegate"
 )
@@ -40,6 +41,8 @@ import (
 //     this workspace: abort with an actionable error naming the holder
 //     (the gate's busy detail carries pid/reason/host from the advisory
 //     sidecar). Proceeding would race a migration/restore mid-replace.
+//   - Strict readonly proxy reads require existing gates and treat every gate
+//     failure as fatal without creating files.
 //   - EXCLUSIVE failures of any kind are hard errors: maintenance refuses
 //     rather than pretends.
 //
@@ -184,6 +187,8 @@ func buildWorkspaceGateSet(beadsDir string, extraRoots ...string) ([]workspacega
 // success; on the fail-open paths it returns nil with no handle.
 func acquireCommandWorkspaceGates(ctx context.Context, cmd *cobra.Command, beadsDir string) error {
 	exclusive := commandNeedsExclusiveGate(cmd)
+	cfg, cfgErr := configfile.LoadForDiscovery(beadsDir)
+	strictProxyRead := readonlyMode && cfgErr == nil && cfg != nil && cfg.IsDoltProxiedServerMode()
 
 	// No workspace on disk: nothing to guard, and the store-open path will
 	// produce its own (better) "no database found" error. Gating here would
@@ -194,7 +199,7 @@ func acquireCommandWorkspaceGates(ctx context.Context, cmd *cobra.Command, beads
 
 	gates, err := buildWorkspaceGateSet(beadsDir)
 	if err != nil {
-		if exclusive {
+		if exclusive || strictProxyRead {
 			return HandleErrorRespectJSON("workspace gate: %v", err)
 		}
 		if !quietFlag {
@@ -204,7 +209,7 @@ func acquireCommandWorkspaceGates(ctx context.Context, cmd *cobra.Command, beads
 	}
 
 	mode := workspacegate.Shared
-	opts := workspacegate.Options{}
+	opts := workspacegate.Options{ExistingOnly: strictProxyRead}
 	if exclusive {
 		mode = workspacegate.Exclusive
 		opts = exclusiveGateOptions(cmd.CommandPath())
@@ -223,7 +228,7 @@ func acquireCommandWorkspaceGates(ctx context.Context, cmd *cobra.Command, beads
 			}
 			return HandleErrorRespectJSON("a maintenance operation is running on this workspace; retry when it completes: %v", err)
 		}
-		if exclusive {
+		if exclusive || strictProxyRead {
 			return HandleErrorRespectJSON("workspace gate: %v", err)
 		}
 		if !quietFlag {

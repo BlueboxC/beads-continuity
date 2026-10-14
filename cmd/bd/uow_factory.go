@@ -217,6 +217,9 @@ func openProxiedServerUOWProvider(ctx context.Context, beadsDir, databaseOverrid
 	// say where that pull can be run, because proxied mode refuses it at the
 	// front door (proxy.dolt_pull.unsupported) and server mode does not.
 	opts = append(append([]uow.ProviderOption{}, opts...), uow.WithProxiedServerMode())
+	if readonlyMode {
+		return newReadOnlyProxiedServerUOWProvider(ctx, beadsDir, topology)
+	}
 	return newSQLServerUOWProvider(ctx, beadsDir, topology, opts...)
 }
 
@@ -243,7 +246,11 @@ func newSQLServerUOWProvider(ctx context.Context, beadsDir string, topology sqlS
 // writes land in the wrong database (split-brain) — and the identity assertion
 // below silently degrades to no assertion at all.
 func resolveProxiedServerUOWTopology(beadsDir, databaseOverride string, posture identityPosture) (sqlServerUOWTopology, error) {
-	persisted, err := configfile.Load(beadsDir)
+	load := configfile.Load
+	if readonlyMode {
+		load = configfile.LoadForDiscovery
+	}
+	persisted, err := load(beadsDir)
 	if err != nil {
 		return sqlServerUOWTopology{}, fmt.Errorf(
 			"corrupt workspace config %s: %w — refusing to fall back to a fresh database; repair or remove the file to proceed",
@@ -537,4 +544,20 @@ func newManagedProxiedServerUOWProvider(ctx context.Context, beadsDir string, to
 		topology.expectedProjectID,
 		opts...,
 	)
+}
+
+func newReadOnlyProxiedServerUOWProvider(ctx context.Context, beadsDir string, topology sqlServerUOWTopology) (p uow.UnitOfWorkProvider, err error) {
+	defer func() { p, err = activateEventsJournalProvider(ctx, beadsDir, p, err) }()
+	root, err := resolveProxiedServerRootPath(beadsDir)
+	if err != nil {
+		return nil, err
+	}
+	if err = validateProxiedServerRootPath(root); err != nil {
+		return nil, err
+	}
+	user := "root"
+	if topology.external != nil {
+		user = topology.external.ResolvedUser()
+	}
+	return uow.NewReadOnlyProxyUOWProvider(ctx, root, topology.database, user, topology.rootPassword, topology.external, topology.expectedProjectID)
 }

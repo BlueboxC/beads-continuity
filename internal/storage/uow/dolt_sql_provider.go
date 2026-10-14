@@ -52,7 +52,8 @@ type doltSQLProvider struct {
 	// readOnly: the command that opened this provider only reads. Unlike
 	// preview it still bootstraps and migrates normally — it only changes what
 	// happens when the migration gate REFUSES; see providerOptions.readOnly.
-	readOnly bool
+	readOnly       bool
+	strictReadOnly bool
 	// proxiedServerMode: the workspace that opened this provider is in
 	// proxied-server mode, so the commands the proxied front door refuses are
 	// off the table for its operator; see providerOptions.proxiedServerMode.
@@ -192,7 +193,11 @@ func (p *doltSQLProvider) BeginTx(ctx context.Context) (Tx, error) {
 		return nil, fmt.Errorf("uow: pin connection: %w", err)
 	}
 
-	_, err = conn.ExecContext(ctx, "START TRANSACTION;")
+	statement := "START TRANSACTION;"
+	if p.strictReadOnly {
+		statement = "START TRANSACTION READ ONLY;"
+	}
+	_, err = conn.ExecContext(ctx, statement)
 	if err != nil {
 		_ = conn.Close()
 		return nil, fmt.Errorf("uow: failed to start transaction: %w", err)
@@ -207,6 +212,7 @@ func (p *doltSQLProvider) BeginTx(ctx context.Context) (Tx, error) {
 	// transaction has committed.
 	return &doltServerTx{
 		conn:              conn,
+		readOnly:          p.strictReadOnly,
 		clearJournalScope: issueops.ScopeEventsJournalTransaction(conn, p.eventsJournalEnabled.Load()),
 		clearRecheckScope: issueops.ScopeBlockedRecheckTransaction(conn),
 	}, nil
@@ -753,6 +759,10 @@ func proxyDialContext(root string, opts proxy.OpenOpts) func(context.Context, st
 }
 
 func openDB(ctx context.Context, dsn string, dial ...func(context.Context, string, string) (net.Conn, error)) (*sql.DB, error) {
+	return openDBWithPolicy(ctx, dsn, false, dial...)
+}
+
+func openDBWithPolicy(ctx context.Context, dsn string, strictReadOnly bool, dial ...func(context.Context, string, string) (net.Conn, error)) (*sql.DB, error) {
 	cfg, err := mysql.ParseDSN(dsn)
 	if err != nil {
 		return nil, fmt.Errorf("uow: open db: %w", err)
@@ -764,7 +774,11 @@ func openDB(ctx context.Context, dsn string, dial ...func(context.Context, strin
 	if err != nil {
 		return nil, fmt.Errorf("uow: open db: %w", err)
 	}
-	conn := sql.OpenDB(connector)
+	var guarded driver.Connector = connector
+	if strictReadOnly {
+		guarded = readOnlyConnector{Connector: connector}
+	}
+	conn := sql.OpenDB(guarded)
 	bo := backoff.NewExponentialBackOff()
 	bo.MaxElapsedTime = 30 * time.Second
 	if err := pingWithRetry(ctx, conn, bo, pingAttemptTimeout); err != nil {

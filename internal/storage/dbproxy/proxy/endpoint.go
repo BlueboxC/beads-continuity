@@ -609,6 +609,30 @@ func forkExecChild(rootDir string, opts OpenOpts, port int, stopEpoch string, lo
 	}, nil
 }
 
+// GetExistingDatabaseProxyServerEndpointContext authenticates an already-live
+// proxy. It never takes a spawn lock, repairs files, or starts a process.
+func GetExistingDatabaseProxyServerEndpointContext(ctx context.Context, rootDir string, opts OpenOpts) (Endpoint, error) {
+	if err := ctx.Err(); err != nil {
+		return Endpoint{}, err
+	}
+	if err := opts.Backend.Validate(); err != nil {
+		return Endpoint{}, err
+	}
+	if opts.Backend == BackendExternal {
+		if err := opts.External.Validate(); err != nil {
+			return Endpoint{}, err
+		}
+	}
+	discovery := readAndDial(rootDir)
+	if err := ctx.Err(); err != nil {
+		return Endpoint{}, err
+	}
+	if discovery.status != adoptionAdopted {
+		return Endpoint{}, fmt.Errorf("strict readonly requires an authenticated running proxy; start it with a writable command first: %w", errors.Join(discovery.err, errors.New("no verified proxy endpoint")))
+	}
+	return adoptedEndpoint(rootDir, intendedUpstreamID(opts), discovery)
+}
+
 func IsRunning(rootDir string) (bool, int) {
 	discovery := readAndDial(rootDir)
 	if discovery.status != adoptionAdopted {

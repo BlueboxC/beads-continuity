@@ -866,7 +866,7 @@ var portSources = []portSource{
 		label:  "metadata.json dolt_server_port (deprecated fallback)",
 		source: PortSourceMetadataJSON,
 		resolve: func(beadsDir string) (int, bool) {
-			metaCfg, err := configfile.Load(beadsDir)
+			metaCfg, err := configfile.LoadForDiscovery(beadsDir)
 			if err != nil || metaCfg == nil || metaCfg.DoltServerPort <= 0 {
 				return 0, false
 			}

@@ -92,6 +92,8 @@ Root DOX.md and the parent chain remain binding.
 
 - Proxied merge-slot create/check/acquire/release use the same holder/waiter rules through one UOW per operation; only committed attempts report acquisition. Proxied supersede resolves both IDs and adds the supersedes edge plus checked closure in one retried transaction; refusal rolls both back. No automatic holder expiry, queue scheduling or project conversion.
 
+- Proxied --readonly/BD_READONLY attaches only to authenticated running proxies and an existing current-schema database. Read config without legacy migration, skip version stamps/hooks/profiling/maintenance and open existing shared gates without creating files; failed gates refuse. SQL reads pass through the guarded provider; mutation commands remain blocked. Missing gates/proxy/schema need an authorized writable initialization first.
+
 ## Work Guidance
 
 Keep existing CLI primitives and machine-readable output stable. Follow AGENTS.md and ../../engdocs/TESTING.md.
