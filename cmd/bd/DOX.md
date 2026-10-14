@@ -86,6 +86,8 @@ Root DOX.md and the parent chain remain binding.
 
 - Direct configuration and user KV mutations mark real writes for embedded auto-commit. Direct SQL-server config/memory/KV verbs publish scoped config commits when policy is on; batch/off defer to the existing explicit commit. Proxied/Graph routes retain their own transaction ownership. User KV publication refuses observed dirty internal config keys and reports that the mutation remains in the working set.
 
+- Native create --graph timestamps creation from the same clock read when backfilling a closed/started timestamp, so the status cannot predate creation. Open nodes leave creation to the insert/server as before. Existing explicit timestamps and ordinary graph-format boundaries remain unchanged.
+
 ## Work Guidance
 
 Keep existing CLI primitives and machine-readable output stable. Follow AGENTS.md and ../../engdocs/TESTING.md.
