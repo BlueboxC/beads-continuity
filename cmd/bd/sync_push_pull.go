@@ -258,7 +258,10 @@ func runADOPush(cmd *cobra.Command, args []string) error {
 		CheckReadonly("ado push")
 	}
 
-	cfg := getADOConfig()
+	cfg, err := getADOConfig()
+	if err != nil {
+		return err
+	}
 	if err := validateADOConfig(cfg); err != nil {
 		return err
 	}
@@ -305,7 +308,10 @@ func runADOPull(cmd *cobra.Command, args []string) error {
 		CheckReadonly("ado pull")
 	}
 
-	cfg := getADOConfig()
+	cfg, err := getADOConfig()
+	if err != nil {
+		return err
+	}
 	if err := validateADOConfig(cfg); err != nil {
 		return err
 	}
@@ -592,7 +598,10 @@ func runGitHubPush(cmd *cobra.Command, args []string) error {
 		CheckReadonly("github push")
 	}
 
-	config := getGitHubConfig()
+	config, err := getGitHubConfig()
+	if err != nil {
+		return err
+	}
 	if err := validateGitHubConfig(config); err != nil {
 		return err
 	}
@@ -640,7 +649,10 @@ func runGitHubPull(cmd *cobra.Command, args []string) error {
 		CheckReadonly("github pull")
 	}
 
-	config := getGitHubConfig()
+	config, err := getGitHubConfig()
+	if err != nil {
+		return err
+	}
 	if err := validateGitHubConfig(config); err != nil {
 		return err
 	}
@@ -690,7 +702,10 @@ func runGitLabPush(cmd *cobra.Command, args []string) error {
 		CheckReadonly("gitlab push")
 	}
 
-	config := getGitLabConfig()
+	config, err := getGitLabConfig()
+	if err != nil {
+		return err
+	}
 	if err := validateGitLabConfig(config); err != nil {
 		return err
 	}
@@ -793,7 +808,10 @@ func runGitLabPull(cmd *cobra.Command, args []string) error {
 		CheckReadonly("gitlab pull")
 	}
 
-	config := getGitLabConfig()
+	config, err := getGitLabConfig()
+	if err != nil {
+		return err
+	}
 	if err := validateGitLabConfig(config); err != nil {
 		return err
 	}

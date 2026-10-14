@@ -2,6 +2,7 @@ package tracker
 
 import (
 	"context"
+	"fmt"
 	"os"
 
 	"github.com/steveyegge/beads/internal/config"
@@ -105,6 +106,33 @@ type FieldMapper interface {
 	// IssueToTracker builds update fields from a beads issue for the external tracker.
 	// Returns a map of field names to values in the tracker's format.
 	IssueToTracker(issue *types.Issue) map[string]interface{}
+}
+
+// ReadEndpoint accepts only a locally selected authenticated destination.
+// A historical synced URL requires explicit local configuration rather than
+// silently redirecting a self-hosted token to the public default.
+func ReadEndpoint(ctx context.Context, store Store, key, envVar string) (string, error) {
+	if !config.IsLocalEndpointKey(key) {
+		return "", fmt.Errorf("not a tracker endpoint key: %q", key)
+	}
+	if value := config.GetString(key); value != "" {
+		return value, nil
+	}
+	if envVar != "" {
+		if value := os.Getenv(envVar); value != "" {
+			return value, nil
+		}
+	}
+	if store != nil {
+		value, err := store.GetConfig(ctx, key)
+		if err != nil {
+			return "", fmt.Errorf("checking local endpoint requirement for %s: %w", key, err)
+		}
+		if value != "" {
+			return "", fmt.Errorf("%s is present in synced config; configure it locally in config.yaml or its environment variable before connecting", key)
+		}
+	}
+	return "", nil
 }
 
 // ReadConfig preserves YAML-only secrets and falls back to env on missing/error store reads.

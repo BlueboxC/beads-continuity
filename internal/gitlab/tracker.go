@@ -53,7 +53,10 @@ func (t *Tracker) Init(ctx context.Context, store tracker.Store) error {
 		return fmt.Errorf("GitLab token not configured (set gitlab.token or GITLAB_TOKEN)")
 	}
 
-	baseURL, _ := t.getConfig(ctx, "gitlab.url", "GITLAB_URL")
+	baseURL, err := tracker.ReadEndpoint(ctx, store, "gitlab.url", "GITLAB_URL")
+	if err != nil {
+		return err
+	}
 	if baseURL == "" {
 		baseURL = "https://gitlab.com"
 	}

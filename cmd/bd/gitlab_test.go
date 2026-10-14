@@ -28,7 +28,10 @@ func TestGitLabConfigFromEnv(t *testing.T) {
 	t.Setenv("GITLAB_TOKEN", "test-token-123")
 	t.Setenv("GITLAB_PROJECT_ID", "42")
 
-	config := getGitLabConfig()
+	config, err := getGitLabConfig()
+	if err != nil {
+		t.Fatal(err)
+	}
 
 	if config.URL != "https://gitlab.example.com" {
 		t.Errorf("URL = %q, want %q", config.URL, "https://gitlab.example.com")
@@ -335,7 +338,10 @@ func TestGitLabClientCreation(t *testing.T) {
 	t.Setenv("GITLAB_TOKEN", "test-token-abc")
 	t.Setenv("GITLAB_PROJECT_ID", "99")
 
-	config := getGitLabConfig()
+	config, err := getGitLabConfig()
+	if err != nil {
+		t.Fatal(err)
+	}
 	client := getGitLabClient(config)
 
 	if client.BaseURL != "https://gitlab.test.com" {
@@ -360,7 +366,10 @@ func TestGitLabConfigFromEnv_GroupID(t *testing.T) {
 	t.Setenv("GITLAB_GROUP_ID", "mygroup")
 	t.Setenv("GITLAB_DEFAULT_PROJECT_ID", "456")
 
-	config := getGitLabConfig()
+	config, err := getGitLabConfig()
+	if err != nil {
+		t.Fatal(err)
+	}
 
 	if config.GroupID != "mygroup" {
 		t.Errorf("GroupID = %q, want %q", config.GroupID, "mygroup")
@@ -381,7 +390,10 @@ func TestGitLabClientCreation_WithGroupID(t *testing.T) {
 	t.Setenv("GITLAB_PROJECT_ID", "99")
 	t.Setenv("GITLAB_GROUP_ID", "mygroup")
 
-	config := getGitLabConfig()
+	config, err := getGitLabConfig()
+	if err != nil {
+		t.Fatal(err)
+	}
 	client := getGitLabClient(config)
 
 	if client.GroupID != "mygroup" {

@@ -99,10 +99,13 @@ func renderInitConfigYAML(prefix string, noDbMode bool) []byte {
 #   path: issues.jsonl
 
 # Integration settings (access with 'bd config get/set')
-# Non-secret keys (stored in the database):
-# - jira.url, jira.project
+# Project metadata (stored in the database):
+# - jira.project
 # - linear.team_id
 # - github.org, github.repo
+#
+# Authenticated endpoints (local-only):
+# - github.url, gitlab.url, jira.url, ado.url, linear.api_endpoint
 #
 # Secret keys (stored in this file but prefer env vars to avoid git exposure):
 # - linear.api_key  → use LINEAR_API_KEY env var instead

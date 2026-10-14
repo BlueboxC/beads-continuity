@@ -212,17 +212,21 @@ func init() {
 }
 
 // getGitLabConfig returns GitLab configuration from bd config or environment.
-func getGitLabConfig() GitLabConfig {
+func getGitLabConfig() (GitLabConfig, error) {
 	ctx := context.Background()
 	config := GitLabConfig{}
 
-	config.URL = getGitLabConfigValue(ctx, "gitlab.url")
+	endpoint, err := readTrackerEndpoint(ctx, "gitlab.url", "GITLAB_URL")
+	if err != nil {
+		return config, err
+	}
+	config.URL = endpoint
 	config.Token = getGitLabConfigValue(ctx, "gitlab.token")
 	config.ProjectID = getGitLabConfigValue(ctx, "gitlab.project_id")
 	config.GroupID = getGitLabConfigValue(ctx, "gitlab.group_id")
 	config.DefaultProjectID = getGitLabConfigValue(ctx, "gitlab.default_project_id")
 
-	return config
+	return config, nil
 }
 
 // getGitLabConfigValue reads a GitLab configuration value from store or environment.
@@ -352,7 +356,10 @@ func runGitLabStatus(cmd *cobra.Command, args []string) error {
 		}
 	}()
 
-	config := getGitLabConfig()
+	config, err := getGitLabConfig()
+	if err != nil {
+		return err
+	}
 
 	out := cmd.OutOrStdout()
 	_, _ = fmt.Fprintln(out, "GitLab Configuration")
@@ -415,7 +422,10 @@ func runGitLabProjects(cmd *cobra.Command, args []string) error {
 		}
 	}()
 
-	config := getGitLabConfig()
+	config, err := getGitLabConfig()
+	if err != nil {
+		return err
+	}
 	if err := validateGitLabConfig(config); err != nil {
 		return HandleError("%v", err)
 	}
@@ -475,7 +485,10 @@ func runGitLabSync(cmd *cobra.Command, args []string) error {
 		}
 	}()
 
-	config := getGitLabConfig()
+	config, err := getGitLabConfig()
+	if err != nil {
+		return err
+	}
 	if err := validateGitLabConfig(config); err != nil {
 		return HandleError("%v", err)
 	}

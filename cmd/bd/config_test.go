@@ -194,7 +194,7 @@ func TestYamlOnlyConfigWithoutDatabase(t *testing.T) {
 	}
 
 	// Test that non-yaml-only keys are correctly identified
-	nonYamlKeys := []string{"jira.url", "linear.team_id", "status.custom"}
+	nonYamlKeys := []string{"jira.project", "linear.team_id", "status.custom"}
 	for _, key := range nonYamlKeys {
 		if config.IsYamlOnlyKey(key) {
 			t.Errorf("Expected %q to NOT be a yaml-only key", key)

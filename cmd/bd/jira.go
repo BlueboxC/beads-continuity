@@ -242,7 +242,10 @@ func runJiraStatus(cmd *cobra.Command, args []string) error {
 		return HandleErrorRespectJSON("%v", err)
 	}
 
-	jiraURL, _ := trackerStore.GetConfig(ctx, "jira.url")
+	jiraURL, err := tracker.ReadEndpoint(ctx, trackerStore, "jira.url", "JIRA_URL")
+	if err != nil {
+		return err
+	}
 	lastSync, _ := trackerStore.GetConfig(ctx, "jira.last_sync")
 
 	pluralProjects, _ := trackerStore.GetConfig(ctx, "jira.projects")
@@ -337,7 +340,10 @@ func validateJiraConfigForStore(st tracker.Store) error {
 	if st == nil {
 		return fmt.Errorf("database not available")
 	}
-	jiraURL, _ := st.GetConfig(ctx, "jira.url")
+	jiraURL, err := tracker.ReadEndpoint(ctx, st, "jira.url", "JIRA_URL")
+	if err != nil {
+		return err
+	}
 
 	if jiraURL == "" {
 		return fmt.Errorf("jira.url not configured\nRun: bd config set jira.url \"https://company.atlassian.net\"")
@@ -351,7 +357,7 @@ func validateJiraConfigForStore(st tracker.Store) error {
 		return fmt.Errorf("no Jira project configured\nRun: bd config set jira.project \"PROJ\"\nOr:  bd config set jira.projects \"PROJ1,PROJ2\"")
 	}
 
-	apiToken, _ := st.GetConfig(ctx, "jira.api_token")
+	apiToken, _ := tracker.ReadConfig(ctx, st, "jira.api_token", "JIRA_API_TOKEN")
 	if apiToken == "" && os.Getenv("JIRA_API_TOKEN") == "" {
 		return fmt.Errorf("Jira API token not configured\nRun: bd config set jira.api_token \"YOUR_TOKEN\"\nOr: export JIRA_API_TOKEN=YOUR_TOKEN")
 	}

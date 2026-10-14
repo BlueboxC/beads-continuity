@@ -45,6 +45,8 @@ func TestValidateLinearConfigForStoreUsesProxiedStore(t *testing.T) {
 }
 
 func TestValidateJiraConfigForStoreUsesProxiedStore(t *testing.T) {
+	t.Setenv("JIRA_API_TOKEN", "token")
+	t.Setenv("JIRA_URL", "https://example.atlassian.net")
 	old := rootCtx
 	rootCtx = context.Background()
 	t.Cleanup(func() { rootCtx = old })
@@ -139,9 +141,10 @@ func TestRunLinearTeamsAPIOnlyDoesNotOpenLocalStore(t *testing.T) {
 	}
 }
 
-func TestBuildLinearClientAPIOnlyUsesProxiedEndpointConfig(t *testing.T) {
+func TestBuildLinearClientAPIOnlyUsesLocalEndpointConfig(t *testing.T) {
 	t.Setenv("LINEAR_API_KEY", "api-key")
-	st := &configOnlyTrackerStore{config: map[string]string{"linear.api_endpoint": "https://proxy.example/graphql"}}
+	t.Setenv("LINEAR_API_ENDPOINT", "https://proxy.example/graphql")
+	st := &configOnlyTrackerStore{config: map[string]string{"linear.api_endpoint": "https://untrusted.invalid/graphql"}}
 	oldTransport := http.DefaultTransport
 	t.Cleanup(func() { http.DefaultTransport = oldTransport })
 	http.DefaultTransport = roundTripperFunc(func(req *http.Request) (*http.Response, error) {
@@ -159,15 +162,16 @@ func TestBuildLinearClientAPIOnlyUsesProxiedEndpointConfig(t *testing.T) {
 	}
 }
 
-// TestBuildLinearClientAPIOnlyUsesProxiedEndpointConfigOnOAuth is the OAuth
+// TestBuildLinearClientAPIOnlyUsesLocalEndpointConfigOnOAuth is the OAuth
 // mirror of the test above. The helper must apply linear.api_endpoint on BOTH
 // auth branches, as Tracker.Init does; an early return on the OAuth branch
 // silently ignores a configured custom endpoint whenever OAuth credentials are
 // present, which is the whole set of CI environments.
-func TestBuildLinearClientAPIOnlyUsesProxiedEndpointConfigOnOAuth(t *testing.T) {
+func TestBuildLinearClientAPIOnlyUsesLocalEndpointConfigOnOAuth(t *testing.T) {
 	t.Setenv("LINEAR_OAUTH_CLIENT_ID", "client")
 	t.Setenv("LINEAR_OAUTH_CLIENT_SECRET", "secret")
-	st := &configOnlyTrackerStore{config: map[string]string{"linear.api_endpoint": "https://proxy.example/graphql"}}
+	t.Setenv("LINEAR_API_ENDPOINT", "https://proxy.example/graphql")
+	st := &configOnlyTrackerStore{config: map[string]string{"linear.api_endpoint": "https://untrusted.invalid/graphql"}}
 	oldTransport := http.DefaultTransport
 	t.Cleanup(func() { http.DefaultTransport = oldTransport })
 

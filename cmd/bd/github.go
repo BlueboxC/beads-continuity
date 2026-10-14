@@ -166,7 +166,7 @@ func init() {
 }
 
 // getGitHubConfig returns GitHub configuration from bd config or environment.
-func getGitHubConfig() GitHubConfig {
+func getGitHubConfig() (GitHubConfig, error) {
 	ctx := context.Background()
 	config := GitHubConfig{}
 
@@ -174,7 +174,11 @@ func getGitHubConfig() GitHubConfig {
 	config.Owner = getGitHubConfigValue(ctx, "github.owner")
 	config.Repo = getGitHubConfigValue(ctx, "github.repo")
 	config.Repository = getGitHubConfigValue(ctx, "github.repository")
-	config.URL = getGitHubConfigValue(ctx, "github.url")
+	endpoint, err := readTrackerEndpoint(ctx, "github.url", "GITHUB_API_URL")
+	if err != nil {
+		return config, err
+	}
+	config.URL = endpoint
 
 	// Parse combined owner/repo format if individual fields are empty
 	if (config.Owner == "" || config.Repo == "") && config.Repository != "" {
@@ -189,7 +193,7 @@ func getGitHubConfig() GitHubConfig {
 		}
 	}
 
-	return config
+	return config, nil
 }
 
 // getGitHubConfigValue reads a GitHub configuration value from store or environment.
@@ -304,7 +308,10 @@ func runGitHubStatus(cmd *cobra.Command, args []string) error {
 		}
 	}()
 
-	config := getGitHubConfig()
+	config, err := getGitHubConfig()
+	if err != nil {
+		return err
+	}
 
 	out := cmd.OutOrStdout()
 	_, _ = fmt.Fprintln(out, "GitHub Configuration")
@@ -339,7 +346,10 @@ func runGitHubRepos(cmd *cobra.Command, args []string) error {
 		}
 	}()
 
-	config := getGitHubConfig()
+	config, err := getGitHubConfig()
+	if err != nil {
+		return err
+	}
 	if config.Token == "" {
 		return HandleError("github.token is not configured. Set via 'bd config set github.token <token>' or GITHUB_TOKEN environment variable")
 	}
@@ -384,7 +394,10 @@ func runGitHubSync(cmd *cobra.Command, args []string) error {
 		}
 	}()
 
-	config := getGitHubConfig()
+	config, err := getGitHubConfig()
+	if err != nil {
+		return err
+	}
 	if err := validateGitHubConfig(config); err != nil {
 		return HandleError("%v", err)
 	}

@@ -107,6 +107,16 @@ var YamlOnlyKeys = map[string]bool{
 	"notion.token":               true,
 }
 
+// IsLocalEndpointKey identifies authenticated tracker destinations that must be
+// chosen locally, independently of synced project settings.
+func IsLocalEndpointKey(key string) bool {
+	switch strings.ToLower(strings.TrimSpace(key)) {
+	case "github.url", "gitlab.url", "jira.url", "ado.url", "linear.api_endpoint":
+		return true
+	}
+	return false
+}
+
 // IsLocalCredentialKey identifies integration credentials reserved for local
 // configuration. Ordinary settings and user KV keys keep their existing rules.
 func IsLocalCredentialKey(key string) bool {
@@ -127,7 +137,7 @@ func ValidateSyncedConfigKey(key string) error {
 func IsYamlOnlyKey(key string) bool {
 	key = strings.ToLower(strings.TrimSpace(key))
 	// Check exact match
-	if YamlOnlyKeys[key] {
+	if YamlOnlyKeys[key] || IsLocalEndpointKey(key) {
 		return true
 	}
 

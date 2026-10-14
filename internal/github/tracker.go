@@ -71,7 +71,10 @@ func (t *Tracker) Init(ctx context.Context, store tracker.Store) error {
 	t.client = NewClient(token, owner, repo)
 
 	// Allow custom base URL for GitHub Enterprise
-	baseURL := t.getConfig(ctx, "github.url", "GITHUB_API_URL")
+	baseURL, err := tracker.ReadEndpoint(ctx, store, "github.url", "GITHUB_API_URL")
+	if err != nil {
+		return err
+	}
 	if baseURL != "" {
 		t.client = t.client.WithBaseURL(baseURL)
 	}

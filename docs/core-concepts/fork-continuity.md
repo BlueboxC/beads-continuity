@@ -245,6 +245,18 @@ including case variants. This includes `notion.token`: Notion no longer reads
 authentication from the synced database. Its data-source and view settings
 retain their existing database behavior.
 
+Authenticated destinations `github.url`, `gitlab.url`, `jira.url`, `ado.url`
+and `linear.api_endpoint` are also local-only. Use `bd config set <key> <url>`
+or `GITHUB_API_URL`, `GITLAB_URL`, `JIRA_URL`, `AZURE_DEVOPS_URL`, or
+`LINEAR_API_ENDPOINT`. Local selection wins without reading the synced URL.
+With no explicit local selection, a historical nonempty URL or a failed read
+stops the connection; it does not silently switch self-hosted credentials to
+the public default. Missing rows retain provider defaults. HTTP settings writes
+cannot set these destinations. Ordinary project metadata keeps its existing
+storage rules; synced URL rows are not automatically copied or deleted.
+This boundary protects against synced database configuration; local configuration
+files remain trusted operator inputs.
+
 Existing secret rows or history are not automatically removed. If a credential
 was previously stored in a synchronized database, revoke/rotate it, configure
 its replacement locally and coordinate removal of the old row and retained

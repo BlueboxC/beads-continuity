@@ -1156,10 +1156,16 @@ func getLinearClient(ctx context.Context) (*linear.Client, error) {
 		return nil, err
 	}
 
+	endpoint, err := tracker.ReadEndpoint(ctx, tracker.NewStore(store), "linear.api_endpoint", "LINEAR_API_ENDPOINT")
+	if err != nil {
+		return nil, err
+	}
+	if endpoint != "" {
+		client = client.WithEndpoint(endpoint)
+	}
+
 	if store != nil {
-		if endpoint, _ := store.GetConfig(ctx, "linear.api_endpoint"); endpoint != "" {
-			client = client.WithEndpoint(endpoint)
-		}
+
 		if projectID, _ := store.GetConfig(ctx, "linear.project_id"); projectID != "" {
 			client = client.WithProjectID(projectID)
 		}
@@ -1232,10 +1238,12 @@ func buildLinearClientAPIOnly(ctx context.Context, teamID string, st tracker.Sto
 		}
 		client = linear.NewClient(apiKey, teamID)
 	}
-	if st != nil {
-		if endpoint, _ := st.GetConfig(ctx, "linear.api_endpoint"); endpoint != "" {
-			client = client.WithEndpoint(endpoint)
-		}
+	endpoint, err := tracker.ReadEndpoint(ctx, st, "linear.api_endpoint", "LINEAR_API_ENDPOINT")
+	if err != nil {
+		return nil, err
+	}
+	if endpoint != "" {
+		client = client.WithEndpoint(endpoint)
 	}
 	return client, nil
 }

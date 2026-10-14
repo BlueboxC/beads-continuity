@@ -34,7 +34,10 @@ func TestADOConfigFromEnv(t *testing.T) {
 	t.Setenv("AZURE_DEVOPS_ORG", "myorg")
 	t.Setenv("AZURE_DEVOPS_PROJECT", "myproject")
 
-	cfg := getADOConfig()
+	cfg, err := getADOConfig()
+	if err != nil {
+		t.Fatal(err)
+	}
 
 	if cfg.PAT != "test-pat-value" {
 		t.Errorf("PAT = %q, want %q", cfg.PAT, "test-pat-value")
@@ -57,7 +60,10 @@ func TestADOConfigFromEnvWithURL(t *testing.T) {
 	t.Setenv("AZURE_DEVOPS_URL", "https://tfs.corp.com/DefaultCollection")
 	t.Setenv("AZURE_DEVOPS_PROJECT", "proj")
 
-	cfg := getADOConfig()
+	cfg, err := getADOConfig()
+	if err != nil {
+		t.Fatal(err)
+	}
 
 	if cfg.URL != "https://tfs.corp.com/DefaultCollection" {
 		t.Errorf("URL = %q, want %q", cfg.URL, "https://tfs.corp.com/DefaultCollection")

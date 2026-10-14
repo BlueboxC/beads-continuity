@@ -170,13 +170,17 @@ func init() {
 }
 
 // getADOConfig returns Azure DevOps configuration from bd config or environment.
-func getADOConfig() ADOConfig {
+func getADOConfig() (ADOConfig, error) {
 	ctx := context.Background()
 	cfg := ADOConfig{}
 
 	cfg.PAT = getADOConfigValue(ctx, "ado.pat")
 	cfg.Org = getADOConfigValue(ctx, "ado.org")
-	cfg.URL = getADOConfigValue(ctx, "ado.url")
+	endpoint, err := readTrackerEndpoint(ctx, "ado.url", "AZURE_DEVOPS_URL")
+	if err != nil {
+		return cfg, err
+	}
+	cfg.URL = endpoint
 
 	// Resolve projects from all sources.
 	pluralVal := getADOConfigValue(ctx, "ado.projects")
@@ -186,11 +190,15 @@ func getADOConfig() ADOConfig {
 		cfg.Project = cfg.Projects[0]
 	}
 
-	return cfg
+	return cfg, nil
 }
 
 // getADOConfigValue reads an Azure DevOps configuration value from store or environment.
 func getADOConfigValue(ctx context.Context, key string) string {
+	if config.IsYamlOnlyKey(key) {
+		value, _ := tracker.ReadConfig(ctx, nil, key, adoConfigToEnvVar(key))
+		return value
+	}
 	// Try to read from store (works in direct mode)
 	if store != nil {
 		value, _ := store.GetConfig(ctx, key)
@@ -366,7 +374,10 @@ func runADOStatus(cmd *cobra.Command, _ []string) error {
 		}
 	}()
 
-	cfg := getADOConfig()
+	cfg, err := getADOConfig()
+	if err != nil {
+		return err
+	}
 
 	if jsonOutput {
 		result := adoStatusResult{
@@ -422,7 +433,10 @@ func runADOProjects(cmd *cobra.Command, _ []string) error {
 		}
 	}()
 
-	cfg := getADOConfig()
+	cfg, err := getADOConfig()
+	if err != nil {
+		return err
+	}
 	if cfg.PAT == "" {
 		return fmt.Errorf("ado.pat not configured: set via 'bd config set ado.pat <token>' or AZURE_DEVOPS_PAT env var")
 	}
@@ -494,7 +508,10 @@ func runADOSync(cmd *cobra.Command, _ []string) error {
 		}
 	}()
 
-	cfg := getADOConfig()
+	cfg, err := getADOConfig()
+	if err != nil {
+		return err
+	}
 	if err := validateADOConfig(cfg); err != nil {
 		return err
 	}

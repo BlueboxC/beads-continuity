@@ -38,7 +38,7 @@ func (m *mockStore) GetConfig(_ context.Context, key string) (string, error) {
 	if v, ok := m.config[key]; ok {
 		return v, nil
 	}
-	return "", fmt.Errorf("key not found: %s", key)
+	return "", nil
 }
 
 func (m *mockStore) SetConfig(_ context.Context, key, value string) error {
@@ -112,6 +112,7 @@ func TestTracker_InitFromConfig(t *testing.T) {
 }
 
 func TestTracker_InitWithCustomURL(t *testing.T) {
+	t.Setenv("AZURE_DEVOPS_URL", "https://tfs.corp.com/DefaultCollection")
 	// ado.pat is yaml-only (secret), so set it via env var.
 	t.Setenv("AZURE_DEVOPS_PAT", "config-pat")
 	tr := &Tracker{}
@@ -1328,6 +1329,7 @@ func TestTracker_InitValidatesProject(t *testing.T) {
 }
 
 func TestTracker_InitRejectsHTTPURL(t *testing.T) {
+	t.Setenv("AZURE_DEVOPS_URL", "http://ado.example.com/collection")
 	// ado.pat is yaml-only (secret), so set it via env var.
 	t.Setenv("AZURE_DEVOPS_PAT", "some-pat")
 	tr := &Tracker{}

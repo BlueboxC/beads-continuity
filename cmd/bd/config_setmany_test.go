@@ -53,14 +53,14 @@ func TestConfigSetManyArgParsing(t *testing.T) {
 // TestConfigSetManyYamlKeyDetection tests that yaml-only keys are correctly identified
 // for routing in the set-many command.
 func TestConfigSetManyYamlKeyDetection(t *testing.T) {
-	yamlKeys := []string{"no-db", "json", "routing.mode", "routing.default", "no-push", "import.auto", "import.path"}
+	yamlKeys := []string{"no-db", "json", "routing.mode", "routing.default", "no-push", "import.auto", "import.path", "github.url", "gitlab.url", "jira.url", "ado.url", "linear.api_endpoint"}
 	for _, key := range yamlKeys {
 		if !config.IsYamlOnlyKey(key) {
 			t.Errorf("expected %q to be yaml-only", key)
 		}
 	}
 
-	dbKeys := []string{"ado.state_map.open", "jira.url", "status.custom", "test.key"}
+	dbKeys := []string{"ado.state_map.open", "jira.project", "status.custom", "test.key"}
 	for _, key := range dbKeys {
 		if config.IsYamlOnlyKey(key) {
 			t.Errorf("expected %q to NOT be yaml-only", key)
@@ -80,7 +80,7 @@ func TestConfigSetManyMixedKeyRouting(t *testing.T) {
 		"no-db=true",                  // yaml-only
 		"routing.mode=direct",         // yaml-only
 		"beads.role=maintainer",       // git config
-		"jira.url=https://j.test",     // database
+		"jira.url=https://j.test",     // yaml-only
 		"ado.state_map.open=New",      // database
 		"ado.state_map.closed=Closed", // database
 	}
@@ -107,14 +107,14 @@ func TestConfigSetManyMixedKeyRouting(t *testing.T) {
 		}
 	}
 
-	if len(yamlPairs) != 2 {
-		t.Errorf("expected 2 yaml pairs, got %d", len(yamlPairs))
+	if len(yamlPairs) != 3 {
+		t.Errorf("expected 3 yaml pairs, got %d", len(yamlPairs))
 	}
 	if len(gitPairs) != 1 {
 		t.Errorf("expected 1 git pair, got %d", len(gitPairs))
 	}
-	if len(dbPairs) != 3 {
-		t.Errorf("expected 3 db pairs, got %d", len(dbPairs))
+	if len(dbPairs) != 2 {
+		t.Errorf("expected 2 db pairs, got %d", len(dbPairs))
 	}
 
 	// Verify yaml keys are correct
@@ -122,7 +122,7 @@ func TestConfigSetManyMixedKeyRouting(t *testing.T) {
 	for _, p := range yamlPairs {
 		yamlKeySet[p.key] = true
 	}
-	if !yamlKeySet["no-db"] || !yamlKeySet["routing.mode"] {
+	if !yamlKeySet["no-db"] || !yamlKeySet["routing.mode"] || !yamlKeySet["jira.url"] {
 		t.Errorf("yaml pairs missing expected keys: %v", yamlPairs)
 	}
 
@@ -136,7 +136,7 @@ func TestConfigSetManyMixedKeyRouting(t *testing.T) {
 	for _, p := range dbPairs {
 		dbKeySet[p.key] = true
 	}
-	for _, expected := range []string{"jira.url", "ado.state_map.open", "ado.state_map.closed"} {
+	for _, expected := range []string{"ado.state_map.open", "ado.state_map.closed"} {
 		if !dbKeySet[expected] {
 			t.Errorf("db pairs missing expected key %q", expected)
 		}
@@ -254,7 +254,7 @@ func TestConfigSetManyOutputLocationMapping(t *testing.T) {
 		"no-db":              "config.yaml",
 		"routing.mode":       "config.yaml",
 		"beads.role":         "git config",
-		"jira.url":           "database",
+		"jira.url":           "config.yaml",
 		"ado.state_map.open": "database",
 	}
 

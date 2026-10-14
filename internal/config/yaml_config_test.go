@@ -52,8 +52,14 @@ func TestIsYamlOnlyKey(t *testing.T) {
 		{"github.token", true},
 		{"linear.api_key", true},
 
+		// Authenticated destinations are selected locally.
+		{"github.url", true},
+		{"gitlab.url", true},
+		{"jira.url", true},
+		{"ado.url", true},
+		{"linear.api_endpoint", true},
+
 		// Non-yaml keys (should return false)
-		{"jira.url", false},
 		{"jira.project", false},
 		{"github.org", false},
 		{"custom.setting", false},

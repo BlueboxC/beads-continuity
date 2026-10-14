@@ -83,7 +83,10 @@ func (t *Tracker) Init(ctx context.Context, store tracker.Store) error {
 	}
 
 	t.org = t.getConfig(ctx, "ado.org", "AZURE_DEVOPS_ORG")
-	customURL := t.getConfig(ctx, "ado.url", "AZURE_DEVOPS_URL")
+	customURL, err := tracker.ReadEndpoint(ctx, store, "ado.url", "AZURE_DEVOPS_URL")
+	if err != nil {
+		return err
+	}
 
 	if t.org == "" && customURL == "" {
 		return fmt.Errorf("Azure DevOps organization not configured (set ado.org or AZURE_DEVOPS_ORG)")

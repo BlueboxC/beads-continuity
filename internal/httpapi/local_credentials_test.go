@@ -27,7 +27,7 @@ func TestHTTPSettingCredentialsRefusedBeforeStorage(t *testing.T) {
 		t.Fatal(err)
 	}
 	ts := newTestServer(t, rolesConfig(Config{Settings: settings}))
-	for _, key := range []string{"github.token", "linear.api_key", "jira.api_token", "gitlab.token", "ado.pat", "notion.token", "github%2Etoken", "GITHUB.TOKEN", "AI.api_key"} {
+	for _, key := range []string{"github.url", "gitlab.url", "jira.url", "ado.url", "linear.api_endpoint", "GITHUB.URL", " github.url ", "github.token", "linear.api_key", "jira.api_token", "gitlab.token", "ado.pat", "notion.token", "github%2Etoken", "GITHUB.TOKEN", "AI.api_key"} {
 		resp := ts.setSetting(t, "/v0/beads/config/"+key, `{"value":"synthetic-credential"}`)
 		raw := readAll(t, resp)
 		if resp.StatusCode != http.StatusBadRequest {

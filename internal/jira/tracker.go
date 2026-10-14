@@ -58,7 +58,10 @@ func (t *Tracker) ConfigPrefix() string { return "jira" }
 func (t *Tracker) Init(ctx context.Context, store tracker.Store) error {
 	t.store = store
 
-	jiraURL, err := t.getConfig(ctx, "jira.url", "JIRA_URL")
+	jiraURL, err := tracker.ReadEndpoint(ctx, store, "jira.url", "JIRA_URL")
+	if err != nil {
+		return err
+	}
 	if err != nil || jiraURL == "" {
 		return fmt.Errorf("Jira URL not configured (set jira.url or JIRA_URL)")
 	}

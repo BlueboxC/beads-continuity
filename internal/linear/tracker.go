@@ -69,9 +69,12 @@ func (t *Tracker) Init(ctx context.Context, store tracker.Store) error {
 	}
 
 	// Read optional endpoint and project ID.
-	var endpoint, projectID string
+	endpoint, err := tracker.ReadEndpoint(ctx, store, "linear.api_endpoint", "LINEAR_API_ENDPOINT")
+	if err != nil {
+		return err
+	}
+	var projectID string
 	if store != nil {
-		endpoint, _ = store.GetConfig(ctx, "linear.api_endpoint")
 		projectID, _ = store.GetConfig(ctx, "linear.project_id")
 		if projectID != "" {
 			t.projectID = projectID

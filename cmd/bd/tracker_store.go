@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"fmt"
+	"os"
 
 	"github.com/steveyegge/beads/internal/config"
 	"github.com/steveyegge/beads/internal/tracker"
@@ -48,4 +49,28 @@ func buildTrackerPullHooks(ctx context.Context) *tracker.PullHooks {
 			return nil
 		},
 	}
+}
+
+// readTrackerEndpoint retains the existing temporary readonly open when needed,
+// but never opens storage for an explicitly local destination.
+func readTrackerEndpoint(ctx context.Context, key, envVar string) (string, error) {
+	if config.GetString(key) != "" || os.Getenv(envVar) != "" {
+		return tracker.ReadEndpoint(ctx, nil, key, envVar)
+	}
+	if usesProxiedServer() {
+		st, err := trackerStoreForCommand(ctx)
+		if err != nil {
+			return "", err
+		}
+		return tracker.ReadEndpoint(ctx, st, key, envVar)
+	}
+	if store != nil || dbPath == "" {
+		return tracker.ReadEndpoint(ctx, tracker.NewStore(store), key, envVar)
+	}
+	st, err := openReadOnlyStoreForDBPath(ctx, dbPath)
+	if err != nil {
+		return "", fmt.Errorf("checking tracker endpoint: %w", err)
+	}
+	defer func() { _ = st.Close() }()
+	return tracker.ReadEndpoint(ctx, tracker.NewStore(st), key, envVar)
 }

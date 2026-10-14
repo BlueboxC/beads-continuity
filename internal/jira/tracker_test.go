@@ -998,6 +998,7 @@ func TestFetchIssuesWithoutPullJQLOmitsExtraFilter(t *testing.T) {
 }
 
 func TestInitLoadsCustomStatusMapFromAllConfig(t *testing.T) {
+	t.Setenv("JIRA_URL", "https://example.atlassian.net")
 	// jira.api_token is yaml-only (secret), so set it via env var.
 	t.Setenv("JIRA_API_TOKEN", "token123")
 	store := &configStore{
@@ -1036,6 +1037,7 @@ func TestInitLoadsCustomStatusMapFromAllConfig(t *testing.T) {
 }
 
 func TestInitLoadsCustomTypeMapFromAllConfig(t *testing.T) {
+	t.Setenv("JIRA_URL", "https://example.atlassian.net")
 	// jira.api_token is yaml-only (secret), so set it via env var.
 	t.Setenv("JIRA_API_TOKEN", "token123")
 	store := &configStore{
@@ -1086,6 +1088,7 @@ func TestInitLoadsCustomTypeMapFromAllConfig(t *testing.T) {
 }
 
 func TestInitLoadsCustomPriorityMapFromAllConfig(t *testing.T) {
+	t.Setenv("JIRA_URL", "https://example.atlassian.net")
 	// jira.api_token is yaml-only (secret), so set it via env var.
 	t.Setenv("JIRA_API_TOKEN", "token123")
 	store := &configStore{
@@ -1114,6 +1117,7 @@ func TestInitLoadsCustomPriorityMapFromAllConfig(t *testing.T) {
 }
 
 func TestInitLoadsCustomFieldsFromAllConfig(t *testing.T) {
+	t.Setenv("JIRA_URL", "https://example.atlassian.net")
 	// jira.api_token is yaml-only (secret), so set it via env var.
 	t.Setenv("JIRA_API_TOKEN", "token123")
 	store := &configStore{
@@ -1195,6 +1199,7 @@ func TestInitLoadsCustomFieldsFromAllConfig(t *testing.T) {
 }
 
 func TestInitRejectsInvalidCustomFieldJSON(t *testing.T) {
+	t.Setenv("JIRA_URL", "https://example.atlassian.net")
 	// jira.api_token is yaml-only (secret), so set it via env var.
 	t.Setenv("JIRA_API_TOKEN", "token123")
 	store := &configStore{
