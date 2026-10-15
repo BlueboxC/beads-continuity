@@ -12,6 +12,8 @@ SQL-backed Dolt storage and backend-specific operations.
 
 Root DOX.md and the parent chain remain binding.
 
+- Write transactions roll back on panic before propagating it, releasing the pool session. Committed writes and ordinary error rollback retain their existing no-replay behavior.
+
 - Retried single and batch creates restore caller-requested IDs before every transaction attempt. Generated IDs are checked against the new snapshot; explicit import IDs retain upsert semantics. All-wisp batches follow the same rule without Dolt history.
 
 - `ApplySchemaMigrations` includes migrations performed by this store's writable open exactly once, so explicit shared-server migration reports the applied count and reaches CLI version reconciliation. Read-only/gateway opens and consent gates keep their existing behavior.

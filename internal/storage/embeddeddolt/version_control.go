@@ -773,6 +773,12 @@ func (s *EmbeddedDoltStore) BackupDatabase(ctx context.Context, dir string) erro
 // The dir must exist locally and contain a valid Dolt backup.
 // When force is true, an existing database is overwritten.
 func (s *EmbeddedDoltStore) RestoreDatabase(ctx context.Context, dir string, force bool) error {
+	if s.closed.Load() {
+		return errClosed
+	}
+	if s.readOnly {
+		return ErrReadOnly
+	}
 	info, err := os.Stat(dir)
 	if err != nil {
 		return fmt.Errorf("backup source does not exist: %w", err)
@@ -785,8 +791,45 @@ func (s *EmbeddedDoltStore) RestoreDatabase(ctx context.Context, dir string, for
 	if err != nil {
 		return err
 	}
+	if err := checkBackupWritable(ctx, backupURL, s.branch); err != nil {
+		return fmt.Errorf("backup compatibility check failed before replacing the destination; use a compatible Dolt CLI/server to restore this backup: %w", err)
+	}
 
 	return s.withMutatingDBConn(ctx, func(db versioncontrolops.DBConn) error {
 		return versioncontrolops.BackupRestore(ctx, db, backupURL, s.database, force)
 	})
+}
+
+// A newer Dolt can produce a readable backup whose tables this engine cannot
+// commit. Rehearse that boundary in a disposable engine before a force restore.
+func checkBackupWritable(ctx context.Context, backupURL, branch string) (err error) {
+	dir, err := os.MkdirTemp("", "beads-backup-check-")
+	if err != nil {
+		return err
+	}
+	defer func() { err = errors.Join(err, os.RemoveAll(dir)) }()
+	db, cleanup, err := OpenSQL(ctx, dir, "", "")
+	if err != nil {
+		return err
+	}
+	defer func() { err = errors.Join(err, cleanup()) }()
+	conn, err := db.Conn(ctx)
+	if err != nil {
+		return err
+	}
+	defer conn.Close()
+	const probe = "beads_restore_check"
+	if err := versioncontrolops.BackupRestore(ctx, conn, backupURL, probe, false); err != nil {
+		return err
+	}
+	if _, err := conn.ExecContext(ctx, "USE "+probe); err != nil {
+		return err
+	}
+	if branch != "" {
+		if _, err := conn.ExecContext(ctx, "SET @@"+probe+"_head_ref = ?", "refs/heads/"+branch); err != nil {
+			return err
+		}
+	}
+	_, err = conn.ExecContext(ctx, "CALL DOLT_COMMIT('-Am', ?, '--allow-empty')", "backup compatibility check")
+	return err
 }

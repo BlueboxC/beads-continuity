@@ -12,6 +12,8 @@ In-process Dolt storage and its lifecycle.
 
 Root DOX.md and the parent chain remain binding.
 
+- Local backup restore rehearses native restore and commit with the pinned engine in a disposable directory before replacing the destination. Refuse incompatible backups with their underlying error; do not discard unknown fields or change the engine pin. This costs an additional temporary restore and is not atomic publication or protection against source changes between rehearsal and restore. Readonly/closed stores refuse before creating the rehearsal.
+
 - Embedded open permission failures retain their typed cause as OpenPermissionError. Logical readonly forbids Beads mutations but the driver still needs filesystem write access. Do not change engine retries/locks, relax permissions or classify errors by matching text.
 
 - History compact uses the existing mutating pinned-connection open and its exclusive engine lifetime; head/clean-working-set checks precede branch creation and final reset. Direct SQL on the same borrowed engine is outside this exclusive-writer contract. Existing metadata retention and readonly refusal remain.

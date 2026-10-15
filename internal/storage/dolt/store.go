@@ -1238,6 +1238,7 @@ func (s *DoltStore) commitWriteTx(ctx context.Context, fn func(tx *sql.Tx) error
 	if err != nil {
 		return issueops.BlockedRecheck{}, fmt.Errorf("begin write tx: %w", err)
 	}
+	defer func() { _ = tx.Rollback() }()
 	clearJournalScope := s.scopeEventsJournalTransaction(tx)
 	defer clearJournalScope()
 	clearRecheckScope := issueops.ScopeBlockedRecheckTransaction(tx)

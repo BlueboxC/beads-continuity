@@ -11,7 +11,6 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/steveyegge/beads/internal/beads"
 	"github.com/steveyegge/beads/internal/config"
 	"github.com/steveyegge/beads/internal/configfile"
 	"github.com/steveyegge/beads/internal/storage/domain"
@@ -19,7 +18,6 @@ import (
 	"github.com/steveyegge/beads/internal/storage/git"
 	"github.com/steveyegge/beads/internal/storage/uow"
 	"github.com/steveyegge/beads/internal/ui"
-	"github.com/steveyegge/beads/internal/workapi"
 	"github.com/steveyegge/beads/issueops"
 )
 
@@ -189,18 +187,6 @@ func runInitProxiedServer(cmd *cobra.Command, ctx context.Context, in initProxie
 
 	remoteURL := resolveProxiedInitRemoteURL(ctx, gitUC, in)
 
-	var repoID, cloneID string
-	if id, err := beads.ComputeRepoID(); err == nil {
-		repoID = id
-	} else if !in.quiet {
-		fmt.Fprintf(os.Stderr, "Warning: could not compute repository ID: %v\n", err)
-	}
-	if id, err := beads.GetCloneID(); err == nil {
-		cloneID = id
-	} else if !in.quiet {
-		fmt.Fprintf(os.Stderr, "Warning: could not compute clone ID: %v\n", err)
-	}
-
 	// The order is VERIFY, then bootstrap or adopt: Bootstrapper REFUSES an
 	// already-identified substrate, and asking first is how a front door tells a
 	// re-init from the collision that guard exists for.
@@ -249,14 +235,6 @@ func runInitProxiedServer(cmd *cobra.Command, ctx context.Context, in initProxie
 			adoptedPrefix, adoptedProjectID = result.Prefix, result.ProjectID
 		}
 
-		// The per-clone tracking state is written on EVERY init, adopt or not,
-		// which is why it is not on the role: a fresh clone of an
-		// already-identified database needs its own fingerprints precisely
-		// because it bootstrapped nothing.
-		if err := recordProxiedInitTrackingState(ctx, initUOWProvider, repoID, cloneID); err != nil {
-			return HandleError("%v", err)
-		}
-
 		// The Dolt remote is configured SEPARATELY from the identity, the way
 		// the direct route has always configured it: folding them into one call
 		// is what let a remote that could not be created fail a bootstrap that
@@ -271,7 +249,7 @@ func runInitProxiedServer(cmd *cobra.Command, ctx context.Context, in initProxie
 	// metadata.json was written with a locally-minted project id before any
 	// DB connection existed; the adopted id must replace it before the tail
 	// git-commits .beads/.
-	if in.teamServer && adoptedProjectID != projectID {
+	if adoptedProjectID != projectID {
 		fileCfg, err := configfile.Load(beadsDir)
 		if err != nil || fileCfg == nil {
 			return HandleError("failed to reload %s to adopt the provisioned project identity: %v", configfile.ConfigFileName, err)
@@ -350,40 +328,6 @@ func proxiedBootstrapper(provider uow.UnitOfWorkProvider) (issueops.Bootstrapper
 		return nil, fmt.Errorf("proxied-server provider %T does not offer the identity-seeding surface", provider)
 	}
 	return src.Bootstrapper()
-}
-
-// recordProxiedInitTrackingState seeds the per-clone bookkeeping: the
-// repository and clone fingerprints, the synced-at marker and the recorded
-// binary version.
-//
-// It is separate from the identity because its LIFETIME is: the identity is
-// written once and then adopted forever, while these four describe the clone
-// running init and are refreshed every time it runs. In the refusable one-time
-// write, a re-init on a shared database would silently stop recording them.
-func recordProxiedInitTrackingState(ctx context.Context, provider uow.UnitOfWorkProvider, repoID, cloneID string) error {
-	return uow.RunTx(ctx, provider, func(ctx context.Context, uw uow.UnitOfWork) (string, error) {
-		cfg := uw.ConfigUseCase()
-		// An absent fingerprint is recorded as nothing rather than as "": an
-		// empty row reads back to cross-project verification as a clone whose
-		// fingerprint failed to compute.
-		if repoID != "" {
-			if err := cfg.SetMetadata(ctx, "repo_id", repoID); err != nil {
-				return "", fmt.Errorf("record repo_id: %w", err)
-			}
-		}
-		if cloneID != "" {
-			if err := cfg.SetMetadata(ctx, "clone_id", cloneID); err != nil {
-				return "", fmt.Errorf("record clone_id: %w", err)
-			}
-		}
-		if err := cfg.SetMetadata(ctx, "last_import_time", time.Now().UTC().Format(time.RFC3339)); err != nil {
-			return "", fmt.Errorf("record last_import_time: %w", err)
-		}
-		if err := cfg.SetLocalMetadata(ctx, workapi.MetadataKeyVersion, Version); err != nil {
-			return "", fmt.Errorf("record bd_version: %w", err)
-		}
-		return "bd init", nil
-	})
 }
 
 // configureProxiedInitDoltRemote adds the sync remote, skipping a name that is
