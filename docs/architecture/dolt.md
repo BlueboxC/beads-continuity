@@ -50,8 +50,11 @@ the criterion for raising it; raise the pin here and in that script together.
 
 This pin is about the standalone `dolt` CLI, which only server and
 proxied-server mode use. Embedded mode is unaffected either way: it links the
-Dolt engine into `bd` at the version in `go.mod`, currently the commit tagged
-v2.2.0 upstream, no matter which `dolt` CLI is on your PATH.
+Dolt engine into `bd` at the dependency tuple in `go.mod`, independently of
+which `dolt` CLI is on your PATH. This fork uses driver v2.4.1 with the
+MIN/MAX correction and BSD build-tag replacement documented in
+[FORK.md](https://github.com/BlueboxC/beads-continuity/blob/codex/project-continuity/FORK.md#embedded-engine-compatibility). It accepts native
+Dolt 2.4.2 backups; this does not raise the standalone server pin.
 
 Dolt 2.3.0 (released 2026-08-13) regressed `CALL DOLT_RESET('--hard')`. A few
 percent of freshly created databases come up with that procedure unusable —
@@ -290,13 +293,23 @@ and [`bd gc`](/cli-reference/gc) document the collection each one runs.
 ## Migrating Between Backends
 
 You can migrate data between embedded mode and server mode using `bd backup`.
-Both directions preserve full Dolt commit history.
+Both directions preserve full Dolt commit history when the destination engine
+supports the backup format. This ordinary-workspace command is not a Graph
+Preview restore or conversion interface.
 
 `bd export` is not a substitute for this flow. JSONL exports contain issue
 records from the issues table for migration and interoperability; they do not
 capture Dolt branches, full commit history, working-set state, or non-issue
 tables. Use `bd backup` or a manual Dolt backup when you need a restorable
 database backup.
+
+Before overwriting a destination, embedded restore rehearses native restore and
+commit in disposable storage. An unreadable or incompatible backup fails before
+replacement. The rehearsal needs additional temporary disk space and time; it
+is not atomic publication or protection against a backup changing mid-restore.
+The qualified embedded tuple supports native Dolt 2.4.2 backups. Keep a full
+pre-upgrade database backup and its matching binary: a binary-only downgrade
+after new engine writes is not a supported recovery procedure.
 
 ### Server → Embedded
 

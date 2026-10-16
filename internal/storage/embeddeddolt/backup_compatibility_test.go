@@ -6,8 +6,10 @@ import (
 	"context"
 	"database/sql"
 	"os"
+	"path/filepath"
 	"testing"
 
+	"github.com/steveyegge/beads/memoryops"
 	"github.com/stretchr/testify/require"
 )
 
@@ -53,11 +55,9 @@ func TestEmbeddedBackupRestoreCompatibility(t *testing.T) {
 	require.NoError(t, target.Commit(t.Context(), "after restore"))
 }
 
-func TestEmbeddedBackupRestoreRejectsNewerFixtureWithoutReplacingTarget(t *testing.T) {
-	backup := os.Getenv("BEADS_TEST_NEWER_DOLT_BACKUP")
-	if backup == "" {
-		t.Skip("set BEADS_TEST_NEWER_DOLT_BACKUP to an owned synthetic Dolt 2.4.2 backup")
-	}
+func TestEmbeddedBackupRestoreRejectsInvalidBackupWithoutReplacingTarget(t *testing.T) {
+	backup := t.TempDir()
+	require.NoError(t, os.WriteFile(filepath.Join(backup, "manifest"), []byte("invalid native backup"), 0o600))
 	target := backupGuardStore(t, "destination")
 	head, err := target.GetCurrentCommit(t.Context())
 	require.NoError(t, err)
@@ -67,6 +67,57 @@ func TestEmbeddedBackupRestoreRejectsNewerFixtureWithoutReplacingTarget(t *testi
 	got, err := target.GetCurrentCommit(t.Context())
 	require.NoError(t, err)
 	require.Equal(t, head, got)
+}
+
+// The fixture is a synthetic Dolt 2.4.2 backup with one issue and backup-proof memory.
+// It was rejected by the old pin; this pins restore, subsequent writes and a second restore.
+func TestEmbeddedDolt242BackupRoundTrip(t *testing.T) {
+	backup := os.Getenv("BEADS_TEST_DOLT242_BACKUP")
+	if backup == "" {
+		t.Skip("set BEADS_TEST_DOLT242_BACKUP to the owned synthetic 2.4.2 fixture")
+	}
+	dir := t.TempDir()
+	s, err := newStore(t.Context(), dir, "fixture", "main", openStrict)
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = s.Close() })
+	require.NoError(t, s.RestoreDatabase(t.Context(), backup, true))
+	head, err := s.GetCurrentCommit(t.Context())
+	require.NoError(t, err)
+	var id string
+	require.NoError(t, s.withConn(t.Context(), false, func(tx *sql.Tx) error {
+		return tx.QueryRowContext(t.Context(), "SELECT id FROM issues WHERE title = ?", "Synthetic backup issue").Scan(&id)
+	}))
+	memories, err := s.Memories()
+	require.NoError(t, err)
+	got, err := memories.Recall(t.Context(), memoryops.RecallRequest{Key: "backup-proof"})
+	require.NoError(t, err)
+	require.True(t, got.Found)
+	require.Equal(t, "Synthetic memory", got.Value)
+	require.NoError(t, s.UpdateIssue(t.Context(), id, map[string]interface{}{"title": "Updated after restore"}, "fixture"))
+	_, err = memories.Remember(t.Context(), memoryops.RememberRequest{Key: "backup-proof", Content: "Updated memory"})
+	require.NoError(t, err)
+	require.NoError(t, s.Commit(t.Context(), "writes after 2.4.2 restore"))
+	require.NoError(t, s.Close())
+	s, err = newStore(t.Context(), dir, "fixture", "main", openStrict)
+	require.NoError(t, err)
+	var retained int
+	require.NoError(t, s.withConn(t.Context(), false, func(tx *sql.Tx) error {
+		return tx.QueryRowContext(t.Context(), "SELECT COUNT(*) FROM dolt_log WHERE commit_hash = ?", head).Scan(&retained)
+	}))
+	require.Equal(t, 1, retained, "original backup history must remain reachable")
+	nextBackup := t.TempDir()
+	require.NoError(t, s.BackupDatabase(t.Context(), nextBackup))
+	next := backupGuardStore(t, "destination")
+	require.NoError(t, next.RestoreDatabase(t.Context(), nextBackup, true))
+	issue, err := next.GetIssue(t.Context(), id)
+	require.NoError(t, err)
+	require.Equal(t, "Updated after restore", issue.Title)
+	memories, err = next.Memories()
+	require.NoError(t, err)
+	got, err = memories.Recall(t.Context(), memoryops.RecallRequest{Key: "backup-proof"})
+	require.NoError(t, err)
+	require.True(t, got.Found)
+	require.Equal(t, "Updated memory", got.Value)
 }
 
 func TestEmbeddedBackupRestoreReadOnlyAndClosed(t *testing.T) {

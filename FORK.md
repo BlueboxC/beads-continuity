@@ -9,7 +9,8 @@ across coding sessions. It builds on upstream **v1.3.1** at
 The continuity extensions share Beads' existing **Dolt memory plane**, without
 another graph service, vector database or hosted model. Native correctness
 repairs include forward blocked-state migrations 0067 and ignored/0027; shipped
-predecessors and the Dolt dependency pin remain unchanged.
+predecessors remain unchanged. Embedded backup compatibility uses the qualified
+Dolt dependency tuple described below; the standalone server policy remains separate.
 Upstream attribution and the MIT license remain intact. Fork additions are
 available on `codex/project-continuity`; upstream installation channels do not
 contain them. See [installation and workflow](docs/core-concepts/fork-continuity.md).
@@ -41,7 +42,7 @@ This is an intentional fork policy difference.
 | [#7560](https://github.com/gastownhall/beads/issues/7560) | Authenticated tracker destinations require local configuration; historical synced URLs and failed endpoint reads refuse connection. Covers direct CLI discovery plus Linear API-key/OAuth clients. | Fork correction; self-hosted paths remain supported and synced rows are not automatically migrated |
 | [#7576](https://github.com/gastownhall/beads/issues/7576), [#7577](https://github.com/gastownhall/beads/issues/7577) | Proxied init saves adopted project identity locally in both modes and stops publishing per-clone fingerprints into the shared database. Existing shared tracking rows are retained. | Git-derived fingerprints and the existing local version file remain available; no identity migration or history rewrite |
 | [PR #7571](https://github.com/gastownhall/beads/pull/7571) | Write transactions release their pool session when a body panics, preserving the original panic. Adapted from Raymond W. Ko's correction and regression test. | This baseline has the pool helper, not the contributor's newer pinned-connection delete fence |
-| [#7569](https://github.com/gastownhall/beads/issues/7569) | Embedded restore rehearses native restore and commit in a disposable engine before replacing the target, rejecting incompatible backups with an actionable error. | Additional temporary disk/time cost; no conversion of unknown fields, dependency upgrade or atomic-publication claim. Use a compatible Dolt CLI/server for newer storage |
+| [#7569](https://github.com/gastownhall/beads/issues/7569) | Embedded restore rehearses native restore and commit in a disposable engine before replacing the target, rejecting incompatible backups with an actionable error. | Supports native Dolt 2.4.2 backups with the dependency tuple below; additional temporary disk/time cost, no discarded unknown fields or atomic-publication claim |
 | Documents and DOX | Selected document catalogs, source hashes and explicit objectives, constraints, decisions, modules and solutions | A scanned document is source material; scanning does not extract or certify a learning. |
 | Supervised learning | Source-backed pending proposals, explicit accept/reject reviews, immutable history and pinned activity origins | A supervising human or agent reviews evidence. Existing solutions and historical verification scopes are preserved. |
 | Code structure | Incremental structure in 23 languages/formats: Python/Go/JS/TS/Java/C#/Rust/C++, PHP/C, Bash/PowerShell, HTML/CSS, GraphQL/XML, Kotlin/Swift/Dart and SQL/JSON/YAML/TOML; named symbols, source locations, conservative references and reviewed learning links | Static references are not runtime proof. Markup/configuration retain names and hierarchy, not scalar values. Dynamic or ambiguous references remain unresolved. |
@@ -62,6 +63,33 @@ Detailed references: [knowledge](docs/core-concepts/knowledge.md),
 [code index and maintenance](docs/core-concepts/code-index.md),
 [Codex hooks and activity](docs/integrations/codex.md), and
 [HTTP operation](engdocs/SERVE_RUNBOOK.md).
+
+## Embedded engine compatibility
+
+The embedded engine uses `driver/v2 v2.4.1`, starting from coffeegoddd's
+[upstream proposal #7254](https://github.com/gastownhall/beads/pull/7254).
+It also pins go-mysql-server `41dc475ec594` from angelamayxie's merged
+[MIN/MAX fix #4021](https://github.com/dolthub/go-mysql-server/pull/4021).
+Without that fix an empty primary-key prefix can return no aggregate row,
+preventing the first retained version from being created. A regression test
+covers empty and populated tables for both MIN and MAX.
+
+FreeBSD requires the exact `shrisha/file-locks` commit `1006a916595c` from
+[PR #6](https://github.com/dolthub/file-locks/pull/6), pinned by `replace` in
+all three Go modules. That upstream proposal is still unmerged: it extends the
+Unix build tag to the listed BSD targets without changing the lock algorithm.
+FreeBSD qualification is cross-compilation, not native execution.
+
+Compatibility qualification restores old embedded and native Dolt 2.4.2 backups,
+compares all current tables and reachable history/refs, then writes, reopens,
+backs up and restores again. Corrupt backups still refuse before target
+replacement. This is not a format-conversion command or automatic downgrade:
+retain the matching old binary and full database backup before the first new
+engine write, and reconcile later writes before any recovery.
+
+The standalone Dolt CLI/server pin and its historical hard-reset measurements
+remain unchanged. Reading a 2.4.2 backup does not qualify that server version;
+the unpatched 2.4.2 CLI also reproduces the MIN/MAX regression.
 
 ## Public source and private operation
 
