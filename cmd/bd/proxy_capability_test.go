@@ -169,7 +169,7 @@ func TestProxyMaintenanceNestedPathsRefuseBeforeProvider(t *testing.T) {
 }
 
 func TestProxyFormulaSwarmRefusals(t *testing.T) {
-	for _, path := range []string{"cook", "ship", "swarm create", "swarm list"} {
+	for _, path := range []string{"cook", "swarm create", "swarm list"} {
 		parts := strings.Split(path, " ")
 		root := &cobra.Command{Use: "bd"}
 		cmd := &cobra.Command{Use: parts[0]}
@@ -194,7 +194,6 @@ func TestProxyWorkflowRefusalContractAndNoMutation(t *testing.T) {
 		path, code, message string
 	}{
 		{"cook", "proxy.formula.unsupported", "cook is not supported in proxied-server mode"},
-		{"ship", "proxy.formula.unsupported", "ship is not supported in proxied-server mode"},
 		{"swarm create", "proxy.swarm.unsupported", "swarm create is not supported in proxied-server mode"},
 	}
 	for _, tc := range cases {

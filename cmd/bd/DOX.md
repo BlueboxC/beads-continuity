@@ -93,6 +93,8 @@ Root DOX.md and the parent chain remain binding.
 
 - Proxied merge-slot create/check/acquire/release use the same holder/waiter rules through one UOW per operation; only committed attempts report acquisition. Proxied supersede resolves both IDs and adds the supersedes edge plus checked closure in one retried transaction; refusal rolls both back. No automatic holder expiry, queue scheduling or project conversion.
 
+- Native and proxied ship share capability selection, closed/force policy and output. Proxied publication reads and adds the provides label in one retried UOW; missing/ambiguous/open refusals, dry-run and already-shipped outcomes publish no commit. Proxied duplicate resolves both IDs, adds its duplicates edge and performs checked closure in one retried UOW; refusal rolls all changes back and success output follows commit. Existing supersede semantics remain unchanged.
+
 - Proxied --readonly/BD_READONLY attaches only to authenticated running proxies and an existing current-schema database. Read config without legacy migration, skip version stamps/hooks/profiling/maintenance and open existing shared gates without creating files; failed gates refuse. SQL reads pass through the guarded provider; mutation commands remain blocked. Missing gates/proxy/schema need an authorized writable initialization first.
 
 - Authenticated GitHub/GitLab/Jira/ADO/Linear endpoints are local-only settings. Direct discovery, validation and sync paths share fail-closed endpoint resolution; old synced URLs require an explicit local choice. Linear API-only construction with a nil store never probes a local database.
