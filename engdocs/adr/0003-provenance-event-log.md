@@ -70,9 +70,11 @@ Key design points:
   shape bd asserts — consistent with ZFC: bd validates structure, never meaning.
 
 - **occurred_at vs created_at.** `occurred_at` (event-time) is separate from
-  `created_at` (ingest-time, `DEFAULT CURRENT_TIMESTAMP`), because a producer
+  `created_at` (ingest-time, explicitly written as UTC at second precision), because a producer
   such as a git hook may record a fact *after* it happened. Reads order by
-  `occurred_at` (nulls last) then `id`.
+  `occurred_at` (nulls last) then `id`. The database session timezone must not
+  change ingest time; an ignored duplicate keeps its original created_at.
+  Historical rows are not rewritten.
 
 - **Idempotent recording.** `bd provenance record` computes a deterministic id
   from `source:issue:kind:(ref or occurred_at)` and inserts with `INSERT

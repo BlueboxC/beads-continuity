@@ -282,3 +282,11 @@ func formatDoltAutoCommitMessage(cmd string, actor string, issueIDs []string) st
 	}
 	return fmt.Sprintf("bd: %s (auto-commit) by %s [%s]", cmd, actor, strings.Join(ids, ", "))
 }
+
+// replayableTransactionStore opts repeat-safe CLI callbacks into conflict replay.
+// Ordinary transact callers retain their at-most-once callback contract.
+type replayableTransactionStore struct{ storage.DoltStorage }
+
+func (s replayableTransactionStore) RunInTransaction(ctx context.Context, msg string, fn func(storage.Transaction) error) error {
+	return storage.RunReplayableTransaction(ctx, s.DoltStorage, msg, fn)
+}

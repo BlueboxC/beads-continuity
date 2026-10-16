@@ -20,6 +20,10 @@ Root DOX.md and the parent chain remain binding.
 
 - The retained Issue recorder is transaction-scoped and called only by Graph Preview adapters after a final accepted mutation. Explicit candidate adoption may seed the first boundary snapshot without replaying create or minting a journal event. Its revision bookkeeping preserves the accepted postimage's row_lock/updated_at and does not duplicate the mutation's journal event. Ordinary native writers and existing journal/security policies remain unchanged; graph-only schema prerequisites live in graphstore.
 
+- SnapshotCreateInputs restores every caller-owned field mutated by create, including nested dependency sources and comment IDs. Keep it aligned with persistence mutations.
+- Lease re-arm fences live issue state in the mutation, so a concurrent close/release cannot recreate an orphan lease. A refresh preserves provenance and mutation history.
+- Provenance ingest time is explicitly UTC at second precision, independent of occurred_at and server timezone. INSERT IGNORE retries retain the original ingest stamp; existing rows are not rewritten.
+
 ## Work Guidance
 
 Preserve issue semantics across supported storage adapters and shared conformance tests.

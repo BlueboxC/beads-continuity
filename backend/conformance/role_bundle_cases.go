@@ -316,6 +316,28 @@ var roleContractCases = []roleContract{
 		RunGraphCounterWritesNothing,
 	),
 
+	roleCases("Heartbeater", "Heartbeater()", oncePerRole,
+		func(b RoleContractBundle) func(t *testing.T) *HeartbeaterFixture { return b.Heartbeater },
+		RunHeartbeaterRefreshesTheHoldersLease,
+		RunHeartbeaterASameSecondHeartbeatIsNotARearm,
+		RunHeartbeaterChangesNothingOnTheRow,
+		RunHeartbeaterAGuardedWriteWithThePreHeartbeatRevisionStillWins,
+		RunHeartbeaterRefusesAForeignHolder,
+		RunHeartbeaterCommitsOnlyItsOwnTables,
+		RunHeartbeaterRefusesAnOrphanedLeaseOnAReleasedIssue,
+		RunHeartbeaterRefusesAnOrphanedLeaseOnAClosedIssue,
+		RunHeartbeaterRefusesAnOrphanedLeaseOnAnIssueSomeoneElseHolds,
+		RunHeartbeaterRefusesAfterClose,
+		RunHeartbeaterRefusesAfterRelease,
+		RunHeartbeaterRefusesAfterReclaim,
+		RunHeartbeaterRefusesAfterStatusMovedOffInProgress,
+		RunHeartbeaterRefusesAWisp,
+		RunHeartbeaterRearmsAHandDoledClaim,
+		RunHeartbeaterAnswersNotFoundForAnAbsentID,
+		RunHeartbeaterRefusesABlankOrOverLongActor,
+		RunHeartbeaterDoesNotMutateTheRequest,
+	),
+
 	// The accessor named here is NOT a storage.DoltStorage one, alone among
 	// these rows: Importer is served only by uow.ImporterSource, so a backend
 	// built on the store interface has nothing to fill this field with and

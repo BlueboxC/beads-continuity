@@ -374,6 +374,7 @@ func TestInstrumentedStorageInstrumentsEveryRoleAccessor(t *testing.T) {
 		{"MetadataCAS", func() (any, error) { return wrapped.MetadataCAS() }, sentinel},
 		{"BatchApplier", func() (any, error) { return wrapped.BatchApplier() }, sentinel},
 		{"Releaser", func() (any, error) { return wrapped.Releaser() }, sentinel},
+		{"Heartbeater", func() (any, error) { return wrapped.Heartbeater() }, sentinel},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			surface, err := test.got()
@@ -429,6 +430,7 @@ func TestInstrumentedStorageRoleAccessorsPropagateInnerErrors(t *testing.T) {
 		{"MetadataCAS", func() (any, error) { return wrapped.MetadataCAS() }},
 		{"BatchApplier", func() (any, error) { return wrapped.BatchApplier() }},
 		{"Releaser", func() (any, error) { return wrapped.Releaser() }},
+		{"Heartbeater", func() (any, error) { return wrapped.Heartbeater() }},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			surface, err := test.got()
@@ -440,4 +442,9 @@ func TestInstrumentedStorageRoleAccessorsPropagateInnerErrors(t *testing.T) {
 			}
 		})
 	}
+}
+
+func (s *roleAccessorStore) Heartbeater() (issueops.Heartbeater, error) { return s.surface, s.err }
+func (*roleAccessorSentinel) Heartbeat(context.Context, issueops.HeartbeatRequest) (issueops.HeartbeatResult, error) {
+	return issueops.HeartbeatResult{}, nil
 }

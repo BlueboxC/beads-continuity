@@ -29,6 +29,9 @@ Root DOX.md and the parent chain remain binding.
 
 - Strict readonly proxy discovery authenticates an already-live endpoint and never spawns, repairs or quarantines. The readonly UOW uses existing current-schema data, read-only SQL transactions and a driver query guard; it cannot commit. SQL set-operation exports are writes, using the shared parser SelectStatement contract from rjgeng’s PR #7042.
 
+- Heartbeater refreshes only an existing live claim; missing-lease re-arm uses a lock/status/holder fence, remints row_lock and records mutation hooks once. Refused orphan cleanup may commit without announcing success. Ordinary refresh adds no event, version, hook or history commit. Retained versions remain Graph Preview-only.
+- RunInTransaction callbacks remain at-most-once. Explicit replay requires the confirmed rolled-back conflict marker; uncertain commit outcomes never replay. Retry backoff remains within the existing deadline.
+
 ## Work Guidance
 
 Memory namespace selectors preserve exact prefix semantics across adapters. All three adapters select namespaces in SQL before transferring values; the unit-of-work adapter uses ConfigUseCase/repository within its existing read transaction. Case-insensitive memory search remains in Go.

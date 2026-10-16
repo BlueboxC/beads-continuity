@@ -21,10 +21,23 @@ See also: `bd help init-safety`, and
 
 ## Table of contents
 
+- [init-home-refused — account-home artifact protection](#init-home-refused)
+
 - [init-force-refused — `bd init --force`/`--reinit-local` refused because origin has Dolt history](#init-force-refused)
 - [init-token-missing — a destructive re-init refused because `--destroy-token` is missing or wrong](#init-token-missing)
 - [init-local-exists — `bd init --reinit-local` refused because local data already exists](#init-local-exists)
 - [pk-fork-refused — `bd dolt pull`/`push` refused because a table has different primary keys in its common ancestor](#pk-fork-refused)
+
+---
+
+## init-home-refused
+
+**Exit code:** `15`. `bd init` refuses the OS account home before creating
+artifacts. Run it inside the intended project. If the home directory is itself
+a Git root, ordinary project setup remains supported. For an intentional
+external Beads directory, set BEADS_DIR explicitly to that directory; init then
+keeps home-level instructions, ignore files, hooks and Git configuration intact.
+Changing HOME or inheriting GIT_DIR/GIT_WORK_TREE does not bypass this guard.
 
 ---
 

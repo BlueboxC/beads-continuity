@@ -54,6 +54,9 @@ func versionedHistoryEnabled(tx DBTX) bool {
 	return on
 }
 
+// VersionedHistoryEnabledFor exposes only this transaction's recorder scope.
+func VersionedHistoryEnabledFor(tx DBTX) bool { return versionedHistoryEnabled(tx) }
+
 // VersionedHistoryStagedTables names the retained-history tables and the
 // revision-bearing Issue table. Graphstore commits them with the graph mapping
 // in the same Dolt transaction; ordinary stores never enable this recorder.

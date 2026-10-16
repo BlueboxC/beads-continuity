@@ -99,6 +99,11 @@ Root DOX.md and the parent chain remain binding.
 
 - Authenticated GitHub/GitLab/Jira/ADO/Linear endpoints are local-only settings. Direct discovery, validation and sync paths share fail-closed endpoint resolution; old synced URLs require an explicit local choice. Linear API-only construction with a nil store never probes a local database.
 
+- Native `delete` requires exact IDs for previews and writes, including batches and routed targets; read commands retain abbreviation. Graph revision guards remain graph-only.
+- `init` refuses the account home before artifact writes unless it is its own Git root or the caller explicitly supplied BEADS_DIR. The latter keeps home-level instruction, ignore, hook and Git artifacts untouched; inherited Git routing variables cannot establish a home Git root. Exit 15 is outside protocol-v0.
+- Only create, atomic batch and template clone callbacks explicitly opt into replay after a confirmed rolled-back conflict; restore inputs and discard failed-attempt results. Other transaction callbacks remain at-most-once.
+- List selects dependency records for the displayed IDs, preserving parent/filter/watch semantics. Pretty trees render cyclic parent components finitely, each ID once. Routed-create commit warnings identify already-durable creates without reporting a false creation failure.
+
 ## Work Guidance
 
 Keep existing CLI primitives and machine-readable output stable. Follow AGENTS.md and ../../engdocs/TESTING.md.

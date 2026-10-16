@@ -43,6 +43,9 @@ const (
 	// prove the caller was non-interactive. Supplying the token is the
 	// correct remedy for all three sources.
 	ExitDestroyTokenMissing = 12
+
+	// ExitHomeDirRefused is an init-only refusal, outside protocol v0.
+	ExitHomeDirRefused = 15
 )
 
 // RemoteSafetyAction names what the init command should do once it has

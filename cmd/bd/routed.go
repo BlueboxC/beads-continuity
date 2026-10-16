@@ -57,19 +57,23 @@ func (r *RoutedResult) Close() {
 // resolveAndGetIssueForMutation instead so a routed read can never write
 // migrations or other open-time mutations into a foreign project (GH#3231, #4141).
 func resolveAndGetIssueWithRouting(ctx context.Context, localStore storage.DoltStorage, id string) (*RoutedResult, error) {
-	return resolveAndGetIssueWithRoutingAccess(ctx, localStore, id, false)
+	return resolveAndGetIssueWithRoutingAccess(ctx, localStore, id, false, false)
 }
 
 // resolveAndGetIssueForMutation resolves an issue like
 // resolveAndGetIssueWithRouting, but opens prefix-routed target stores in
 // writable mode so mutation commands can commit to the routed repository.
 func resolveAndGetIssueForMutation(ctx context.Context, localStore storage.DoltStorage, id string) (*RoutedResult, error) {
-	return resolveAndGetIssueWithRoutingAccess(ctx, localStore, id, true)
+	return resolveAndGetIssueWithRoutingAccess(ctx, localStore, id, true, false)
 }
 
-func resolveAndGetIssueWithRoutingAccess(ctx context.Context, localStore storage.DoltStorage, id string, writablePrefixRoute bool) (*RoutedResult, error) {
+func resolveAndGetIssueForMutationExact(ctx context.Context, localStore storage.DoltStorage, id string) (*RoutedResult, error) {
+	return resolveAndGetIssueWithRoutingAccess(ctx, localStore, id, true, true)
+}
+
+func resolveAndGetIssueWithRoutingAccess(ctx context.Context, localStore storage.DoltStorage, id string, writablePrefixRoute, exactOnly bool) (*RoutedResult, error) {
 	// Try local store first.
-	result, err := resolveAndGetFromStore(ctx, localStore, id, false)
+	result, err := resolveAndGetFromStoreResolution(ctx, localStore, id, false, exactOnly)
 	if err == nil {
 		return result, nil
 	}
@@ -78,8 +82,10 @@ func resolveAndGetIssueWithRoutingAccess(ctx context.Context, localStore storage
 	// This handles cross-rig lookups where the ID's prefix maps to a different
 	// database (e.g., hr-8wn.1 routes to the herald rig's database).
 	if isNotFoundErr(err) {
-		if prefixResult, prefixErr := resolveViaPrefixRoutingWithAccess(ctx, id, writablePrefixRoute); prefixErr == nil {
+		if prefixResult, prefixErr := resolveViaPrefixRoutingResolution(ctx, id, writablePrefixRoute, exactOnly); prefixErr == nil {
 			return prefixResult, nil
+		} else if exactOnly && errors.Is(prefixErr, utils.ErrAbbreviatedIDNotAllowed) {
+			return nil, prefixErr
 		}
 	}
 
@@ -87,8 +93,10 @@ func resolveAndGetIssueWithRoutingAccess(ctx context.Context, localStore storage
 	// Auto-routed stores stay read-only even for write-intent callers (writablePrefixRoute):
 	// this path hydrates foreign contributor projects, which must never be mutated.
 	if isNotFoundErr(err) {
-		if autoResult, autoErr := resolveViaAutoRouting(ctx, localStore, id); autoErr == nil {
+		if autoResult, autoErr := resolveViaAutoRoutingResolution(ctx, localStore, id, exactOnly); autoErr == nil {
 			return autoResult, nil
+		} else if exactOnly && errors.Is(autoErr, utils.ErrAbbreviatedIDNotAllowed) {
+			return nil, autoErr
 		}
 	}
 
@@ -97,8 +105,16 @@ func resolveAndGetIssueWithRoutingAccess(ctx context.Context, localStore storage
 
 // resolveAndGetFromStore resolves a partial ID and gets the issue from a specific store.
 func resolveAndGetFromStore(ctx context.Context, s storage.DoltStorage, id string, routed bool) (*RoutedResult, error) {
+	return resolveAndGetFromStoreResolution(ctx, s, id, routed, false)
+}
+
+func resolveAndGetFromStoreResolution(ctx context.Context, s storage.DoltStorage, id string, routed, exactOnly bool) (*RoutedResult, error) {
 	// First, resolve the partial ID
-	resolvedID, err := utils.ResolvePartialID(ctx, s, id)
+	resolver := utils.ResolvePartialID
+	if exactOnly {
+		resolver = utils.ResolvePartialIDExact
+	}
+	resolvedID, err := resolver(ctx, s, id)
 	if err != nil {
 		return nil, err
 	}
@@ -121,12 +137,16 @@ func resolveAndGetFromStore(ctx context.Context, s storage.DoltStorage, id strin
 // This is the fallback when the local store doesn't have the issue (GH#2345).
 // Returns a RoutedResult if the issue is found in the auto-routed store.
 func resolveViaAutoRouting(ctx context.Context, localStore storage.DoltStorage, id string) (*RoutedResult, error) {
+	return resolveViaAutoRoutingResolution(ctx, localStore, id, false)
+}
+
+func resolveViaAutoRoutingResolution(ctx context.Context, localStore storage.DoltStorage, id string, exactOnly bool) (*RoutedResult, error) {
 	routedStore, routed, _, err := openRoutedReadStore(ctx, localStore)
 	if err != nil || !routed {
 		return nil, fmt.Errorf("no auto-routed store available")
 	}
 
-	result, err := resolveAndGetFromStore(ctx, routedStore, id, true)
+	result, err := resolveAndGetFromStoreResolution(ctx, routedStore, id, true, exactOnly)
 	if err != nil {
 		_ = routedStore.Close()
 		return nil, err
@@ -160,6 +180,10 @@ func resolveViaPrefixRouting(ctx context.Context, id string) (*RoutedResult, err
 // the command inside that rig; false keeps the read-only open that guarantees a
 // routed read cannot mutate the target (bd-6dnrw.32).
 func resolveViaPrefixRoutingWithAccess(ctx context.Context, id string, writable bool) (*RoutedResult, error) {
+	return resolveViaPrefixRoutingResolution(ctx, id, writable, false)
+}
+
+func resolveViaPrefixRoutingResolution(ctx context.Context, id string, writable, exactOnly bool) (*RoutedResult, error) {
 	// Extract prefix from the bead ID (e.g., "hr-" from "hr-8wn.1")
 	prefix := extractBeadPrefix(id)
 	if prefix == "" {
@@ -232,7 +256,7 @@ func resolveViaPrefixRoutingWithAccess(ctx context.Context, id string, writable 
 		return nil, fmt.Errorf("opening routed store for %s: %w", matchedRoute.Path, openErr)
 	}
 
-	result, err := resolveAndGetFromStore(ctx, targetStore, id, true)
+	result, err := resolveAndGetFromStoreResolution(ctx, targetStore, id, true, exactOnly)
 	if err != nil {
 		_ = targetStore.Close()
 		return nil, err

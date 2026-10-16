@@ -5,6 +5,11 @@ test design in this repository. Use the commands here for local work. For the
 exact command behind a current CI check, inspect its workflow and corresponding
 `Makefile` target; the CI audit and cleanup plan are dated maintainer context.
 
+Owned-loopback SQL fixtures may reuse an explicitly supplied
+`BEADS_GRAPH_TEST_SERVER_PORT` on a disposable test server; they validate the
+port and retain unique database cleanup. This is real SQL qualification, not a
+Docker or production-server claim. Never supply an operator database.
+
 ## Choose the Smallest Useful Test
 
 Test at the lowest seam that can fail for the user-visible reason. Add a

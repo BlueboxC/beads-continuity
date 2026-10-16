@@ -29,7 +29,7 @@ Root DOX.md and the parent chain remain binding.
 
 - `metrics` owns inert compatibility hooks without collection, transport, queue, machine identifier or process launch. All Dolt version callers reuse the private-cwd/config probe, disabling metrics/update checks without changing operator settings.
 
-- Query lexing decodes UTF-8 while retaining byte offsets and whole-rune backup. Quoted strings preserve consumed bytes, including invalid UTF-8 and unknown escaped bytes; invalid bytes outside quotes are rejected. Numeric, duration and identifier grammar remain unchanged.
+- Query lexing decodes UTF-8 while retaining byte offsets and whole-rune backup. Quoted strings preserve consumed bytes, including invalid UTF-8 and unknown escaped bytes; invalid bytes outside quotes are rejected. Numbers and durations use ASCII digits; identifiers allow combining marks after their first character. Literal NUL is rejected, including inside quotes, and is distinct from EOF.
 
 - Metadata-only fallback port discovery reads legacy configuration without migrating it.
 

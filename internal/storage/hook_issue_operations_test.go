@@ -269,3 +269,7 @@ func TestHookIssueOperationsFiresCompletionHooksPerVerbRules(t *testing.T) {
 		})
 	}
 }
+
+func (r *recordingIssueOperationHooks) CompleteIssueOperationUpdateByID(_ context.Context, id string) {
+	r.completions = append(r.completions, "update-by-id:"+id)
+}

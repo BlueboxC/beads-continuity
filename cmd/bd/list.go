@@ -313,7 +313,7 @@ func runListCore(cmd *cobra.Command, _ []string) error {
 				return nil
 			}
 
-			allDeps, depErr := activeStore.GetAllDependencyRecords(ctx)
+			allDeps, depErr := listDependencyRecords(ctx, activeStore, treeIssues)
 			if depErr != nil && in.depsMode != "" {
 				return HandleError("loading dependencies for --deps: %v", depErr)
 			}
@@ -323,7 +323,7 @@ func runListCore(cmd *cobra.Command, _ []string) error {
 			return nil
 		}
 
-		allDeps, depErr := activeStore.GetAllDependencyRecords(ctx)
+		allDeps, depErr := listDependencyRecords(ctx, activeStore, issues)
 		if depErr != nil && in.depsMode != "" {
 			return HandleError("loading dependencies for --deps: %v", depErr)
 		}
@@ -334,7 +334,7 @@ func runListCore(cmd *cobra.Command, _ []string) error {
 	}
 
 	if in.formatStr != "" {
-		depsByIssueID, _ := activeStore.GetAllDependencyRecords(ctx)
+		depsByIssueID, _ := listDependencyRecords(ctx, activeStore, issues)
 		if err := outputFormattedList(out, issues, depsByIssueID, in.formatStr); err != nil {
 			return HandleError("%v", err)
 		}

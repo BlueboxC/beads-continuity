@@ -80,8 +80,7 @@ func MergeSlotCheckImpl(ctx context.Context, s Storage) (*MergeSlotStatus, error
 }
 
 // MergeSlotAcquireImpl is the shared implementation of Storage.MergeSlotAcquire.
-// It uses RunInTransaction to ensure atomic check-and-set, preventing two
-// agents from simultaneously acquiring the slot.
+// Replays a rolled-back conflict so the loser observes the committed holder.
 func MergeSlotAcquireImpl(ctx context.Context, s Storage, holder, actor string, wait bool) (*MergeSlotResult, error) {
 	if holder == "" {
 		return nil, fmt.Errorf("merge-slot acquire: holder must not be empty")
@@ -91,9 +90,10 @@ func MergeSlotAcquireImpl(ctx context.Context, s Storage, holder, actor string, 
 	var result MergeSlotResult
 	result.SlotID = slotID
 
-	err := s.RunInTransaction(ctx,
+	err := RunReplayableTransaction(ctx, s,
 		fmt.Sprintf("bd: acquire merge slot %s for %s", slotID, holder),
 		func(tx Transaction) error {
+			result = MergeSlotResult{SlotID: slotID}
 			attempt, err := MergeSlotAcquireInTx(ctx, tx, slotID, holder, actor, wait)
 			if attempt != nil {
 				result = *attempt
@@ -173,7 +173,7 @@ func MergeSlotAcquireInTx(ctx context.Context, tx MergeSlotTransaction, slotID, 
 func MergeSlotReleaseImpl(ctx context.Context, s Storage, holder, actor string) error {
 	slotID := MergeSlotID(ctx, s)
 
-	return s.RunInTransaction(ctx, fmt.Sprintf("bd: release merge slot %s", slotID),
+	return RunReplayableTransaction(ctx, s, fmt.Sprintf("bd: release merge slot %s", slotID),
 		func(tx Transaction) error { return MergeSlotReleaseInTx(ctx, tx, slotID, holder, actor) })
 }
 

@@ -16,6 +16,8 @@ Root DOX.md and the parent chain remain binding.
 
 - Ready predicates reuse shared external blocker evaluation before UNION limits and atomic issue claims. The caller context supplies provider resolution; no resolver conservatively withholds external prerequisites.
 
+- Bulk ID readers deduplicate input before batches of at most 200 IDs, preserving SQL IN set semantics across labels, comments, dependencies, counts and issue reads. Empty input is empty; any batch failure returns an error without publishing partial results.
+
 ## Work Guidance
 
 Keep semantic contracts explicit and shared across backends. Empty-parent reparent requests for dotted IDs are refused before writing; preserve legacy implicit ancestry and explicit nonempty reparenting.

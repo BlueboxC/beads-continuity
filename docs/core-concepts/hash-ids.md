@@ -75,6 +75,13 @@ Benefits:
 - No namespace collision (parent hash is unique)
 - Up to 3 levels of nesting
 
+## Exact IDs for deletion
+
+Native `bd delete` requires the complete ID for both preview and deletion,
+including batches and routed projects. A stale prefix must not select a longer
+surviving ID. Read commands still support abbreviations. Full IDs without their
+prefix remain accepted; Graph Preview retains its existing revision guards.
+
 ## ID Configuration
 
 Configure ID prefix and length:

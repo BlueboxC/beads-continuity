@@ -181,6 +181,7 @@ type roleAccessorStore struct {
 	bootstrapper issueops.Bootstrapper
 	verifier     issueops.InitVerifier
 	metadataCAS  issueops.MetadataCAS
+	heartbeater  issueops.Heartbeater
 	releaser     issueops.Releaser
 	err          error
 }
@@ -214,6 +215,7 @@ func newRoleAccessorStore() *roleAccessorStore {
 		verifier:     sentinel,
 		metadataCAS:  sentinel,
 		releaser:     sentinel,
+		heartbeater:  sentinel,
 	}
 }
 
@@ -439,7 +441,7 @@ func (*memoryRoleSentinel) List(context.Context, memoryops.ListRequest) (memoryo
 // ReadyCounter, Querier and InitVerifier deliberately return the inner surface
 // unwrapped,
 // each in its own hook_*.go. The ones in that column that are NOT reads are
-// WorkspaceConfig, Memories, VersionReconciler, Bootstrapper, Sweeper and
+// WorkspaceConfig, Memories, VersionReconciler, Bootstrapper, Sweeper,
 // Deleter: a settings write changes the workspace rather than a bead, a
 // remembered insight names no bead and there is no on_remember to fire, a
 // version marker names no bead at all, a bootstrap lands on a workspace whose
@@ -484,6 +486,7 @@ func TestHookFiringStoreWrapsTheWriteRolesAndPassesTheReadsThrough(t *testing.T)
 		{"Deleter", func() (any, error) { return store.Deleter() }, inner.deleter, false},
 		{"Bootstrapper", func() (any, error) { return store.Bootstrapper() }, inner.bootstrapper, false},
 		{"InitVerifier", func() (any, error) { return store.InitVerifier() }, inner.verifier, false},
+		{"Heartbeater", func() (any, error) { return store.Heartbeater() }, inner.heartbeater, true},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			surface, err := test.got()
@@ -541,6 +544,7 @@ func TestHookFiringStoreRoleAccessorsPropagateInnerErrors(t *testing.T) {
 		{"Deleter", func() (any, error) { return store.Deleter() }},
 		{"Bootstrapper", func() (any, error) { return store.Bootstrapper() }},
 		{"InitVerifier", func() (any, error) { return store.InitVerifier() }},
+		{"Heartbeater", func() (any, error) { return store.Heartbeater() }},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			if _, err := test.got(); !errors.Is(err, want) {
@@ -548,4 +552,9 @@ func TestHookFiringStoreRoleAccessorsPropagateInnerErrors(t *testing.T) {
 			}
 		})
 	}
+}
+
+func (s *roleAccessorStore) Heartbeater() (issueops.Heartbeater, error) { return s.heartbeater, s.err }
+func (*roleAccessorSentinel) Heartbeat(context.Context, issueops.HeartbeatRequest) (issueops.HeartbeatResult, error) {
+	return issueops.HeartbeatResult{}, nil
 }

@@ -89,7 +89,7 @@ func (s *deleter) Delete(ctx context.Context, req issueops.DeleteRequest) (issue
 		msg := fmt.Sprintf("bd: delete %d issue(s)", result.Deleted)
 		if err := schema.DrainCall(ctx, tx, "CALL DOLT_COMMIT('-m', ?, '--author', ?)",
 			msg, s.store.commitAuthorString()); err != nil && !isDoltNothingToCommit(err) {
-			return fmt.Errorf("dolt commit: %w", err)
+			return wrapSQLCommitError("dolt commit", err)
 		}
 		return nil
 	}); err != nil {

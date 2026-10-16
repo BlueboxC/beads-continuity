@@ -12,6 +12,8 @@ Shared tests for observable backend semantics.
 
 Root DOX.md and the parent chain remain binding.
 
+- Heartbeater conformance covers refresh, re-arm, foreign/missing/ended claims, ephemeral rows, readonly and hook counts on native, embedded and UOW implementations. Optional retained-history checks run only with the Graph Preview recorder enabled. Native race fixtures hold the re-arm fence while a release/close wins; do not infer every scheduler interleaving.
+
 ## Work Guidance
 
 Exercise behavior, errors and state transitions against each supported implementation. The optional `AtomicMemories` case runs only where advertised and checks generation guards, no-op writes and preservation of neighboring planes. The optional SnapshotMemories case checks exact rows, read-only callback access, reader lifetime, error/cancellation propagation and preservation; run it only on implementations advertising that capability.

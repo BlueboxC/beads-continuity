@@ -128,19 +128,20 @@ func RunTxResultWithin[T any](ctx context.Context, p UnitOfWorkProvider, maxElap
 }
 
 // RunTxEphemeral is RunTxResult for work whose writes touch ONLY ephemeral
-// (dolt_ignored) state — today the leases table, whose writes must mint no
-// Dolt commit and no history (bd-lrgn1; ported to proxied mode by bd-aq0ql).
-// On success the attempt is committed with the SQL-only form (Tx.Commit with
-// an empty message ⇒ plain COMMIT, no DOLT_COMMIT), which persists the
-// working set but records nothing in dolt_log — the proxied analog of the
-// classic DoltStore.withRetryTx commit discipline that HeartbeatIssue relies
-// on. A serialization loser (heartbeat and reclaim/close contend on the same
-// lease row by design) is replayed against a fresh unit of work, exactly like
-// RunTxResult.
+// (dolt_ignored) state, which must mint no Dolt commit and no history
+// (bd-aq0ql) — today local metadata and the events-journal prune. On success
+// the attempt is committed with the SQL-only form (Tx.Commit with an empty
+// message ⇒ plain COMMIT, no DOLT_COMMIT), which persists the working set but
+// records nothing in dolt_log. A serialization loser is replayed against a
+// fresh unit of work, exactly like RunTxResult.
 //
 // Do NOT use this for work that writes versioned tables: those writes would
 // persist while silently bypassing Dolt history. Every versioned write goes
-// through RunTx/RunTxResult with a real commit message.
+// through RunTx/RunTxResult with a real commit message. A heartbeat is NOT
+// ephemeral work: a lease refresh writes only the dolt_ignored leases table
+// (bd-lrgn1), but a re-arm writes versioned rows, so the Heartbeater commits
+// through RunTxScoped, whose attempt that names no tables takes this same
+// plain COMMIT.
 func RunTxEphemeral[T any](ctx context.Context, p UnitOfWorkProvider, work TxReadFunc[T]) (T, error) {
 	var result T
 	bo := backoff.NewExponentialBackOff()
@@ -166,6 +167,91 @@ func RunTxEphemeral[T any](ctx context.Context, p UnitOfWorkProvider, work TxRea
 		}
 
 		if err := uw.Commit(ctx, ""); err != nil {
+			if isSerializationError(err) {
+				return err
+			}
+			return backoff.Permanent(err)
+		}
+
+		result = r
+		return nil
+	}, backoff.WithContext(bo, ctx))
+
+	return result, err
+}
+
+// ScopedCommitter is the optional commit a unit of work offers for a write
+// whose versioned tables are KNOWN: it stages exactly tables (plus the
+// versioned-history tables when the transaction could have minted) and makes
+// a Dolt commit named message from that staged set alone, leaving any other
+// writer's uncommitted change in the working set where it was. With nothing
+// staged, or under a deferred version commit, it is the plain SQL COMMIT.
+// It is the uow twin of the DoltStore funnel's DOLT_ADD-per-table commit, and
+// what a mutation that mostly touches dolt_ignored state (a heartbeat
+// re-arm) commits through instead of DOLT_COMMIT('-Am').
+type ScopedCommitter interface {
+	CommitScoped(ctx context.Context, tables []string, message string) error
+}
+
+// commitScoped commits uw through the first ScopedCommitter on its decorator
+// chain. A backend whose unit of work has none (a non-Dolt engine) gets the
+// plain SQL COMMIT: there is no version control to scope.
+func commitScoped(ctx context.Context, uw UnitOfWork, tables []string, message string) error {
+	for u := uw; u != nil; {
+		if scoped, ok := u.(ScopedCommitter); ok {
+			return scoped.CommitScoped(ctx, tables, message)
+		}
+		unwrapper, ok := u.(unitOfWorkUnwrapper)
+		if !ok {
+			break
+		}
+		u = unwrapper.Unwrap()
+	}
+	return uw.Commit(ctx, "")
+}
+
+// TxScopedFunc is the work RunTxScoped runs: its result, and the versioned
+// tables the attempt changed with the commit message naming them. No tables
+// means the attempt wrote only dolt_ignored state (or nothing).
+type TxScopedFunc[T any] func(ctx context.Context, uw UnitOfWork) (result T, tables []string, commitMsg string, err error)
+
+// RunTxScoped is RunTxEphemeral for work that is USUALLY ephemeral but
+// sometimes writes versioned rows it can name: an attempt that reports no
+// tables commits with the plain SQL COMMIT (no working-set scan, no Dolt
+// commit, nothing swept); one that reports tables commits through
+// ScopedCommitter, staging exactly those. Never DOLT_COMMIT('-Am'): that
+// would sweep other writers' uncommitted (batch-mode) changes into this
+// commit. Serialization losers are replayed like RunTxEphemeral's.
+func RunTxScoped[T any](ctx context.Context, p UnitOfWorkProvider, work TxScopedFunc[T]) (T, error) {
+	var result T
+	bo := backoff.NewExponentialBackOff()
+	bo.InitialInterval = txRetryInitialInterval
+	bo.MaxElapsedTime = DefaultTxRetryMaxElapsed
+
+	err := backoff.Retry(func() error {
+		uw, err := p.NewUOW(ctx)
+		if err != nil {
+			if isSerializationError(err) {
+				return err
+			}
+			return backoff.Permanent(err)
+		}
+		defer closeAttempt(ctx, uw)
+
+		r, tables, msg, err := work(ctx, uw)
+		if err != nil {
+			if isSerializationError(err) {
+				return err
+			}
+			return backoff.Permanent(err)
+		}
+
+		if len(tables) == 0 || msg == "" {
+			err = uw.Commit(ctx, "")
+		} else {
+			err = commitScoped(ctx, uw, tables, msg)
+		}
+		if err != nil {
 			if isSerializationError(err) {
 				return err
 			}

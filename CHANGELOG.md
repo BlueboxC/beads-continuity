@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed in Beads Continuity
+
+- Require exact native delete IDs and protect account-home init artifacts.
+- Restore complete create inputs on rolled-back retries; fence heartbeat re-arm
+  against ended claims across native, embedded and proxied backends.
+- Bound transaction retries and ID reads; preserve at-most-once callbacks and
+  uncertain-commit refusal. Fail closed on peer credential lookup errors.
+- Preserve query combining marks and reject literal NUL; stamp provenance in UTC.
+- Select list edges by displayed IDs, render parent cycles finitely, limit circuit
+  housekeeping and use exact native table probes. See FORK.md for attribution.
+
 ## [1.3.1] - 2026-09-30
 
 First stable release of the 1.3.1 patch line. It ships the same code as

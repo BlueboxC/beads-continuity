@@ -38,6 +38,7 @@ type initProxiedServerInput struct {
 	stealth                bool
 	skipHooks              bool
 	skipAgents             bool
+	keepHomeClean          bool // see guardInitInHomeDir
 	reinitLocal            bool
 	contributor            bool
 	team                   bool
@@ -162,7 +163,7 @@ func runInitProxiedServer(cmd *cobra.Command, ctx context.Context, in initProxie
 		ConfigYAMLBody:          configYAMLBody,
 		ProxiedServerClientInfo: clientInfo,
 		SetNoCOW:                true,
-		WriteProjectGitignore:   useLocalBeads && beadsDirIsLocal,
+		WriteProjectGitignore:   useLocalBeads && beadsDirIsLocal && !in.keepHomeClean,
 	}
 	if useLocalBeads {
 		fsParams.LocalVersion = Version
@@ -300,7 +301,7 @@ func resolveProxiedInitRemoteURL(ctx context.Context, gitUC domain.GitUseCase, i
 	if source != initSyncRemoteNone {
 		return ""
 	}
-	if !in.stealth {
+	if !in.stealth && !in.keepHomeClean {
 		if originURL, err := gitUC.OriginRemoteURL(ctx); err == nil && originURL != "" {
 			return normalizeRemoteURL(originURL)
 		}
@@ -461,7 +462,7 @@ type runInitTailContext struct {
 }
 
 func runInitProxiedServerTail(cmd *cobra.Command, ctx context.Context, in initProxiedServerInput, t runInitTailContext) error {
-	isRepo := t.gitUC.IsGitRepo(ctx)
+	isRepo := !in.keepHomeClean && t.gitUC.IsGitRepo(ctx)
 
 	if isRepo {
 		role := in.roleFlag

@@ -652,7 +652,10 @@ func cloneSubgraph(ctx context.Context, s storage.DoltStorage, subgraph *Templat
 	}
 
 	var result *InstantiateResult
-	err := transact(ctx, s, "bd: clone template subgraph", func(tx storage.Transaction) error {
+	restore := issueops.SnapshotCreateInputs(subgraph.Issues)
+	err := transact(ctx, replayableTransactionStore{s}, "bd: clone template subgraph", func(tx storage.Transaction) error {
+		restore()
+		result = nil
 		r, err := cloneSubgraphInto(ctx, storeMolWriter{DoltStorage: s, tx: tx}, subgraph, opts)
 		if err != nil {
 			return err

@@ -472,6 +472,22 @@ func (u *notifyingUOW) Commit(ctx context.Context, message string) error {
 	return nil
 }
 
+// CommitScoped is Commit for a scoped version commit (see ScopedCommitter):
+// commit through the chain beneath, then fire the buffered hooks.
+func (u *notifyingUOW) CommitScoped(ctx context.Context, tables []string, message string) error {
+	if err := commitScoped(ctx, u.UnitOfWork, tables, message); err != nil {
+		return err
+	}
+	entries := u.rec.drain()
+	if u.sinks.Hook == nil {
+		return nil
+	}
+	for _, entry := range entries {
+		u.sinks.Hook.Run(entry.event, entry.issue)
+	}
+	return nil
+}
+
 // Close rolls the unit of work back unless it committed, so whatever the
 // attempt buffered is dropped rather than fired.
 func (u *notifyingUOW) Close(ctx context.Context) {
@@ -1386,4 +1402,14 @@ func (u *recordingCommentUC) AddCommentToWisp(ctx context.Context, wispID, autho
 		u.rec.record(opUpdate, u.snap.wisp(ctx, wispID))
 	}
 	return comment, err
+}
+
+func (p *notifyingProvider) Heartbeater() (publicops.Heartbeater, error) { return NewHeartbeater(p) }
+
+func (u *recordingIssueUC) RenewLease(ctx context.Context, request publicops.HeartbeatRequest) (publicops.HeartbeatResult, error) {
+	result, err := u.IssueUseCase.RenewLease(ctx, request)
+	if err == nil && result.Rearmed {
+		u.rec.record(opUpdate, u.snap.issue(ctx, result.IssueID))
+	}
+	return result, err
 }

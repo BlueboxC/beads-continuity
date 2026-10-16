@@ -5,6 +5,10 @@ import (
 	"database/sql"
 	"database/sql/driver"
 	"errors"
+	"fmt"
+	"github.com/steveyegge/beads/internal/storage"
+	"log"
+	"slices"
 
 	"github.com/steveyegge/beads/internal/storage/domain/db"
 	"github.com/steveyegge/beads/internal/storage/issueops"
@@ -80,6 +84,73 @@ func (t *doltServerTx) Commit(ctx context.Context, message string) error {
 	return t.closeOpenTxAfterFailure(ctx, err)
 }
 
+// CommitScoped merges the SQL transaction before staging its named tables,
+// preserving concurrent same-table writes, like the native DoltStore funnel.
+// Publication failures after this commit are advisory: replay would repeat an
+// already durable mutation. An uncertain SQL commit is never replayable.
+func (t *doltServerTx) CommitScoped(ctx context.Context, tables []string, message string) error {
+	if t.readOnly {
+		return errors.New("strict readonly transaction cannot commit")
+	}
+	if t.done {
+		return errors.New("uow: commit: already done")
+	}
+	if message == "" || len(tables) == 0 || issueops.VersionCommitDeferred(ctx) {
+		return t.Commit(ctx, "")
+	}
+	staged := append([]string(nil), tables...)
+	if issueops.VersionedHistoryEnabledFor(t.conn) {
+		for _, table := range issueops.VersionedHistoryStagedTables() {
+			if !slices.Contains(staged, table) {
+				staged = append(staged, table)
+			}
+		}
+	}
+	if _, err := t.conn.ExecContext(ctx, "COMMIT;"); err != nil {
+		if isSerializationError(err) {
+			return err
+		}
+		t.done = true
+		t.poisonConn()
+		return fmt.Errorf("scoped SQL commit: %w: %w", storage.ErrCommitIndeterminate, err)
+	}
+	t.done = true
+	var publicationErr error
+	for _, table := range staged {
+		if publicationErr = t.drainCall(ctx, "CALL DOLT_ADD(?)", table); publicationErr != nil {
+			break
+		}
+	}
+	if publicationErr == nil {
+		publicationErr = t.drainCall(ctx, "CALL DOLT_COMMIT('-m', ?)", message)
+	}
+	if publicationErr != nil && !issueops.IsNothingToCommitError(publicationErr) {
+		log.Printf("uow: scoped post-tx Dolt commit failed for %q (data already committed; history deferred): %v", message, publicationErr)
+	}
+	if t.recheckBlockedAfterCommit(ctx, issueops.TakeBlockedRecheck(t.conn)) && publicationErr == nil {
+		t.releaseConn()
+	} else {
+		t.poisonConn()
+	}
+	return nil
+}
+
+// drainCall runs a stored procedure on the pinned session and drains its
+// result set.
+func (t *doltServerTx) drainCall(ctx context.Context, stmt string, args ...any) error {
+	rows, err := t.conn.QueryContext(ctx, stmt, args...)
+	if err != nil {
+		return err
+	}
+	for rows.Next() {
+	}
+	if err := rows.Err(); err != nil {
+		_ = rows.Close()
+		return err
+	}
+	return rows.Close()
+}
+
 // commitStatement picks the statement that ends the open transaction on the
 // pinned session for a commit named message.
 func (t *doltServerTx) commitStatement(ctx context.Context, message string) (string, []interface{}, error) {
@@ -95,12 +166,15 @@ func (t *doltServerTx) commitStatement(ctx context.Context, message string) (str
 	}
 	// An empty message selects the EPHEMERAL commit form (bd-aq0ql): a plain
 	// SQL COMMIT persists the transaction's writes into the working set
-	// without minting a Dolt commit or history. It has two entry points:
+	// without minting a Dolt commit or history. It has these entry points:
 	//
-	//   - uow.RunTxEphemeral, for work that touches ONLY dolt_ignored state —
-	//     today the leases table (bd-lrgn1), whose heartbeats must never create
-	//     commits. RunTx/RunTxResult treat an empty commitMsg as "nothing to
-	//     commit" and never call Commit at all, so they cannot reach it that way.
+	//   - uow.RunTxEphemeral, for work that touches ONLY dolt_ignored state.
+	//     RunTx/RunTxResult treat an empty commitMsg as "nothing to commit" and
+	//     never call Commit at all, so they cannot reach it that way.
+	//   - uow.RunTxScoped, for an attempt that names no tables — a lease
+	//     refresh (bd-lrgn1), which writes only the dolt_ignored leases table
+	//     and must never create a commit. A heartbeat that re-arms names its
+	//     tables instead and takes the scoped commit.
 	//   - RunTx/RunTxResult under a deferred-version-commit context, via the
 	//     blanking just above (GH#4995). There the writes are ordinary versioned
 	//     rows and the ONLY-dolt_ignored-state rationale does not apply: the

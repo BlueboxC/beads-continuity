@@ -4,6 +4,8 @@ import (
 	"context"
 	"database/sql"
 	"math/rand"
+	"os"
+	"strconv"
 	"testing"
 
 	_ "github.com/go-sql-driver/mysql"
@@ -22,13 +24,22 @@ type testSuite struct {
 	baselineCommit string
 	eventsDDL      string
 	journalEnabled bool
+	serverPort     int
 }
 
 func (s *testSuite) SetupSuite() {
-	testutil.RequireDoltContainer(s.T())
-
-	port := testutil.DoltContainerPortInt()
-	s.Require().NotZero(port, "test container port must be set")
+	port := 0
+	if raw := os.Getenv("BEADS_GRAPH_TEST_SERVER_PORT"); raw != "" {
+		var err error
+		port, err = strconv.Atoi(raw)
+		s.Require().NoError(err)
+		s.Require().True(port > 0 && port <= 65535 && port != 3307, "owned disposable loopback port required")
+	} else {
+		testutil.RequireDoltContainer(s.T())
+		port = testutil.DoltContainerPortInt()
+	}
+	s.Require().NotZero(port, "test server port must be set")
+	s.serverPort = port
 
 	ctx := context.Background()
 
@@ -81,7 +92,7 @@ func (s *testSuite) TearDownSuite() {
 	if s.dbName == "" {
 		return
 	}
-	port := testutil.DoltContainerPortInt()
+	port := s.serverPort
 	if port == 0 {
 		return
 	}

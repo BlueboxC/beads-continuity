@@ -340,6 +340,8 @@ type Storage interface {
 	// assignee and status, which is on_update — the same event the journal
 	// already records for it. See hook_releaser.go.
 	Releaser() (issueops.Releaser, error)
+	// Heartbeater refreshes a live lease; only a re-arm fires on_update.
+	Heartbeater() (issueops.Heartbeater, error)
 
 	// Issue CRUD
 	CreateIssue(ctx context.Context, issue *types.Issue, actor string) error
@@ -527,7 +529,10 @@ type Storage interface {
 	// starts, it is invoked at most once for this public call: callers retry
 	// explicitly when repeating their work is safe. An error wrapping
 	// ErrCommitIndeterminate means the durable outcome may be unknown and must
-	// not be blindly replayed.
+	// not be blindly replayed. An error wrapping ErrTransactionConflict means
+	// the transaction lost a concurrent-write conflict and was rolled back
+	// whole; RunReplayableTransaction replays such a transaction for a caller
+	// whose callback is safe to repeat.
 	RunInTransaction(ctx context.Context, commitMsg string, fn func(tx Transaction) error) error
 
 	// MergeSlot — serialized conflict resolution primitive.

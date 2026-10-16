@@ -230,3 +230,9 @@ func (r *recordingBatchApplyIssues) CompleteIssueOperationDependency(context.Con
 func (r *recordingBatchApplyIssues) CompleteIssueOperationComment(context.Context, string)    {}
 func (r *recordingBatchApplyIssues) CompleteIssueOperationMetadata(context.Context, string)   {}
 func (r *recordingBatchApplyIssues) CompleteIssueOperationRelease(context.Context, string)    {}
+
+func (r *recordingBatchApplyHooks) CompleteIssueOperationUpdateByID(_ context.Context, id string) {
+	r.completions = append(r.completions, "update-by-id:"+id)
+}
+
+func (r *recordingBatchApplyIssues) CompleteIssueOperationUpdateByID(_ context.Context, id string) {}

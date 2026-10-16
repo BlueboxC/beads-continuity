@@ -110,6 +110,7 @@ type IssueSQLRepository interface {
 	UnclaimIssue(ctx context.Context, id, actor string, force bool) error
 	UnclaimIssueIfAssignee(ctx context.Context, id, actor, expectedAssignee string) error
 	HeartbeatIssue(ctx context.Context, id, actor string) error
+	RenewLease(ctx context.Context, request publicops.HeartbeatRequest) (publicops.HeartbeatResult, error)
 	ReclaimExpiredLeases(ctx context.Context, olderThan time.Duration, filter types.ReclaimFilter, actor string) ([]types.ReclaimedLease, error)
 	WakeExpiredDefers(ctx context.Context) (issues, wisps int, err error)
 }
@@ -334,6 +335,7 @@ type IssueUseCase interface {
 	Unclaim(ctx context.Context, id, actor string, force bool) error
 	UnclaimIfAssignee(ctx context.Context, id, actor, expectedAssignee string) error
 	Heartbeat(ctx context.Context, id, actor string) error
+	RenewLease(ctx context.Context, request publicops.HeartbeatRequest) (publicops.HeartbeatResult, error)
 	ReclaimExpiredLeases(ctx context.Context, olderThan time.Duration, filter types.ReclaimFilter, actor string) ([]types.ReclaimedLease, error)
 	WakeExpiredDefers(ctx context.Context) (issues, wisps int, err error)
 
@@ -1926,10 +1928,13 @@ func (u *issueUseCaseImpl) UnclaimIfAssignee(ctx context.Context, id, actor, exp
 	return nil
 }
 
-// Heartbeat refreshes the lease on an issue actor holds in_progress. The
-// write touches ONLY the ephemeral leases table (bd-lrgn1), so the caller
-// must run it under uow.RunTxEphemeral's no-Dolt-commit form — a heartbeat
-// mints no Dolt commit and no history in any mode (bd-aq0ql).
+// Heartbeat refreshes the lease on an issue actor holds in_progress. A
+// refresh touches ONLY the ephemeral leases table (bd-lrgn1) and needs no Dolt
+// commit. A re-arm (a live claim with no lease row the caller holds) is
+// recorded as a mutation in versioned tables, and this method cannot report
+// one, so never commit it with uow.RunTxEphemeral: take RenewLease, which
+// reports the re-arm, and commit as the Heartbeater role does
+// (uow.RunTxScoped with issueops.LeaseRearmVersionCommit).
 func (u *issueUseCaseImpl) Heartbeat(ctx context.Context, id, actor string) error {
 	if id == "" {
 		return fmt.Errorf("Heartbeat: id must not be empty")
@@ -1960,4 +1965,8 @@ func (u *issueUseCaseImpl) ReclaimExpiredLeases(ctx context.Context, olderThan t
 		return nil, fmt.Errorf("ReclaimExpiredLeases: %w", err)
 	}
 	return out, nil
+}
+
+func (u *issueUseCaseImpl) RenewLease(ctx context.Context, request publicops.HeartbeatRequest) (publicops.HeartbeatResult, error) {
+	return u.issueRepo.RenewLease(ctx, request)
 }

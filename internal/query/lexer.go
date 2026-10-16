@@ -104,11 +104,13 @@ func NewLexer(input string) *Lexer {
 	return &Lexer{input: input}
 }
 
+const lexerEOF rune = -1
+
 // next returns the next rune and advances position.
 func (l *Lexer) next() rune {
 	if l.pos >= len(l.input) {
 		l.width = 0
-		return 0
+		return lexerEOF
 	}
 	r, w := utf8.DecodeRuneInString(l.input[l.pos:])
 	l.width = w
@@ -119,7 +121,7 @@ func (l *Lexer) next() rune {
 // peek returns the next rune without advancing.
 func (l *Lexer) peek() rune {
 	if l.pos >= len(l.input) {
-		return 0
+		return lexerEOF
 	}
 	r, _ := utf8.DecodeRuneInString(l.input[l.pos:])
 	return r
@@ -134,7 +136,7 @@ func (l *Lexer) backup() {
 func (l *Lexer) skipWhitespace() {
 	for {
 		r := l.next()
-		if r == 0 || !unicode.IsSpace(r) {
+		if r == lexerEOF || !unicode.IsSpace(r) {
 			l.backup()
 			return
 		}
@@ -148,11 +150,13 @@ func (l *Lexer) NextToken() (Token, error) {
 	startPos := l.pos
 	r := l.next()
 
-	if r == 0 {
+	if r == lexerEOF {
 		return Token{Type: TokenEOF, Pos: startPos}, nil
 	}
 
 	switch r {
+	case 0:
+		return Token{}, fmt.Errorf("unexpected NUL at position %d", startPos)
 	case '(':
 		return Token{Type: TokenLParen, Value: "(", Pos: startPos}, nil
 	case ')':
@@ -182,7 +186,7 @@ func (l *Lexer) NextToken() (Token, error) {
 	case '"', '\'':
 		return l.readString(r, startPos)
 	default:
-		if unicode.IsDigit(r) || r == '-' || r == '+' {
+		if isASCIIDigit(r) || r == '-' || r == '+' {
 			l.backup()
 			return l.readNumberOrDuration(startPos)
 		}
@@ -199,8 +203,11 @@ func (l *Lexer) readString(quote rune, startPos int) (Token, error) {
 	var sb strings.Builder
 	for {
 		r := l.next()
-		if r == 0 {
+		if r == lexerEOF {
 			return Token{}, fmt.Errorf("unterminated string starting at position %d", startPos)
+		}
+		if r == 0 {
+			return Token{}, fmt.Errorf("unexpected NUL at position %d", l.pos-l.width)
 		}
 		if r == quote {
 			return Token{Type: TokenString, Value: sb.String(), Pos: startPos}, nil
@@ -209,6 +216,8 @@ func (l *Lexer) readString(quote rune, startPos int) (Token, error) {
 			// Handle escape sequences
 			escaped := l.next()
 			switch escaped {
+			case 0:
+				return Token{}, fmt.Errorf("unexpected NUL at position %d", l.pos-l.width)
 			case 'n':
 				sb.WriteRune('\n')
 			case 't':
@@ -219,7 +228,7 @@ func (l *Lexer) readString(quote rune, startPos int) (Token, error) {
 				sb.WriteRune('"')
 			case '\'':
 				sb.WriteRune('\'')
-			case 0:
+			case lexerEOF:
 				return Token{}, fmt.Errorf("unterminated escape sequence at position %d", l.pos-1)
 			default:
 				sb.WriteString(l.input[l.pos-l.width : l.pos])
@@ -250,7 +259,7 @@ func (l *Lexer) readNumberOrDuration(startPos int) (Token, error) {
 	}
 
 	// Must have at least one digit
-	if !unicode.IsDigit(r) {
+	if !isASCIIDigit(r) {
 		l.backup()
 		// This might be a minus in front of an identifier, which is invalid
 		return Token{}, fmt.Errorf("expected digit at position %d", l.pos)
@@ -260,7 +269,7 @@ func (l *Lexer) readNumberOrDuration(startPos int) (Token, error) {
 	// Read remaining digits
 	for {
 		r = l.next()
-		if !unicode.IsDigit(r) {
+		if !isASCIIDigit(r) {
 			break
 		}
 		sb.WriteRune(r)
@@ -269,7 +278,7 @@ func (l *Lexer) readNumberOrDuration(startPos int) (Token, error) {
 	// Check for duration suffix. Only commit to a duration when the suffix
 	// stands alone — if more identifier characters follow (e.g. "7day"),
 	// fall through to the identifier-fallback below.
-	if r != 0 && isDurationSuffix(r) && !isIdentChar(l.peek()) {
+	if r != lexerEOF && isDurationSuffix(r) && !isIdentChar(l.peek()) {
 		sb.WriteRune(r)
 		return Token{Type: TokenDuration, Value: sb.String(), Pos: startPos}, nil
 	}
@@ -279,14 +288,14 @@ func (l *Lexer) readNumberOrDuration(startPos int) (Token, error) {
 	// number. Restart the lex at the original position and read it as an
 	// identifier so "1-alpha", "2bravo", "42d-sla" all tokenize as one
 	// TokenIdent.
-	if !hadSign && r != 0 && isIdentChar(r) {
+	if !hadSign && r != lexerEOF && isIdentChar(r) {
 		l.pos = startPos
 		return l.readIdent(startPos)
 	}
 
 	// Not a duration suffix and not an identifier — back up the lookahead
 	// rune.
-	if r != 0 {
+	if r != lexerEOF {
 		l.backup()
 	}
 
@@ -299,7 +308,7 @@ func (l *Lexer) readIdent(startPos int) (Token, error) {
 
 	for {
 		r := l.next()
-		if r == 0 || !isIdentChar(r) {
+		if r == lexerEOF || !isIdentChar(r) {
 			l.backup()
 			break
 		}
@@ -349,7 +358,7 @@ func isIdentStart(r rune) bool {
 // Slashes are allowed so that path-style metadata keys (e.g., jira/sprint)
 // can be used in query expressions like "metadata.jira/sprint=42".
 func isIdentChar(r rune) bool {
-	return unicode.IsLetter(r) || unicode.IsDigit(r) || r == '_' || r == '-' || r == '.' || r == ':' || r == '/'
+	return unicode.IsLetter(r) || unicode.IsDigit(r) || unicode.IsMark(r) || r == '_' || r == '-' || r == '.' || r == ':' || r == '/'
 }
 
 // isDurationSuffix returns true if r is a valid duration suffix.
@@ -361,3 +370,5 @@ func isDurationSuffix(r rune) bool {
 		return false
 	}
 }
+
+func isASCIIDigit(r rune) bool { return r >= '0' && r <= '9' }

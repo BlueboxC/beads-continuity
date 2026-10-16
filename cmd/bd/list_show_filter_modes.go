@@ -116,13 +116,6 @@ func findAllDescendants(ctx context.Context, store storage.DoltStorage, dbPath s
 	return nil
 }
 
-// watchIssues polls for changes and re-displays (GH#654)
-// Uses polling instead of fsnotify because Dolt stores data in a server-side
-// database, not files — file watchers never fire.
-type watchListDependencyStore interface {
-	GetAllDependencyRecords(ctx context.Context) (map[string][]*types.Dependency, error)
-}
-
 func loadWatchedIssues(ctx context.Context, store storage.DoltStorage, filter types.IssueFilter, ready bool, parentID string, sortBy string, reverse bool) ([]*types.Issue, error) {
 	if ready {
 		issues, err := store.GetReadyWork(ctx, workapi.ReadyFilterFromIssueFilter(workapi.WithFetchOneExtra(filter)))
@@ -156,10 +149,10 @@ func loadWatchedIssues(ctx context.Context, store storage.DoltStorage, filter ty
 // names its scope instead of asserting an in-progress count the ready filter
 // forced to zero. A watch loop is where a stale "0 in progress" is most likely
 // to be read as a live fact, so this is the path that most needs it.
-func displayWatchedIssueList(ctx context.Context, store watchListDependencyStore, issues []*types.Issue, truncated, readyFiltered bool, statusSelector string) {
+func displayWatchedIssueList(ctx context.Context, store listEdgeSource, issues []*types.Issue, truncated, readyFiltered bool, statusSelector string) {
 	var allDeps map[string][]*types.Dependency
 	if store != nil {
-		deps, err := store.GetAllDependencyRecords(ctx)
+		deps, err := listDependencyRecords(ctx, store, issues)
 		if err == nil {
 			allDeps = deps
 		}

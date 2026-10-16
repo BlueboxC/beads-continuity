@@ -97,22 +97,10 @@ func (s *DoltStore) RemoveDependencyWithOptions(ctx context.Context, issueID, de
 	return s.withCircuitWrite(ctx, func(ctx context.Context) error {
 		// Wisps live in dolt_ignored tables — skip Dolt versioning entirely.
 		if s.isActiveWisp(ctx, issueID) {
-			tx, err := s.db.BeginTx(ctx, nil)
-			if err != nil {
-				return fmt.Errorf("failed to begin transaction: %w", err)
-			}
-			defer func() { _ = tx.Rollback() }()
-			clearJournalScope := s.scopeEventsJournalTransaction(tx)
-			defer clearJournalScope()
-			clearRecheckScope := issueops.ScopeBlockedRecheckTransaction(tx)
-			defer clearRecheckScope()
-			if _, err := issueops.RemoveDependencyInTx(ctx, tx, issueID, dependsOnID, actor, rmOpts.EmitEvent); err != nil {
+			return s.withRetryTx(ctx, func(tx *sql.Tx) error {
+				_, err := issueops.RemoveDependencyInTx(ctx, tx, issueID, dependsOnID, actor, rmOpts.EmitEvent)
 				return err
-			}
-			if err := s.commitSQLTxAndRecheck(ctx, "commit remove wisp dependency", tx); err != nil {
-				return err
-			}
-			return nil
+			})
 		}
 
 		tx, err := s.db.BeginTx(ctx, nil)

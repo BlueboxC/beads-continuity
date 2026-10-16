@@ -17,6 +17,19 @@ import (
 // "not found" and surface the candidate list instead of a generic failure.
 var ErrAmbiguousID = errors.New("ambiguous issue ID")
 
+// ErrAbbreviatedIDNotAllowed distinguishes an inexact destructive selector.
+var ErrAbbreviatedIDNotAllowed = errors.New("id is a valid abbreviation, but exact-match resolution is required here")
+
+type AbbreviatedIDError struct {
+	Input   string
+	Matches []string
+}
+
+func (e *AbbreviatedIDError) Error() string {
+	return fmt.Sprintf("%v: %q (matches %v)", ErrAbbreviatedIDNotAllowed, e.Input, e.Matches)
+}
+func (e *AbbreviatedIDError) Unwrap() error { return ErrAbbreviatedIDNotAllowed }
+
 type PartialIDResolverStore interface {
 	SearchIssues(ctx context.Context, query string, filter types.IssueFilter) ([]*types.Issue, error)
 	SearchIssueIDs(ctx context.Context, query string, filter types.IssueFilter) ([]string, error)
@@ -50,6 +63,15 @@ func parseIssueID(input string, prefix string) string {
 // - No issue found matching the ID
 // - Multiple issues match (ambiguous prefix)
 func ResolvePartialID(ctx context.Context, store PartialIDResolverStore, input string) (string, error) {
+	return resolvePartialID(ctx, store, input, false)
+}
+
+// ResolvePartialIDExact accepts full IDs and full bare hashes, never abbreviations.
+func ResolvePartialIDExact(ctx context.Context, store PartialIDResolverStore, input string) (string, error) {
+	return resolvePartialID(ctx, store, input, true)
+}
+
+func resolvePartialID(ctx context.Context, store PartialIDResolverStore, input string, exactOnly bool) (string, error) {
 	if store == nil {
 		return "", fmt.Errorf("cannot resolve issue ID %q: storage is nil", input)
 	}
@@ -219,6 +241,9 @@ func ResolvePartialID(ctx context.Context, store PartialIDResolverStore, input s
 	// order is not a contract for ambiguous matches, so sorting by ID pins the same
 	// message for every storage implementation.
 	sort.Strings(matches)
+	if exactOnly {
+		return "", &AbbreviatedIDError{Input: input, Matches: matches}
+	}
 
 	if len(matches) > 1 {
 		return "", fmt.Errorf("%w: %q matches %d issues: %v\nUse more characters to disambiguate", ErrAmbiguousID, input, len(matches), matches)

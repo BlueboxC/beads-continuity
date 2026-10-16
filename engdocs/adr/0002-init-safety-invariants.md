@@ -85,6 +85,14 @@ the confirmation window (another agent pushed), `bd init` aborts with
 `ExitRemoteDivergenceRefused`. Race-safety is an internal invariant,
 not a user-facing ceremony.
 
+### Invariant 6 — account-home artifact boundary
+
+Before artifact writes, init refuses the OS account home unless it owns its Git
+root or the caller explicitly supplied BEADS_DIR. Git routing environment cannot
+establish that root. Explicit BEADS_DIR keeps instruction, hook, ignore and Git
+artifacts outside the selected directory untouched. Exit 15 is a CLI refusal,
+not a protocol-v0 code. Symlink and case aliases follow filesystem identity.
+
 ## Consequences
 
 ### Flag surface after this ADR

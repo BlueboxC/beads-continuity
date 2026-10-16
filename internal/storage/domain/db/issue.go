@@ -576,35 +576,33 @@ func (r *issueSQLRepositoryImpl) Get(ctx context.Context, id string, opts domain
 }
 
 func (r *issueSQLRepositoryImpl) GetByIDs(ctx context.Context, ids []string, opts domain.IssueTableOpts) ([]*types.Issue, error) {
-	if len(ids) == 0 {
-		return nil, nil
-	}
-	placeholders := make([]string, len(ids))
-	args := make([]any, len(ids))
-	for i, id := range ids {
-		placeholders[i] = "?"
-		args[i] = id
-	}
 	table := pickIssueTable(opts.UseWispsTable)
-	//nolint:gosec // G201: table is one of two hardcoded constants
-	q := fmt.Sprintf("SELECT %s FROM %s %s WHERE id IN (%s)",
-		issueSelectColumns, table, sqlbuild.LeaseJoin(table), strings.Join(placeholders, ","))
-	rows, err := r.runner.QueryContext(ctx, q, args...)
-	if err != nil {
-		return nil, fmt.Errorf("db: GetByIDs: %w", err)
-	}
-	defer rows.Close()
-
 	var out []*types.Issue
-	for rows.Next() {
-		issue, err := scanIssue(rows)
+	err := forEachIDBatch(ids, func(batch []string) error {
+		placeholders, args := buildInPlaceholders(batch)
+		//nolint:gosec // G201: table is one of two hardcoded constants
+		q := fmt.Sprintf("SELECT %s FROM %s %s WHERE id IN (%s)",
+			issueSelectColumns, table, sqlbuild.LeaseJoin(table), placeholders)
+		rows, err := r.runner.QueryContext(ctx, q, args...)
 		if err != nil {
-			return nil, fmt.Errorf("db: GetByIDs: scan: %w", err)
+			return fmt.Errorf("db: GetByIDs: %w", err)
 		}
-		out = append(out, issue)
-	}
-	if err := rows.Err(); err != nil {
-		return nil, fmt.Errorf("db: GetByIDs: rows: %w", err)
+		defer rows.Close()
+
+		for rows.Next() {
+			issue, err := scanIssue(rows)
+			if err != nil {
+				return fmt.Errorf("db: GetByIDs: scan: %w", err)
+			}
+			out = append(out, issue)
+		}
+		if err := rows.Err(); err != nil {
+			return fmt.Errorf("db: GetByIDs: rows: %w", err)
+		}
+		return nil
+	})
+	if err != nil {
+		return nil, err
 	}
 	return out, nil
 }
@@ -1261,9 +1259,14 @@ func (r *issueSQLRepositoryImpl) UnclaimIssueIfAssignee(ctx context.Context, id,
 // (time.Now().UTC()), same TTL resolution (issueops.LeaseTTL), and the same
 // only-current-owner classification (storage.ErrAlreadyClaimed /
 // ErrNotClaimable) — so classic `bd reclaim` staleness semantics see proxied
-// heartbeats identically. Deliberately NO Dolt commit: the leases table is
-// dolt_ignored (bd-lrgn1), and the cmd layer commits this transaction with
-// uow.RunTxEphemeral (plain SQL COMMIT, nothing in dolt_log).
+// heartbeats identically. Deliberately NO Dolt commit here: a refresh writes
+// only the dolt_ignored leases table (bd-lrgn1). A re-arm is recorded as a
+// mutation (versioned rows), so a caller must commit this unit of work with
+// a message, as the Heartbeater role's uow leg does (uow.RunTxScoped). A
+// refusal is returned as an error, so the caller's unit of work rolls back
+// and the orphaned-lease delete the refusal made is not kept on this door
+// (no production caller reaches it; the role's leg commits refusals, and the
+// live-claim predicate keeps an orphan from ever answering a refresh).
 func (r *issueSQLRepositoryImpl) HeartbeatIssue(ctx context.Context, id, actor string) error {
 	if issueops.IsActiveWispInTx(ctx, r.runner, id) {
 		return fmt.Errorf("db: IssueSQLRepository.HeartbeatIssue: %w: %s is ephemeral", storage.ErrNotClaimable, id)
@@ -1299,3 +1302,7 @@ func (r *issueSQLRepositoryImpl) ReclaimExpiredLeases(ctx context.Context, older
 }
 
 const deleteBatchSize = 200
+
+func (r *issueSQLRepositoryImpl) RenewLease(ctx context.Context, request publicops.HeartbeatRequest) (publicops.HeartbeatResult, error) {
+	return issueops.ExecuteHeartbeatInTx(ctx, r.runner, request)
+}

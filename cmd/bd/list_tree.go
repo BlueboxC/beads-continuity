@@ -116,6 +116,10 @@ func compareIssuesByPriority(a, b *types.Issue) int {
 // by priority (P0 first) for intuitive reading. When dr is set, each node's
 // dependency edges are annotated just beneath it.
 func printPrettyTree(childrenMap map[string][]*types.Issue, parentID string, prefix string, dr *depRender) {
+	printPrettyTreeSeen(childrenMap, parentID, prefix, dr, map[string]bool{parentID: true})
+}
+
+func printPrettyTreeSeen(childrenMap map[string][]*types.Issue, parentID string, prefix string, dr *depRender, seen map[string]bool) {
 	children := childrenMap[parentID]
 
 	if dr != nil {
@@ -125,7 +129,18 @@ func printPrettyTree(childrenMap map[string][]*types.Issue, parentID string, pre
 		slices.SortFunc(children, compareIssuesByPriority)
 	}
 
+	visible := make([]*types.Issue, 0, len(children))
+	for _, child := range children {
+		if !seen[child.ID] {
+			visible = append(visible, child)
+		}
+	}
+	children = visible
 	for i, child := range children {
+		if seen[child.ID] {
+			continue
+		}
+		seen[child.ID] = true
 		isLast := i == len(children)-1
 		connector := "├── "
 		if isLast {
@@ -138,7 +153,7 @@ func printPrettyTree(childrenMap map[string][]*types.Issue, parentID string, pre
 			extension = "    "
 		}
 		dr.annotationsFor(child.ID, prefix+extension)
-		printPrettyTree(childrenMap, child.ID, prefix+extension, dr)
+		printPrettyTreeSeen(childrenMap, child.ID, prefix+extension, dr, seen)
 	}
 }
 
@@ -244,10 +259,22 @@ func displayPrettyListWithDepsMode(issues []*types.Issue, showHeader bool, allDe
 		roots = orderSiblingsByDeps(roots, allDeps)
 	}
 
-	for _, issue := range roots {
+	seen := make(map[string]bool, len(issues))
+	renderRoot := func(issue *types.Issue) {
+		if seen[issue.ID] {
+			return
+		}
+		seen[issue.ID] = true
 		fmt.Println(formatPrettyIssue(issue))
 		dr.annotationsFor(issue.ID, "")
-		printPrettyTree(childrenMap, issue.ID, "", dr)
+		printPrettyTreeSeen(childrenMap, issue.ID, "", dr, seen)
+	}
+	for _, issue := range roots {
+		renderRoot(issue)
+	}
+	// Imported cycles may have no root. Display every remaining issue once.
+	for _, issue := range issues {
+		renderRoot(issue)
 	}
 
 	// Summary — counts describe the shown page; never label a truncated page "Total".

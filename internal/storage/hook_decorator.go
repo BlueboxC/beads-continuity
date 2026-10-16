@@ -151,6 +151,8 @@ func RoleFiresHooks(role any) bool {
 	// POST /v0/beads/issues:batchCreate served unpeeled is a hundred of the
 	// workspace's subprocesses inside one HTTP call — the batch applier's
 	// hazard, on the operation that reaches it with nothing else in the way.
+	case *hookHeartbeater:
+		return true
 	case *hookBatchCreator:
 		return true
 	}
@@ -824,3 +826,7 @@ var (
 		ReopenIssue(context.Context, string, string, string) error
 	} = (*HookFiringStore)(nil)
 )
+
+func (h *HookFiringStore) CompleteIssueOperationUpdateByID(ctx context.Context, id string) {
+	h.fireHookByID(ctx, hooks.EventUpdate, id)
+}
