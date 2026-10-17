@@ -145,11 +145,11 @@ require (
 	github.com/docker/go-connections v0.6.0 // indirect
 	github.com/docker/go-units v0.5.0 // indirect
 	github.com/dolthub/aws-sdk-go-ini-parser v0.0.0-20250305001723-2821c37f6c12 // indirect
-	github.com/dolthub/dolt/go v0.40.5-0.20261002233748-c6af56fead88
+	github.com/dolthub/dolt/go v0.40.5-0.20261017004643-ea6ad5e1b773
 	github.com/dolthub/eventsapi_schema v0.0.0-20260715220557-d9b4a1c6b4d4 // indirect
 	github.com/dolthub/flatbuffers/v23 v23.3.3-dh.2 // indirect
 	github.com/dolthub/go-icu-regex v0.0.0-20260610153742-72563bc7ca83 // indirect
-	github.com/dolthub/go-mysql-server v0.20.1-0.20261015215057-41dc475ec594
+	github.com/dolthub/go-mysql-server v0.20.1-0.20261016230655-239e0ad6b2f9
 	github.com/dolthub/gozstd v0.0.0-20240423170813-23a2903bca63 // indirect
 	github.com/dolthub/ishell v0.0.0-20260414231531-5f031e3e9037 // indirect
 	github.com/dolthub/jsonpath v0.0.2-0.20261015203105-2af4aa8c81af // indirect
@@ -290,3 +290,5 @@ retract (
 )
 
 replace github.com/dolthub/file-locks => github.com/shrisha/file-locks v0.1.2-0.20261015205944-1006a916595c
+
+replace github.com/dolthub/dolt/go => github.com/BlueboxC/dolt/go v0.0.0-20261017234229-a076d56e39d0

@@ -66,13 +66,28 @@ Detailed references: [knowledge](docs/core-concepts/knowledge.md),
 
 ## Embedded engine compatibility
 
-The embedded engine uses `driver/v2 v2.4.1`, starting from coffeegoddd's
+The embedded engine keeps `driver/v2 v2.4.1`, starting from coffeegoddd's
 [upstream proposal #7254](https://github.com/gastownhall/beads/pull/7254).
-It also pins go-mysql-server `41dc475ec594` from angelamayxie's merged
+It pins Dolt v2.5.0 plus two engine corrections at
+[BlueboxC/dolt `a076d56e39d0`](https://github.com/BlueboxC/dolt/commit/a076d56e39d0a9c4a2165180edeee20c2a2cc4f0),
+with go-mysql-server `239e0ad6b2f9`. The engine remains a Go dependency;
+Beads does not implement engine-specific SQL workarounds.
+
+The official 2.5.0 base already propagates backup source-root errors
+([Dolt #12057](https://github.com/dolthub/dolt/pull/12057)) and closes embedded
+branch/binlog resources ([#12075](https://github.com/dolthub/dolt/pull/12075)).
+The small dependency fork additionally rejects incompatible primary-key diffs
+instead of returning mispaired rows, adapting elianddb's
+[proposal #12017](https://github.com/dolthub/dolt/pull/12017), and restricts
+unscoped history shortcuts to the selected head's ancestry
+([#12104](https://github.com/dolthub/dolt/issues/12104)). Rejection prevents
+incorrect output; it does not add arbitrary primary-key-change alignment.
+Contributor tests and attribution remain in that engine fork. Its tag checks also preserve 2.5.0's crossed-column protection and historical warning behavior.
+
+The matched GMS version includes angelamayxie's merged
 [MIN/MAX fix #4021](https://github.com/dolthub/go-mysql-server/pull/4021).
-Without that fix an empty primary-key prefix can return no aggregate row,
-preventing the first retained version from being created. A regression test
-covers empty and populated tables for both MIN and MAX.
+The empty/populated aggregate regression remains. No multi-branch commit
+option is enabled by Beads, and its storage/API/schema boundaries stay intact.
 
 FreeBSD requires the exact `shrisha/file-locks` commit `1006a916595c` from
 [PR #6](https://github.com/dolthub/file-locks/pull/6), pinned by `replace` in

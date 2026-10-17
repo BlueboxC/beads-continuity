@@ -51,8 +51,8 @@ the criterion for raising it; raise the pin here and in that script together.
 This pin is about the standalone `dolt` CLI, which only server and
 proxied-server mode use. Embedded mode is unaffected either way: it links the
 Dolt engine into `bd` at the dependency tuple in `go.mod`, independently of
-which `dolt` CLI is on your PATH. This fork uses driver v2.4.1 with the
-MIN/MAX correction and BSD build-tag replacement documented in
+which `dolt` CLI is on your PATH. This fork uses driver v2.4.1 with Dolt 2.5.0 plus two engine corrections,
+the MIN/MAX correction and the BSD build-tag replacement documented in
 [FORK.md](https://github.com/BlueboxC/beads-continuity/blob/codex/project-continuity/FORK.md#embedded-engine-compatibility). It accepts native
 Dolt 2.4.2 backups; this does not raise the standalone server pin.
 
