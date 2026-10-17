@@ -437,7 +437,7 @@ func TestCleanStaleCircuitBreakerFilesIn_AgesOutClosed(t *testing.T) {
 	if err := os.WriteFile(agedClosedFile, closedData, 0600); err != nil {
 		t.Fatal(err)
 	}
-	aged := time.Now().Add(-closedSweepTTL - time.Hour)
+	aged := time.Now().Add(-25 * time.Hour)
 	if err := os.Chtimes(agedClosedFile, aged, aged); err != nil {
 		t.Fatal(err)
 	}
@@ -445,6 +445,10 @@ func TestCleanStaleCircuitBreakerFilesIn_AgesOutClosed(t *testing.T) {
 	// A freshly-written closed file: a live writer's state.
 	freshClosedFile := filepath.Join(dir, "beads-dolt-circuit-127-0-0-1-8888.json")
 	if err := os.WriteFile(freshClosedFile, closedData, 0600); err != nil {
+		t.Fatal(err)
+	}
+	daily := time.Now().Add(-23 * time.Hour)
+	if err := os.Chtimes(freshClosedFile, daily, daily); err != nil {
 		t.Fatal(err)
 	}
 
@@ -499,8 +503,11 @@ func TestCleanStaleCircuitBreakerFiles_AgesOutClosedLiveFiles(t *testing.T) {
 		return path
 	}
 	now := time.Now()
+	// Literal ages pin the 24-hour contract independently of closedSweepTTL.
 	aged := write("beads-dolt-circuit-127-0-0-1-41869-mtxdl.json",
-		circuitState{State: circuitClosed}, now.Add(-closedSweepTTL-time.Hour))
+		circuitState{State: circuitClosed}, now.Add(-25*time.Hour))
+	daily := write("beads-dolt-circuit-127-0-0-1-3307-gb.json",
+		circuitState{State: circuitClosed}, now.Add(-23*time.Hour))
 	fresh := write("beads-dolt-circuit-127-0-0-1-3307-ga.json",
 		circuitState{State: circuitClosed}, now)
 	counting := write("beads-dolt-circuit-127-0-0-1-3307-gc.json",
@@ -510,6 +517,9 @@ func TestCleanStaleCircuitBreakerFiles_AgesOutClosedLiveFiles(t *testing.T) {
 
 	if _, err := os.Stat(aged); !os.IsNotExist(err) {
 		t.Errorf("closed live breaker file untouched past the TTL should have been removed: %s (stat err %v)", aged, err)
+	}
+	if _, err := os.Stat(daily); err != nil {
+		t.Errorf("closed live breaker file written within the last day should NOT have been removed: %v", err)
 	}
 	if _, err := os.Stat(fresh); err != nil {
 		t.Errorf("recently written closed live breaker file should NOT have been removed: %v", err)

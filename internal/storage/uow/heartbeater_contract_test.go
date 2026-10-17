@@ -107,6 +107,11 @@ func TestHeartbeaterRefusesBeforeOpeningAUOW(t *testing.T) {
 // newUOWHeartbeaterFixture takes every role through the provider's own
 // capability accessors, and the hooked heartbeater off the notifying provider
 // the proxied CLI route wraps around its provider.
+func TestReclaimPreservesUnrelatedClaims(t *testing.T) {
+	ctx := t.Context()
+	conformance.CheckReclaimOwnership(t, ctx, newUOWHeartbeaterFixture(t, ctx, "rco"))
+}
+
 func newUOWHeartbeaterFixture(t *testing.T, ctx context.Context, prefix string) conformance.HeartbeaterFixture {
 	t.Helper()
 	provider := newUOWRoleFixtureProvider(t, ctx, prefix)

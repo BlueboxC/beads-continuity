@@ -22,6 +22,7 @@ Root DOX.md and the parent chain remain binding.
 
 - SnapshotCreateInputs restores every caller-owned field mutated by create, including nested dependency sources and comment IDs. Keep it aligned with persistence mutations.
 - Lease re-arm fences live issue state in the mutation, so a concurrent close/release cannot recreate an orphan lease. A refresh preserves provenance and mutation history.
+- Reclaim requires a nonempty live assignee matching the expired lease holder under the existing actor rules. Recheck the observed holder and assignee before deletion/release; an unrelated orphan lease cannot release or journal another claim. Preserve replica and expiry guards.
 - Provenance ingest time is explicitly UTC at second precision, independent of occurred_at and server timezone. INSERT IGNORE retries retain the original ingest stamp; existing rows are not rewritten.
 
 ## Work Guidance

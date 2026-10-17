@@ -19,6 +19,7 @@ Root DOX.md and the parent chain remain binding.
 - NewReadOnlyProxyUOWProvider never bootstraps, migrates or auto-starts; verify selected database, schema and configured project identity before returning. Its concrete preflight access is explicitly accounted for by the notification-bypass guard because it cannot mutate or commit. Each physical connection authenticates existing proxy discovery and retains credentials/TLS/upstream binding. Guard direct, query and prepared SQL before driver dispatch because Dolt READ ONLY alone permits DDL/procedures; allow classified reads plus internal READ ONLY/ROLLBACK controls, and reject UOW commit. This is a Beads connection contract, not a new database user or server-wide privilege policy.
 
 - Scoped heartbeat publication commits SQL before staging named history tables, preserving concurrent working-set writes. Unknown SQL commit poisons the transaction and never replays; a history-publication failure after SQL commit is advisory and cannot replay a durable mutation. Readonly never commits. Refresh adds no history/hook; re-arm emits on_update once.
+- Scoped Dolt publication uses schema.DrainCall for every result set, including an empty first set. Later result errors are advisory after SQL commit, stop publication and discard the session; successful draining preserves connection reuse.
 
 ## Work Guidance
 

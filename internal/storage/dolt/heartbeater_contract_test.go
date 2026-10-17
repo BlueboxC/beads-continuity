@@ -73,6 +73,12 @@ func TestHeartbeaterContract(t *testing.T) {
 	})
 }
 
+func TestReclaimPreservesUnrelatedClaims(t *testing.T) {
+	fixture, ctx, cleanup := newDoltHeartbeaterFixture(t, "rco")
+	defer cleanup()
+	conformance.CheckReclaimOwnership(t, ctx, fixture)
+}
+
 // newDoltHeartbeaterFixture composes the frozen role kit with this backend's
 // accessors, plus the heartbeater taken off a HookFiringStore so the quiet case
 // observes the decorator a command actually holds.

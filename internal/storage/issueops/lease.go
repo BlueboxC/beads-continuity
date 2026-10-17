@@ -936,7 +936,7 @@ func ReclaimExpiredLeasesInTx(ctx context.Context, tx DBTX, cutoff time.Time, fi
 	args := append([]any{cutoff}, replicaArgs...)
 	args = append(args, scopeArgs...)
 	rows, err := tx.QueryContext(ctx, `
-		SELECT l.issue_id, COALESCE(i.assignee, ''), COALESCE(l.granted_node, '') FROM leases l
+		SELECT l.issue_id, COALESCE(i.assignee, ''), l.holder, COALESCE(l.granted_node, '') FROM leases l
 		JOIN issues i ON i.id = l.issue_id
 		WHERE i.status = 'in_progress'
 		  AND l.lease_expires_at < ?
@@ -944,20 +944,22 @@ func ReclaimExpiredLeasesInTx(ctx context.Context, tx DBTX, cutoff time.Time, fi
 	if err != nil {
 		return nil, fmt.Errorf("scan for stale leases: %w", err)
 	}
-	var stale []types.ReclaimedLease
-	// Provenance of each snapshot row, parallel to stale, for the
-	// --any-replica audit line below. Kept beside the slice rather than on
-	// types.ReclaimedLease: it is a reclaim-time diagnostic, not part of the
-	// recovery record every backend returns to callers.
-	staleNodes := map[string]string{}
+	type candidate struct {
+		types.ReclaimedLease
+		holder, node string
+	}
+	var stale []candidate
 	for rows.Next() {
-		var r types.ReclaimedLease
-		var grantedNode string
-		if err := rows.Scan(&r.ID, &r.PreviousOwner, &grantedNode); err != nil {
+		var r candidate
+		if err := rows.Scan(&r.ID, &r.PreviousOwner, &r.holder, &r.node); err != nil {
 			_ = rows.Close()
 			return nil, fmt.Errorf("scan stale lease row: %w", err)
 		}
-		staleNodes[r.ID] = grantedNode
+		// An expired orphan lease cannot release somebody else's claim.
+		// Reuse heartbeat's identity rules, including equivalent spellings.
+		if r.PreviousOwner == "" || r.holder == "" || !actorMatches(r.PreviousOwner, r.holder) {
+			continue
+		}
 		stale = append(stale, r)
 	}
 	if err := rows.Err(); err != nil {
@@ -987,9 +989,9 @@ func ReclaimExpiredLeasesInTx(ctx context.Context, tx DBTX, cutoff time.Time, fi
 		// cannot be clobbered: heartbeat and reclaim contend on this same lease
 		// row, so one of a racing pair is forced to retry, and a winning
 		// rescuer's pushed-out expiry makes this DELETE match nothing.
-		delArgs := append([]any{r.ID, cutoff}, replicaArgs...)
+		delArgs := append([]any{r.ID, r.holder, cutoff}, replicaArgs...)
 		res, err := tx.ExecContext(ctx, `
-			DELETE FROM leases WHERE issue_id = ? AND lease_expires_at < ?
+			DELETE FROM leases WHERE issue_id = ? AND holder = ? AND lease_expires_at < ?
 		`+replicaSQL, delArgs...)
 		if err != nil {
 			return nil, fmt.Errorf("reclaim %s: %w", r.ID, err)
@@ -1009,8 +1011,8 @@ func ReclaimExpiredLeasesInTx(ctx context.Context, tx DBTX, cutoff time.Time, fi
 			UPDATE issues
 			SET status = 'open', assignee = NULL, started_at = NULL,
 			    updated_at = ?, row_lock = ?
-			WHERE id = ? AND status = 'in_progress'
-		`, time.Now().UTC(), freshRowLock(), r.ID)
+			WHERE id = ? AND status = 'in_progress' AND assignee = ?
+		`, time.Now().UTC(), freshRowLock(), r.ID, r.PreviousOwner)
 		if err != nil {
 			return nil, fmt.Errorf("reclaim %s: %w", r.ID, err)
 		}
@@ -1038,11 +1040,11 @@ func ReclaimExpiredLeasesInTx(ctx context.Context, tx DBTX, cutoff time.Time, fi
 		// localNode "" is skipped, not printed as `not this node ("")`: on an
 		// unnamed deployment the guard was never armed, so there is no
 		// override to audit — every lease was already eligible.
-		if node := staleNodes[r.ID]; filter.AnyReplica && localNode != "" && node != "" && node != localNode {
+		if node := r.node; filter.AnyReplica && localNode != "" && node != "" && node != localNode {
 			warnReplica("reclaim: --any-replica reverted %s (held by %s) — lease was granted by replica %q, not this node (%q)\n",
 				r.ID, r.PreviousOwner, node, localNode)
 		}
-		reclaimed = append(reclaimed, r)
+		reclaimed = append(reclaimed, r.ReclaimedLease)
 	}
 	return reclaimed, nil
 }

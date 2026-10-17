@@ -12,6 +12,7 @@ import (
 
 	"github.com/steveyegge/beads/internal/storage/domain/db"
 	"github.com/steveyegge/beads/internal/storage/issueops"
+	"github.com/steveyegge/beads/internal/storage/schema"
 )
 
 type doltServerTx struct {
@@ -117,12 +118,12 @@ func (t *doltServerTx) CommitScoped(ctx context.Context, tables []string, messag
 	t.done = true
 	var publicationErr error
 	for _, table := range staged {
-		if publicationErr = t.drainCall(ctx, "CALL DOLT_ADD(?)", table); publicationErr != nil {
+		if publicationErr = schema.DrainCall(ctx, t.conn, "CALL DOLT_ADD(?)", table); publicationErr != nil {
 			break
 		}
 	}
 	if publicationErr == nil {
-		publicationErr = t.drainCall(ctx, "CALL DOLT_COMMIT('-m', ?)", message)
+		publicationErr = schema.DrainCall(ctx, t.conn, "CALL DOLT_COMMIT('-m', ?)", message)
 	}
 	if publicationErr != nil && !issueops.IsNothingToCommitError(publicationErr) {
 		log.Printf("uow: scoped post-tx Dolt commit failed for %q (data already committed; history deferred): %v", message, publicationErr)
@@ -133,22 +134,6 @@ func (t *doltServerTx) CommitScoped(ctx context.Context, tables []string, messag
 		t.poisonConn()
 	}
 	return nil
-}
-
-// drainCall runs a stored procedure on the pinned session and drains its
-// result set.
-func (t *doltServerTx) drainCall(ctx context.Context, stmt string, args ...any) error {
-	rows, err := t.conn.QueryContext(ctx, stmt, args...)
-	if err != nil {
-		return err
-	}
-	for rows.Next() {
-	}
-	if err := rows.Err(); err != nil {
-		_ = rows.Close()
-		return err
-	}
-	return rows.Close()
 }
 
 // commitStatement picks the statement that ends the open transaction on the

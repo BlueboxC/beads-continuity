@@ -25,6 +25,7 @@ Root DOX.md and the parent chain remain binding.
 - Wisp retries encompass the whole SQL transaction. Delete/sweep history-publication errors retain the SQL-commit uncertainty marker; never replay an unknown outcome.
 - Peer credentials fall back only for storage.ErrNotFound; lookup, decryption and authorization failures remain fatal.
 - Circuit housekeeping runs at most once per process and expires only closed files older than 24 hours. Explicit doctor maintenance retains its own sweep.
+- Closed-file cleanup regressions use literal 23-hour retention and 25-hour expiration examples, independently of the TTL constant, for both legacy and live directories.
 
 ## Work Guidance
 

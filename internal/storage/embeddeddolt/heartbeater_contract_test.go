@@ -78,6 +78,12 @@ func TestHeartbeaterContract(t *testing.T) {
 	})
 }
 
+func TestReclaimPreservesUnrelatedClaims(t *testing.T) {
+	skipUnlessEmbeddedDolt(t)
+	te := newTestEnv(t, "rco")
+	conformance.CheckReclaimOwnership(t, t.Context(), newEmbeddedHeartbeaterFixture(t, te, "rco"))
+}
+
 func newEmbeddedHeartbeaterFixture(t *testing.T, te *testEnv, prefix string) conformance.HeartbeaterFixture {
 	t.Helper()
 	heartbeater, err := te.store.Heartbeater()

@@ -13,6 +13,7 @@ Shared tests for observable backend semantics.
 Root DOX.md and the parent chain remain binding.
 
 - Heartbeater conformance covers refresh, re-arm, foreign/missing/ended claims, ephemeral rows, readonly and hook counts on native, embedded and UOW implementations. Optional retained-history checks run only with the Graph Preview recorder enabled. Native race fixtures hold the re-arm fence while a release/close wins; do not infer every scheduler interleaving.
+- CheckReclaimOwnership reuses the native, embedded and UOW fixtures: unrelated/unassigned claims keep their state, revision and timestamps without reclaim events; matching and canonically equivalent holders remain reclaimable. This raw-SQL extension case is separate from the portable RunRoleContracts bundle.
 
 ## Work Guidance
 
