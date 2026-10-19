@@ -703,7 +703,7 @@ func runGraphPreviewStatus(cmd *cobra.Command) error {
 					"issueBlockedOutputBytes":    graphIssueBlockedOutputLimit, "issueBlockedInventoryResources": graphstore.PreviewSnapshotLimit,
 					"genericTraversalOutputBytes": graphGenericOutputLimit, "genericTraversalDepth": graphGenericBound,
 					"genericTraversalNodes": graphGenericBound, "genericTraversalLinks": graphGenericBound, "genericTraversalInventoryResources": graphstore.PreviewSnapshotLimit,
-					"memoryBodyInputBytes": graphPreviewMemoryBodyLimit, "memoryOwnedLinks": graphstore.PreviewOwnedLinkLimit,
+					"memoryBodyInputBytes": graphPreviewMemoryBodyLimit, "metadataInputBytes": metadataInputLimit, "memoryOwnedLinks": graphstore.PreviewOwnedLinkLimit,
 					"issueOwnedLinks": graphstore.PreviewOwnedLinkLimit, "currentReadBytes": graphstore.PreviewCurrentReadByteLimit,
 					"continuityReadRows": graphstore.PreviewContinuityReadRowLimit, "continuityReadBytes": graphstore.PreviewContinuityReadByteLimit,
 					"linkPropertiesInputBytes": graphPreviewPropertiesLimit, "memoryPropertiesInputBytes": graphPreviewPropertiesLimit,

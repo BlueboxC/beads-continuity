@@ -108,6 +108,8 @@ Root DOX.md and the parent chain remain binding.
 
 ## Work Guidance
 
+- Metadata JSON inputs are bounded at 4 MiB for inline and `@file` forms, independently of the 1 MiB graph body/property inputs. Refuse oversize or invalid input before mutation; preserve revision guards and retained versions. Graph status advertises the metadata input budget. Complete graph acquisition retains its separate 16 MiB bound.
+
 Keep existing CLI primitives and machine-readable output stable. Follow AGENTS.md and ../../engdocs/TESTING.md.
 
 Integration credentials, including notion.token, route only to local YAML/environment in single and batch configuration. Notion authentication uses that source even without an open database; its data-source/view metadata remains database-backed.

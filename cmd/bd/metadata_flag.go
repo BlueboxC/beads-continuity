@@ -8,6 +8,8 @@ import (
 	"strings"
 )
 
+const metadataInputLimit = 4 << 20
+
 // readMetadataFlag resolves a --metadata flag value (inline JSON, or
 // @file.json to read it from a file) and requires it to be a JSON object.
 //
@@ -36,17 +38,17 @@ func readMetadataFlag(value string) (json.RawMessage, error) {
 			return nil, fmt.Errorf("failed to read metadata file %s: %w", filePath, err)
 		}
 		defer func() { _ = file.Close() }()
-		data, err := io.ReadAll(io.LimitReader(file, graphPreviewPropertiesLimit+1))
+		data, err := io.ReadAll(io.LimitReader(file, metadataInputLimit+1))
 		if err != nil {
 			return nil, err
 		}
-		if len(data) > graphPreviewPropertiesLimit {
-			return nil, fmt.Errorf("metadata input exceeds preview limit of %d bytes", graphPreviewPropertiesLimit)
+		if len(data) > metadataInputLimit {
+			return nil, fmt.Errorf("metadata input exceeds limit of %d bytes", metadataInputLimit)
 		}
 		metadataJSON = string(data)
 	}
-	if len(metadataJSON) > graphPreviewPropertiesLimit {
-		return nil, fmt.Errorf("metadata input exceeds preview limit of %d bytes", graphPreviewPropertiesLimit)
+	if len(metadataJSON) > metadataInputLimit {
+		return nil, fmt.Errorf("metadata input exceeds limit of %d bytes", metadataInputLimit)
 	}
 	if !json.Valid([]byte(metadataJSON)) {
 		return nil, fmt.Errorf("invalid JSON in --metadata: must be valid JSON")
