@@ -72,8 +72,8 @@ Detailed references: [knowledge](docs/core-concepts/knowledge.md),
 
 The embedded engine keeps `driver/v2 v2.4.1`, starting from coffeegoddd's
 [upstream proposal #7254](https://github.com/gastownhall/beads/pull/7254).
-It pins Dolt v2.5.0 plus two engine corrections at
-[BlueboxC/dolt `a076d56e39d0`](https://github.com/BlueboxC/dolt/commit/a076d56e39d0a9c4a2165180edeee20c2a2cc4f0),
+It pins Dolt v2.5.0 plus four engine corrections at
+[BlueboxC/dolt `0a39207fc4b1`](https://github.com/BlueboxC/dolt/commit/0a39207fc4b10b4a05d88747b94ad525056e13f6),
 with go-mysql-server `239e0ad6b2f9`. The engine remains a Go dependency;
 Beads does not implement engine-specific SQL workarounds.
 
@@ -86,6 +86,10 @@ instead of returning mispaired rows, adapting elianddb's
 unscoped history shortcuts to the selected head's ancestry
 ([#12104](https://github.com/dolthub/dolt/issues/12104)). Rejection prevents
 incorrect output; it does not add arbitrary primary-key-change alignment.
+
+- [#12139](https://github.com/dolthub/dolt/issues/12139) preserves every child-parent diff for both `to_commit` and `from_commit` shared-parent lookups and full history scans, including prepared queries.
+- [#12138](https://github.com/dolthub/dolt/issues/12138) snapshots savepoints from session branch state, avoiding unrelated create/drop races while retaining later-used branch rollback.
+
 Contributor tests and attribution remain in that engine fork. Its tag checks also preserve 2.5.0's crossed-column protection and historical warning behavior.
 
 The matched GMS version includes angelamayxie's merged
