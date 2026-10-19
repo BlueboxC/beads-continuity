@@ -251,10 +251,9 @@ func freezeSearchRoots() []string {
 //     call would let a version-bump migration or a JSONL auto-import slip
 //     through a freeze first (the most dangerous writes here, since they
 //     run against the very store the freeze protects).
-//  3. import.go directly — bd import (runImport) is not gated by
-//     CheckReadonly at all today (a pre-existing, separate gap: readonlyMode
-//     doesn't block it either), so it cannot inherit the freeze check from
-//     caller 1 and needs its own explicit call.
+//  3. import.go directly — runImport checks strict readonly separately, then
+//     returns a freeze error so deferred cleanup still runs. Its dry-run
+//     bypasses the root write gate and needs this explicit freeze check.
 func migrationFreezeError(operation string) error {
 	return migrationFreezeRefusal(operation, migration.Find(freezeSearchRoots()...))
 }

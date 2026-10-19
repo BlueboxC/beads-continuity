@@ -99,6 +99,10 @@ var ErrBusy = errors.New("workspace gate busy")
 type Options struct {
 	// ExistingOnly takes a shared lock on an existing file without creating or opening it for writing.
 	ExistingOnly bool
+	// ReadOnly opens SHARED gates without writing or creating files. Missing
+	// gates yield an empty handle, unless ExistingOnly requires their presence.
+	// Exclusive acquisition ignores ReadOnly and still creates its gate.
+	ReadOnly bool
 	// Wait bounds how long Acquire keeps retrying after the first busy
 	// attempt. Zero or negative means exactly one non-blocking try.
 	// The underlying blocking lock primitives have no deadline support,
@@ -334,6 +338,9 @@ type Handle struct {
 // Mode reports how this handle was acquired.
 func (h *Handle) Mode() Mode { return h.mode }
 
+// Empty reports whether no gate file was locked. Release preserves the answer.
+func (h *Handle) Empty() bool { return h == nil || h.f == nil }
+
 // Release drops the lock and closes the file handle. For exclusive
 // handles it also best-effort removes the holder-info sidecar. The gate
 // file itself is intentionally never removed: deleting a lock file that
@@ -344,6 +351,9 @@ func (h *Handle) Release() error {
 		return nil
 	}
 	h.once.Do(func() {
+		if h.f == nil {
+			return
+		}
 		var errs []error
 		if h.mode == Exclusive {
 			// Remove the sidecar BEFORE unlocking: after the unlock a new
@@ -389,7 +399,11 @@ func (g Gate) Acquire(ctx context.Context, mode Mode, opts Options) (*Handle, er
 	}
 	deadline := time.Now().Add(opts.Wait)
 
+	readOnly := opts.ReadOnly && mode == Shared
 	flags := os.O_CREATE | os.O_RDWR
+	if readOnly {
+		flags = os.O_RDONLY
+	}
 	if opts.ExistingOnly {
 		if mode != Shared {
 			return nil, errors.New("workspacegate: existing-only acquisition must be shared")
@@ -398,6 +412,9 @@ func (g Gate) Acquire(ctx context.Context, mode Mode, opts Options) (*Handle, er
 	}
 	f, err := os.OpenFile(g.path, flags, 0o600)
 	if err != nil {
+		if readOnly && !opts.ExistingOnly && os.IsNotExist(err) {
+			return &Handle{gate: g, mode: mode}, nil
+		}
 		return nil, fmt.Errorf("workspacegate: open gate %s: %w", g.path, err)
 	}
 
@@ -492,6 +509,18 @@ func (g Gate) writeInfo(reason string) {
 // them in reverse acquisition order.
 type MultiHandle struct {
 	handles []*Handle
+}
+
+// Empty reports whether no gate in the set was locked.
+func (m *MultiHandle) Empty() bool {
+	if m != nil {
+		for _, h := range m.handles {
+			if !h.Empty() {
+				return false
+			}
+		}
+	}
+	return true
 }
 
 // Release drops every held gate in reverse order. Idempotent.

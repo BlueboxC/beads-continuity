@@ -41,8 +41,10 @@ import (
 //     this workspace: abort with an actionable error naming the holder
 //     (the gate's busy detail carries pid/reason/host from the advisory
 //     sidecar). Proceeding would race a migration/restore mid-replace.
-//   - Strict readonly proxy reads require existing gates and treat every gate
-//     failure as fatal without creating files.
+//   - Strict readonly SHARED reads never create gate files. Missing ordinary
+//     gates yield no hold, so first-time maintenance cannot see that reader.
+//     Strict readonly proxy reads additionally require existing gates and treat
+//     every gate failure as fatal.
 //   - EXCLUSIVE failures of any kind are hard errors: maintenance refuses
 //     rather than pretends.
 //
@@ -186,6 +188,13 @@ func buildWorkspaceGateSet(beadsDir string, extraRoots ...string) ([]workspacega
 // workspace is selected. It stores the handle in workspaceGateHandle on
 // success; on the fail-open paths it returns nil with no handle.
 func acquireCommandWorkspaceGates(ctx context.Context, cmd *cobra.Command, beadsDir string) error {
+	// A previous failed command may still own storage. Close it before its
+	// gates drop, including when the next workspace is absent or unavailable.
+	closeStoreBeforeGateRelease()
+	releaseWorkspaceGates()
+	if readonlyMode && cmd.Name() == "restore" && cmd.Parent() != nil && cmd.Parent().Name() == "backup" {
+		CheckReadonly("backup restore")
+	}
 	exclusive := commandNeedsExclusiveGate(cmd)
 	cfg, cfgErr := configfile.LoadForDiscovery(beadsDir)
 	strictProxyRead := readonlyMode && cfgErr == nil && cfg != nil && cfg.IsDoltProxiedServerMode()
@@ -209,7 +218,7 @@ func acquireCommandWorkspaceGates(ctx context.Context, cmd *cobra.Command, beads
 	}
 
 	mode := workspacegate.Shared
-	opts := workspacegate.Options{ExistingOnly: strictProxyRead}
+	opts := workspacegate.Options{ReadOnly: readonlyMode, ExistingOnly: strictProxyRead}
 	if exclusive {
 		mode = workspacegate.Exclusive
 		opts = exclusiveGateOptions(cmd.CommandPath())

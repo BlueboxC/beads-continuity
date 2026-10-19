@@ -33,7 +33,7 @@ Root DOX.md and the parent chain remain binding.
 
 - Metadata-only fallback port discovery reads legacy configuration without migrating it.
 
-- Existing-only workspace gates acquire shared locks through read-only file handles and refuse absent files; they never create a gate. Writable callers retain their existing acquisition rules.
+- Strict readonly shared workspace gates open files read-only; absent ordinary gates yield empty handles without creation. Existing-only proxy/Graph Preview gates still refuse absent files. Existing gates exclude maintenance, empty handles release safely, and exclusive callers retain creation.
 
 ## Work Guidance
 

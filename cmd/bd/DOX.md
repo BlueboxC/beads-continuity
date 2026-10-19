@@ -104,6 +104,8 @@ Root DOX.md and the parent chain remain binding.
 - Only create, atomic batch and template clone callbacks explicitly opt into replay after a confirmed rolled-back conflict; restore inputs and discard failed-attempt results. Other transaction callbacks remain at-most-once.
 - List selects dependency records for the displayed IDs, preserving parent/filter/watch semantics. Pretty trees render cyclic parent components finitely, each ID once. Routed-create commit warnings identify already-durable creates without reporting a false creation failure.
 
+- Strict readonly refuses backup init/sync/remove/restore and import (including import --dry-run). Backup restore refuses before exclusive gate acquisition; import returns migration-freeze errors through its cleanup path. Backup status/list remain reads. Shared readonly gates create no files; repeated in-process commands close prior storage before releasing its gates. Strict proxied and Graph Preview admission remain existing-only.
+
 ## Work Guidance
 
 Keep existing CLI primitives and machine-readable output stable. Follow AGENTS.md and ../../engdocs/TESTING.md.

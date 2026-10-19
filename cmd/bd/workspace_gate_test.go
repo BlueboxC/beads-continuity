@@ -3,8 +3,11 @@ package main
 import (
 	"context"
 	"errors"
+	"github.com/steveyegge/beads/internal/storage"
+	"github.com/steveyegge/beads/internal/storage/uow"
 	"os"
 	"path/filepath"
+	"slices"
 	"testing"
 	"time"
 
@@ -325,4 +328,168 @@ func TestChokepointSharedExcludesMigrateExclusive(t *testing.T) {
 		t.Fatalf("migrate acquisition after shared release: %v", err)
 	}
 	release()
+}
+
+func TestAcquireCommandWorkspaceGatesReleasesThePreviousCommandsHold(t *testing.T) {
+	resetGateTestEnv(t)
+	t.Cleanup(releaseWorkspaceGates)
+	list := &cobra.Command{Use: "list"}
+	ctx := context.Background()
+
+	first := newGateTestWorkspace(t)
+	if err := acquireCommandWorkspaceGates(ctx, list, first); err != nil || workspaceGateHandle == nil {
+		t.Fatalf("first command must hold a gate: %v", err)
+	}
+	second := newGateTestWorkspace(t)
+	if err := acquireCommandWorkspaceGates(ctx, list, second); err != nil || workspaceGateHandle == nil {
+		t.Fatalf("second command must hold a gate: %v", err)
+	}
+
+	gate, err := workspacegate.ForWorkspace(first)
+	if err != nil {
+		t.Fatal(err)
+	}
+	holder, err := gate.Acquire(ctx, workspacegate.Exclusive, workspacegate.Options{Reason: "test maintenance"})
+	if err != nil {
+		t.Fatalf("exclusive acquire on the first command's workspace once the second command holds its own gates: %v, want success", err)
+	}
+	_ = holder.Release()
+}
+
+type gateCloseProbeStore struct {
+	storage.DoltStorage
+	onClose func()
+}
+
+type gateCloseProbeProvider struct {
+	uow.UnitOfWorkProvider
+	onClose func()
+}
+
+func TestAcquireCommandWorkspaceGatesClosesThePreviousCommandsStoreFirst(t *testing.T) {
+	resetGateTestEnv(t)
+	t.Cleanup(releaseWorkspaceGates)
+	originalStore, originalProvider := store, uowProvider
+	t.Cleanup(func() { store, uowProvider = originalStore, originalProvider })
+	list := &cobra.Command{Use: "list"}
+	ctx := context.Background()
+
+	first := newGateTestWorkspace(t)
+	if err := acquireCommandWorkspaceGates(ctx, list, first); err != nil || workspaceGateHandle == nil {
+		t.Fatalf("first command must hold a gate: %v", err)
+	}
+	gate, err := workspacegate.ForWorkspace(first)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Each close records whether the first command's gate was still held.
+	var closes []string
+	probe := func(what string) func() {
+		return func() {
+			h, err := gate.Acquire(ctx, workspacegate.Exclusive, workspacegate.Options{})
+			switch {
+			case errors.Is(err, workspacegate.ErrBusy):
+				closes = append(closes, what+" closed under the gate")
+			case err == nil:
+				_ = h.Release()
+				closes = append(closes, what+" closed after the gate dropped")
+			default:
+				t.Errorf("probing the first command's gate when its %s closed: %v", what, err)
+			}
+		}
+	}
+	store = &gateCloseProbeStore{onClose: probe("store")}
+	uowProvider = &gateCloseProbeProvider{onClose: probe("provider")}
+
+	if err := acquireCommandWorkspaceGates(ctx, list, newGateTestWorkspace(t)); err != nil {
+		t.Fatalf("second command: %v", err)
+	}
+	if want := []string{"provider closed under the gate", "store closed under the gate"}; !slices.Equal(closes, want) {
+		t.Fatalf("the previous command's storage: %v, want %v", closes, want)
+	}
+	if store != nil || uowProvider != nil {
+		t.Fatal("the previous command's store and provider must not survive into the next command")
+	}
+}
+
+func setReadonlyMode(t *testing.T, on bool) {
+	t.Helper()
+	original := readonlyMode
+	readonlyMode = on
+	t.Cleanup(func() { readonlyMode = original })
+}
+
+func newGateTestServerWorkspace(t *testing.T) string {
+	t.Helper()
+	beadsDir := filepath.Join(t.TempDir(), ".beads")
+	if err := os.MkdirAll(filepath.Join(beadsDir, "dolt"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	meta := `{"backend":"dolt","database":"beads.db","dolt_mode":"server"}`
+	if err := os.WriteFile(filepath.Join(beadsDir, "metadata.json"), []byte(meta), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	return beadsDir
+}
+
+func dirEntryNames(t *testing.T, dir string) []string {
+	t.Helper()
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	names := make([]string, 0, len(entries))
+	for _, e := range entries {
+		names = append(names, e.Name())
+	}
+	return names
+}
+
+func TestAcquireCommandWorkspaceGatesStrictReadonlyCreatesNoGateFiles(t *testing.T) {
+	layouts := []struct {
+		name  string
+		build func(*testing.T) string
+	}{
+		{"embedded", newGateTestWorkspace},
+		{"local server", newGateTestServerWorkspace},
+	}
+	for _, tc := range layouts {
+		t.Run(tc.name, func(t *testing.T) {
+			resetGateTestEnv(t)
+			t.Cleanup(releaseWorkspaceGates)
+			setReadonlyMode(t, true)
+			beadsDir := tc.build(t)
+			projectDir := filepath.Dir(beadsDir)
+			projectBefore, beadsBefore := dirEntryNames(t, projectDir), dirEntryNames(t, beadsDir)
+
+			list := &cobra.Command{Use: "list"}
+			if err := acquireCommandWorkspaceGates(context.Background(), list, beadsDir); err != nil {
+				t.Fatalf("strict readonly acquisition on a never-gated workspace: %v", err)
+			}
+			// SHARED fail-open also returns nil and creates nothing; it is
+			// told apart by running with no handle at all.
+			if workspaceGateHandle == nil {
+				t.Fatal("strict readonly acquisition on a never-gated workspace ran ungated, want a handle that holds nothing")
+			}
+			if !workspaceGateHandle.Empty() {
+				t.Fatal("strict readonly acquisition on a never-gated workspace locked a gate file")
+			}
+			if got := dirEntryNames(t, projectDir); !slices.Equal(got, projectBefore) {
+				t.Errorf("strict readonly changed %s\n before: %v\n after:  %v", projectDir, projectBefore, got)
+			}
+			if got := dirEntryNames(t, beadsDir); !slices.Equal(got, beadsBefore) {
+				t.Errorf("strict readonly changed %s\n before: %v\n after:  %v", beadsDir, beadsBefore, got)
+			}
+		})
+	}
+}
+
+func (s *gateCloseProbeStore) Close() error {
+	s.onClose()
+	return nil
+}
+
+func (p *gateCloseProbeProvider) Close(context.Context) error {
+	p.onClose()
+	return nil
 }

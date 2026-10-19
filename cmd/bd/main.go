@@ -213,7 +213,7 @@ var readOnlyCommands = map[string]bool{
 	"comments":   true, // list comments (not add)
 	"current":    true, // bd sync mode current
 	"ping":       true,
-	"backup":     true, // reads from Dolt, writes only to .beads/backup/
+	"backup":     true, // group help only; mutating leaves enforce readonly
 	"export":     true, // reads from Dolt, writes JSONL to file/stdout
 	"tail":       true, // bd events tail: reads bd_events_journal, writes nothing
 }
