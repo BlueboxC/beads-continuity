@@ -89,7 +89,7 @@ incorrect output; it does not add arbitrary primary-key-change alignment.
 
 - [#12139](https://github.com/dolthub/dolt/issues/12139) preserves every child-parent diff for both `to_commit` and `from_commit` shared-parent lookups and full history scans, including prepared queries.
 - [#12138](https://github.com/dolthub/dolt/issues/12138) snapshots savepoints from session branch state, avoiding unrelated create/drop races while retaining later-used branch rollback.
-- [#12141](https://github.com/dolthub/dolt/issues/12141) preserves the column identity of view projections in normal and prepared filters, adapting angelamayxie’s [GMS PR #4044](https://github.com/dolthub/go-mysql-server/pull/4044). Both the Dolt module and Beads explicitly replace the analyzer because Go dependency replacements are not transitive. Retain the newer MIN/MAX index-bounds and decimal MOD fixes absent from the proposal branch.
+- [#12141](https://github.com/dolthub/dolt/issues/12141) preserves the column identity of view projections in normal and prepared filters, adapting angelamayxie’s [GMS PR #4044](https://github.com/dolthub/go-mysql-server/pull/4044). The Dolt module, Beads and its two independent Go example modules explicitly replace the analyzer because Go dependency replacements are not transitive. Retain the newer MIN/MAX index-bounds and decimal MOD fixes absent from the proposal branch.
 
 Contributor tests and attribution remain in that engine fork. Its tag checks also preserve 2.5.0's crossed-column protection and historical warning behavior.
 

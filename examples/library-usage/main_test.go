@@ -155,20 +155,28 @@ func TestFindDatabasePath(t *testing.T) {
 		t.Fatalf("Failed to create .beads dir: %v", err)
 	}
 
-	dbPath := filepath.Join(beadsDir, "test.db")
-	f, err := os.Create(dbPath)
-	if err != nil {
-		t.Fatalf("Failed to create db file: %v", err)
+	dbPath := filepath.Join(beadsDir, "embeddeddolt")
+	if err := os.MkdirAll(dbPath, 0o750); err != nil {
+		t.Fatal(err)
 	}
-	f.Close()
+	if err := os.WriteFile(filepath.Join(beadsDir, "metadata.json"), []byte(`{"backend":"dolt","dolt_mode":"embedded"}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("BEADS_DIR", "")
+	t.Setenv("BEADS_DB", "")
 
 	// Change to temp directory
 	t.Chdir(tmpDir)
 
 	// Test FindDatabasePath
 	found := beads.FindDatabasePath()
-	if found == "" {
-		t.Error("Expected to find database, got empty string")
+	actual, err := os.Stat(found)
+	if err != nil {
+		t.Fatalf("discovered database %q: %v", found, err)
+	}
+	expected, err := os.Stat(dbPath)
+	if err != nil || !os.SameFile(actual, expected) {
+		t.Fatalf("discovered %q instead of embedded database %q: %v", found, dbPath, err)
 	}
 
 	t.Logf("Found database: %s", found)

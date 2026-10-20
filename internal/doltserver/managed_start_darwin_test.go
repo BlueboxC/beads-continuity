@@ -177,6 +177,8 @@ func takeManagedPort(t *testing.T, launches string) <-chan net.Listener {
 
 func TestStart_RecoversWhenEphemeralPortIsTaken(t *testing.T) {
 	dir, launches := managedStartFixture(t, "foreign-first")
+	// Recovery performs two real ownership probes; use the normal readiness budget.
+	t.Setenv("BEADS_DOLT_READY_TIMEOUT", "")
 	ready := takeManagedPort(t, launches)
 	state, err := Start(dir)
 	ln := <-ready
