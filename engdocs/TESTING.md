@@ -98,7 +98,13 @@ BEADS_TEST_SKIP=dolt ./scripts/test.sh ./...
 ```
 
 Tests that need a temporary repository or store should use `t.TempDir()` and
-`t.Cleanup()`. Temporary repositories must set a repository-local hooks path;
+`t.Cleanup()`. Git fixture TestMain entry points call `gittestenv.Clear` before setup so inherited
+Git routing and configuration cannot redirect writes into an outer repository.
+The canonical shell runner clears inherited Git variables before installing its
+private configuration. Individual tests may explicitly set the environment they
+exercise after that boundary.
+
+Temporary repositories must set a repository-local hooks path;
 do not inherit the developer's global hooks configuration.
 Git fixture commits that precede worktree creation must pass
 `-c maintenance.auto=false -c gc.auto=0` on the command line. This prevents

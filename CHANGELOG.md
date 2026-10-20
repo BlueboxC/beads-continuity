@@ -9,6 +9,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed in Beads Continuity
 
+- Refuse YAML unsets that orphan values or change unrelated settings; preserve absent-key files, final newlines and indented documents (PR #7684).
+
+- Isolate Git test fixtures from inherited repository and configuration variables (#7706).
+
 - Require exact native delete IDs and protect account-home init artifacts.
 - Restore complete create inputs on rolled-back retries; fence heartbeat re-arm
   against ended claims across native, embedded and proxied backends.

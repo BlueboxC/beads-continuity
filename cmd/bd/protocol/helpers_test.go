@@ -25,6 +25,7 @@ import (
 	"sync"
 	"testing"
 
+	"github.com/steveyegge/beads/internal/gittestenv"
 	"github.com/steveyegge/beads/internal/testutil"
 )
 
@@ -44,6 +45,7 @@ var (
 var testDoltPort int
 
 func TestMain(m *testing.M) {
+	gittestenv.Clear()
 	os.Exit(testMainInner(m))
 }
 

@@ -14,6 +14,11 @@ beads_test_env_enter() {
         return 0
     fi
 
+    local git_name
+    for git_name in "${!GIT_@}"; do
+        [[ -z "$git_name" ]] || unset "$git_name"
+    done
+
     local root
     root="$(mktemp -d "${TMPDIR:-/tmp}/beads-test-env-XXXXXX")"
     export BEADS_TEST_ENV_ROOT="$root"

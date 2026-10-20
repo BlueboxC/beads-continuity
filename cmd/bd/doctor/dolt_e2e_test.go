@@ -15,6 +15,7 @@ import (
 	"testing"
 
 	"github.com/steveyegge/beads/internal/doltserver"
+	"github.com/steveyegge/beads/internal/gittestenv"
 	"github.com/steveyegge/beads/internal/storage/dolt"
 	"github.com/steveyegge/beads/internal/testutil"
 )
@@ -52,6 +53,7 @@ var testSharedDB string
 var testSharedConn *sql.DB
 
 func TestMain(m *testing.M) {
+	gittestenv.Clear()
 	os.Exit(testMainInner(m))
 }
 

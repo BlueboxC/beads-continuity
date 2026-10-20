@@ -8,12 +8,14 @@ import (
 	"testing"
 
 	"github.com/steveyegge/beads/internal/doltserver"
+	"github.com/steveyegge/beads/internal/gittestenv"
 	"github.com/steveyegge/beads/internal/testutil"
 )
 
 // TestMain starts an isolated Dolt server so fix tests don't hit the
 // production server on port 3307.
 func TestMain(m *testing.M) {
+	gittestenv.Clear()
 	os.Exit(testMainInner(m))
 }
 

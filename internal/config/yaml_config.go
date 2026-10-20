@@ -2,11 +2,14 @@ package config
 
 import (
 	"bufio"
+	"errors"
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"strconv"
 	"strings"
 
@@ -544,7 +547,17 @@ func UnsetUserYamlConfig(key string) error {
 		return fmt.Errorf("failed to read user config.yaml: %w", err)
 	}
 
-	newContent := commentOutYamlKey(string(content), key)
+	normalized := strings.ReplaceAll(string(content), "\r\n", "\n")
+	newContent, err := commentOutYamlKey(normalized, key)
+	if err != nil {
+		return err
+	}
+	if newContent == normalized {
+		return nil
+	}
+	if err := collateralUnsetRefusal(normalized, newContent, key); err != nil {
+		return err
+	}
 
 	// Preserve the owner-private 0600 posture every other user-global writer
 	// uses (SetUserYamlConfig, setYamlConfigAtPath, the metrics bootstrap);
@@ -620,7 +633,17 @@ func UnsetYamlConfig(key string) error {
 		return fmt.Errorf("failed to read config.yaml: %w", err)
 	}
 
-	newContent := commentOutYamlKey(string(content), key)
+	normalized := strings.ReplaceAll(string(content), "\r\n", "\n")
+	newContent, err := commentOutYamlKey(normalized, key)
+	if err != nil {
+		return err
+	}
+	if newContent == normalized {
+		return nil
+	}
+	if err := collateralUnsetRefusal(normalized, newContent, key); err != nil {
+		return err
+	}
 
 	if err := os.WriteFile(configPath, []byte(newContent), 0600); err != nil { //nolint:gosec // configPath is validated
 		return fmt.Errorf("failed to write config.yaml: %w", err)
@@ -921,34 +944,26 @@ func scalarStyleFor(value string) yaml.Style {
 	return 0
 }
 
-func commentOutYamlKey(content, key string) string {
-	// The flat spelling first — a key literally named "sync.remote", which
-	// older files carry and which this function has always handled.
+// commentOutYamlKey adapts PR #7684 to the fork's error-only unset API.
+func commentOutYamlKey(content, key string) (string, error) {
+	content = strings.ReplaceAll(content, "\r\n", "\n")
+
+	if !yamlHoldsKey(content, key) {
+		return content, nil
+	}
+
+	if err := unsupportedUnsetShape(content, key); err != nil {
+		return "", err
+	}
+
 	flatPattern := regexp.MustCompile(`^(\s*)` + regexp.QuoteMeta(key) + `\s*:`)
-	// And the nested one, which is what the writer produces. Missing this half
-	// made an unset silently do nothing once the writer started nesting: the
-	// value stayed live, so bd kept a setting the operator had asked it to
-	// forget. Unset is the other direction of the same round-trip property as
-	// set and get, and all three have to agree on the shape.
-	segments := strings.Split(key, ".")
 
 	var result []string
-	// depth tracks how many segments of the key have been matched so far, and
-	// indents holds the indentation each was found at, so a key is only
-	// commented out when it is nested under its OWN parents rather than under
-	// some other section that happens to share a leaf name.
-	depth := 0
-	var indents []int
-	// blockIndent is the indentation of the key that opened a literal or folded
-	// block scalar, or -1 outside one. Everything indented past that key is the
-	// value the user typed, not structure: `notes: |` with an indented
-	// `remote: keep-this` inside it is prose, and commenting it out edits their
-	// data. Matching by line has to skip those lines to stay honest.
 	blockIndent := -1
-	scanner := bufio.NewScanner(strings.NewReader(content))
-	for scanner.Scan() {
-		line := scanner.Text()
-
+	lines := strings.Split(content, "\n")
+	topIndent := yamlTopLevelIndent(lines)
+	walk := newNestedKeyWalk(key, topIndent)
+	for i, line := range lines {
 		if blockIndent >= 0 {
 			if strings.TrimSpace(line) == "" || lineIndent(line) > blockIndent {
 				result = append(result, line)
@@ -958,38 +973,371 @@ func commentOutYamlKey(content, key string) string {
 		}
 		blockIndent = blockScalarIndent(line)
 
-		if matches := flatPattern.FindStringSubmatch(line); matches != nil {
+		if matches := flatPattern.FindStringSubmatch(line); matches != nil && len(matches[1]) == topIndent {
+			if err := mappingValueUnsetRefusal(lines, i, len(matches[1]), key); err != nil {
+				return "", err
+			}
 			result = append(result, matches[1]+"# "+strings.TrimLeft(line, " \t"))
 			continue
 		}
 
-		if len(segments) > 1 {
-			if name, indent, ok := yamlKeyOnLine(line); ok {
-				// Leaving a block: drop every segment matched at an indent at
-				// or deeper than this line's.
-				for depth > 0 && indent <= indents[depth-1] {
-					depth--
-					indents = indents[:depth]
-				}
-				if depth < len(segments) && name == segments[depth] {
-					if depth == len(segments)-1 {
-						result = append(result, strings.Repeat(" ", indent)+"# "+strings.TrimLeft(line, " \t"))
-						depth, indents = 0, nil
-						continue
-					}
-					indents = append(indents, indent)
-					depth++
-				}
+		if name, indent, ok := yamlKeyOnLine(line); ok && walk.step(name, indent) {
+			if err := mappingValueUnsetRefusal(lines, i, indent, key); err != nil {
+				return "", err
 			}
+			result = append(result, strings.Repeat(" ", indent)+"# "+strings.TrimLeft(line, " \t"))
+			continue
 		}
 		result = append(result, line)
 	}
 
-	return strings.Join(result, "\n")
+	out := strings.Join(result, "\n")
+	return strings.TrimRight(out, "\n") + content[len(strings.TrimRight(content, "\n")):], nil
 }
 
-// blockScalarIndent reports the indentation of a key whose value is a literal
-// or folded block scalar (`notes: |`), or -1 when the line opens no block.
+func mappingValueUnsetRefusal(lines []string, idx, indent int, key string) error {
+	_, rest, _ := strings.Cut(strings.TrimLeft(lines[idx], " \t"), ":")
+	if !valueContinuesBelow(rest) {
+		return nil
+	}
+	for _, next := range lines[idx+1:] {
+		trimmed := strings.TrimSpace(next)
+		if trimmed == "" || strings.HasPrefix(trimmed, "#") {
+			continue
+		}
+		nextIndent := lineIndent(next)
+		if nextIndent < indent {
+			return nil
+		}
+		if nextIndent == indent && trimmed != "-" && !strings.HasPrefix(trimmed, "- ") {
+			return nil
+		}
+		return fmt.Errorf("cannot unset %q: its value continues on the lines beneath it, and commenting the key out would orphan them; remove it by hand, or unset its keys individually if it is a mapping", key)
+	}
+	return nil
+}
+
+func valueContinuesBelow(rest string) bool {
+	rest = strings.TrimSpace(rest)
+	if i := strings.Index(rest, " #"); i >= 0 {
+		rest = rest[:i]
+	} else if strings.HasPrefix(rest, "#") {
+		rest = ""
+	}
+	for _, tok := range strings.Fields(rest) {
+		if !strings.HasPrefix(tok, "&") && !strings.HasPrefix(tok, "!") {
+			return false
+		}
+	}
+	return true
+}
+
+func yamlTopLevelIndent(lines []string) int {
+	for _, line := range lines {
+		if _, indent, ok := yamlKeyOnLine(line); ok {
+			return indent
+		}
+	}
+	return 0
+}
+
+type nestedKeyWalk struct {
+	segments  []string
+	topIndent int
+	depth     int
+	indents   []int
+	opaque    int
+}
+
+func newNestedKeyWalk(key string, topIndent int) *nestedKeyWalk {
+	return &nestedKeyWalk{segments: strings.Split(key, "."), topIndent: topIndent, opaque: -1}
+}
+
+func (w *nestedKeyWalk) step(name string, indent int) bool {
+	if len(w.segments) < 2 {
+		return false
+	}
+	if w.opaque >= 0 && indent > w.opaque {
+		return false
+	}
+	w.opaque = -1
+	for w.depth > 0 && indent <= w.indents[w.depth-1] {
+		w.depth--
+		w.indents = w.indents[:w.depth]
+	}
+	if w.depth < len(w.segments) && name == w.segments[w.depth] && (w.depth > 0 || indent == w.topIndent) {
+		if w.depth == len(w.segments)-1 {
+			w.depth, w.indents = 0, nil
+			return true
+		}
+		w.indents = append(w.indents, indent)
+		w.depth++
+		return false
+	}
+	w.opaque = indent
+	return false
+}
+
+func unsupportedUnsetShape(content, key string) error {
+	segments := strings.Split(key, ".")
+	var root yaml.Node
+	if err := yaml.Unmarshal([]byte(content), &root); err != nil || len(root.Content) == 0 {
+		return nil
+	}
+
+	if err := flatKeyUnsetRefusal(content, root.Content[0], key); err != nil || len(segments) == 1 {
+		return err
+	}
+
+	node := root.Content[0]
+	var keyNode *yaml.Node
+	parents := make([]*yaml.Node, 0, len(segments))
+	for _, segment := range segments {
+		if node.Kind != yaml.MappingNode {
+			return nil
+		}
+		idx := findMappingChild(node, segment)
+		if idx == -1 {
+			return nil
+		}
+		parents = append(parents, node)
+		keyNode, node = node.Content[idx], node.Content[idx+1]
+	}
+
+	for i, parent := range parents {
+		if parent.Style&yaml.FlowStyle != 0 {
+			return flowStyleUnsetRefusal(key, segments[:i])
+		}
+	}
+	if err := blockScalarUnsetRefusal(node, key); err != nil {
+		return err
+	}
+	return spansLinesUnsetRefusal(content, keyNode, node, key)
+}
+
+func flatKeyUnsetRefusal(content string, top *yaml.Node, key string) error {
+	if top.Kind != yaml.MappingNode {
+		return nil
+	}
+	idx := findMappingChild(top, key)
+	if idx == -1 {
+		return nil
+	}
+	if top.Style&yaml.FlowStyle != 0 {
+		return flowStyleUnsetRefusal(key, nil)
+	}
+	if err := blockScalarUnsetRefusal(top.Content[idx+1], key); err != nil {
+		return err
+	}
+	return spansLinesUnsetRefusal(content, top.Content[idx], top.Content[idx+1], key)
+}
+
+func flowStyleUnsetRefusal(key string, parent []string) error {
+	where := "the top level of this config file"
+	if len(parent) > 0 {
+		where = fmt.Sprintf("%q", strings.Join(parent, "."))
+	}
+	return fmt.Errorf("cannot unset %q: %s is written in flow style ({...}), which bd cannot edit; remove the key by hand", key, where)
+}
+
+func blockScalarUnsetRefusal(valueNode *yaml.Node, key string) error {
+	if valueNode.Style&(yaml.LiteralStyle|yaml.FoldedStyle) == 0 {
+		return nil
+	}
+	return fmt.Errorf("cannot unset %q: its value is a block scalar (| or >), and commenting the key out would leave the body behind as a value of its own; remove the key by hand", key)
+}
+
+func spansLinesUnsetRefusal(content string, keyNode, valueNode *yaml.Node, key string) error {
+	end, ok := yamlLineEnd(content, keyNode.Line)
+	if !ok {
+		return nil
+	}
+	var cut yaml.Node
+	if yaml.Unmarshal([]byte(content[:end]), &cut) == nil && !plainScalarGoesOn(&cut, keyNode, valueNode) {
+		return nil
+	}
+	return fmt.Errorf("cannot unset %q: its value spans more than one line, and commenting the key out would leave the rest of it behind; remove the key by hand", key)
+}
+
+func plainScalarGoesOn(cut, keyNode, valueNode *yaml.Node) bool {
+	if valueNode.Kind != yaml.ScalarNode || valueNode.Line != keyNode.Line {
+		return false
+	}
+	last := cut
+	for len(last.Content) > 0 {
+		last = last.Content[len(last.Content)-1]
+	}
+	return last.Value != valueNode.Value
+}
+
+func yamlLineEnd(content string, line int) (end int, ok bool) {
+	breaks := 0
+	for i, r := range content {
+		switch {
+		case r == '\n' && i > 0 && content[i-1] == '\r':
+			continue // the LF of a CRLF, already counted at its CR
+		case r == '\n', r == '\r', r == '\u0085', r == '\u2028', r == '\u2029':
+			breaks++
+			if breaks == line {
+				return i, true
+			}
+		}
+	}
+	return 0, false
+}
+
+func collateralUnsetRefusal(before, after, key string) error {
+	was, wasErr := yamlDocuments(before)
+	if wasErr != nil && len(was) == 0 {
+		return nil
+	}
+	is, isErr := yamlDocuments(after)
+	if wasErr != nil && len(is) >= len(was) {
+		is, isErr = is[:len(was)], nil
+	}
+	wasLeaves, ok := yamlLeaves(was)
+	if !ok {
+		return fmt.Errorf("cannot unset %q: this file nests more than %d levels deep, too deep for bd to check what else commenting out the key would change; remove the key by hand", key, maxYamlLeafDepth)
+	}
+	isLeaves, ok := yamlLeaves(is)
+	if ok && isErr == nil && onlyKeyLeavesRemoved(wasLeaves, isLeaves, key) {
+		return nil
+	}
+	return fmt.Errorf("cannot unset %q: commenting out the lines that match it would change more of this file than the key itself; remove the key by hand", key)
+}
+
+type yamlLeaf struct {
+	doc   int
+	path  []string
+	value string
+}
+
+func (l yamlLeaf) id() string {
+	return fmt.Sprintf("%d %q %q", l.doc, l.path, l.value)
+}
+
+const maxYamlLeafDepth = 64
+
+func yamlLeaves(docs []*yaml.Node) (leaves []yamlLeaf, ok bool) {
+	for doc, root := range docs {
+		if yamlNestsDeeper(root, maxYamlLeafDepth) {
+			return nil, false
+		}
+		leaves = appendYamlLeaves(leaves, doc, nil, root)
+	}
+	return leaves, true
+}
+
+func yamlNestsDeeper(n *yaml.Node, depth int) bool {
+	if n.Kind == yaml.MappingNode || n.Kind == yaml.SequenceNode {
+		depth--
+	}
+	for _, child := range n.Content {
+		if depth < 0 || yamlNestsDeeper(child, depth) {
+			return true
+		}
+	}
+	return false
+}
+
+func yamlDocuments(content string) ([]*yaml.Node, error) {
+	dec := yaml.NewDecoder(strings.NewReader(content))
+	var docs []*yaml.Node
+	for {
+		var root yaml.Node
+		err := dec.Decode(&root)
+		if errors.Is(err, io.EOF) {
+			return docs, nil
+		}
+		if err != nil {
+			return docs, err
+		}
+		docs = append(docs, &root)
+	}
+}
+
+func appendYamlLeaves(leaves []yamlLeaf, doc int, path []string, n *yaml.Node) []yamlLeaf {
+	switch n.Kind {
+	case yaml.DocumentNode:
+		for _, child := range n.Content {
+			leaves = appendYamlLeaves(leaves, doc, path, child)
+		}
+	case yaml.MappingNode:
+		for i := 0; i+1 < len(n.Content); i += 2 {
+			leaves = appendYamlLeaves(leaves, doc, append(path[:len(path):len(path)], n.Content[i].Value), n.Content[i+1])
+		}
+	case yaml.SequenceNode:
+		for i, item := range n.Content {
+			leaves = appendYamlLeaves(leaves, doc, append(path[:len(path):len(path)], strconv.Itoa(i)), item)
+		}
+	case yaml.AliasNode:
+		leaves = append(leaves, yamlLeaf{doc: doc, path: path, value: fmt.Sprintf("*%s@%d:%d", n.Value, n.Alias.Line, n.Alias.Column)})
+	case yaml.ScalarNode:
+		if n.ShortTag() != "!!null" {
+			leaves = append(leaves, yamlLeaf{doc: doc, path: path, value: n.Value})
+		}
+	}
+	return leaves
+}
+
+func onlyKeyLeavesRemoved(was, is []yamlLeaf, key string) bool {
+	left := make(map[string]int, len(was))
+	for _, leaf := range was {
+		left[leaf.id()]++
+	}
+	for _, leaf := range is {
+		id := leaf.id()
+		if left[id] == 0 {
+			return false
+		}
+		left[id]--
+	}
+	segments := strings.Split(key, ".")
+	for _, leaf := range was {
+		p := leaf.path
+		ofKey := (len(p) > 0 && p[0] == key) || (len(p) >= len(segments) && slices.Equal(p[:len(segments)], segments))
+		if left[leaf.id()] > 0 && !ofKey {
+			return false
+		}
+	}
+	return true
+}
+
+func yamlHoldsKey(content, key string) bool {
+	docs, err := yamlDocuments(content)
+	if err != nil && len(docs) == 0 {
+		return true
+	}
+	segments := strings.Split(key, ".")
+	for _, doc := range docs {
+		for _, top := range doc.Content {
+			if mappingHoldsPath(top, []string{key}) || mappingHoldsPath(top, segments) {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+func mappingHoldsPath(n *yaml.Node, path []string) bool {
+	level := []*yaml.Node{n}
+	for _, name := range path {
+		var next []*yaml.Node
+		for _, m := range level {
+			if m.Kind != yaml.MappingNode {
+				continue
+			}
+			for i := 0; i+1 < len(m.Content); i += 2 {
+				if k := m.Content[i]; k.Kind == yaml.ScalarNode && k.Value == name {
+					next = append(next, m.Content[i+1])
+				}
+			}
+		}
+		level = next
+	}
+	return len(level) > 0
+}
+
 func blockScalarIndent(line string) int {
 	_, indent, ok := yamlKeyOnLine(line)
 	if !ok {

@@ -30,6 +30,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/steveyegge/beads/internal/gittestenv"
 	"github.com/steveyegge/beads/internal/testutil"
 )
 
@@ -43,6 +44,7 @@ var candidateBin string
 var testDoltServerPort int
 
 func TestMain(m *testing.M) {
+	gittestenv.Clear()
 	os.Exit(testMainInner(m))
 }
 

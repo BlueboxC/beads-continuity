@@ -7,9 +7,11 @@ import (
 	"testing"
 
 	"github.com/steveyegge/beads/internal/doltserver"
+	"github.com/steveyegge/beads/internal/gittestenv"
 )
 
 func TestMain(m *testing.M) {
+	gittestenv.Clear()
 	root, err := os.MkdirTemp("", "beads-internal-tests-*")
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "failed to create test temp dir: %v\n", err)

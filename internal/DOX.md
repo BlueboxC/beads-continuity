@@ -35,6 +35,8 @@ Root DOX.md and the parent chain remain binding.
 
 - Strict readonly shared workspace gates open files read-only; absent ordinary gates yield empty handles without creation. Existing-only proxy/Graph Preview gates still refuse absent files. Existing gates exclude maintenance, empty handles release safely, and exclusive callers retain creation.
 
+- YAML unset validates the proposed edit before writing: refuse multiline, orphaned or collateral changes; absent keys are exact no-ops. Preserve EOF, private user-file permissions and whole-document indentation. Public unset APIs retain error-only results.
+
 ## Work Guidance
 
 Tracker adapters share configuration resolution: local integration credentials never query Dolt, including Notion authentication; authenticated tracker endpoints use explicit local YAML/environment. If no local destination exists, a historical nonempty synced endpoint or store failure refuses connection instead of choosing a public default. Ordinary values keep storage-first/environment fallback including store errors. Credential classification also recognizes case and surrounding-space variants without normalizing ordinary stored keys.
@@ -48,6 +50,8 @@ Use line-local gosec annotations for intentional native directory handles or sys
 Use the affected existing checks selected in engdocs/TESTING.md; verify indexed child contracts.
 
 ## Child DOX Index
+
+- [gittestenv/DOX.md](gittestenv/DOX.md) — Shared Git fixture startup isolation.
 
 - [storage/DOX.md](storage/DOX.md) — Storage boundary.
 - [graphview/DOX.md](graphview/DOX.md) — Shared native offline/live graph viewer.
