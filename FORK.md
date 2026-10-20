@@ -84,7 +84,7 @@ untracked-server diagnostics, tracked worktree hook isolation, formula paths,
 padded variables, fresh-server refusal, infra counts, role-based links and
 truthful duplicate totals. Contributor regression cases are retained where the
 baseline supports their API; no newer HTTP-connected backend or count flags
-are introduced. Graph Preview, proxy routing and existing engine pins remain.
+are introduced. Graph Preview, proxy routing and prior engine protections remain.
 
 ## Build toolchain
 
@@ -98,10 +98,33 @@ updated Go 1.26 devcontainer. The fork has no Bazel setup to transplant.
 
 The embedded engine keeps `driver/v2 v2.4.1`, starting from coffeegoddd's
 [upstream proposal #7254](https://github.com/gastownhall/beads/pull/7254).
-It pins Dolt v2.5.0 plus the retained storage corrections and view fix at
-[BlueboxC/dolt `a46b6ea0c4e3`](https://github.com/BlueboxC/dolt/commit/a46b6ea0c4e3cc4450a4f95c5d67df9c0971e568),
-with the [SQL analyzer correction](https://github.com/BlueboxC/go-mysql-server/commit/80039190c7cb90a12923b7e8bac8f820782b873a) on base `239e0ad6b2f9`. The engine remains a Go dependency;
+It pins Dolt v2.5.0 plus the retained storage corrections, catalog and SQL fixes at
+[BlueboxC/dolt `0b951e1328bf`](https://github.com/BlueboxC/dolt/commit/0b951e1328bfc933cb87b8a14c598d00e1c29e67),
+with the [SQL analyzer correction](https://github.com/BlueboxC/go-mysql-server/commit/e43b463224d6f3830540d0af03b1165c381ff280) on base `239e0ad6b2f9`. The engine remains a Go dependency;
 Beads does not implement engine-specific SQL workarounds.
+
+This tuple adds the bounded catalog fix for Dolt #12122, mixed-case CHECK merge
+references (PR #12152), matching remote-upstream cleanup (PR #12153/#11529),
+and the remaining supplied #12100 SQL repro corrections with operand-appropriate
+MOD metadata (#12126). Contributor tests and attribution live in the engine and
+analyzer forks. Ordinary indexed string plans are retained; schema-bearing empty
+relations use a correctness-first reordering fallback with no optimizer estimates.
+The 23 supplied repro scripts pass their expected result/error controls in normal
+and prepared modes. They do not establish general MySQL/JSON-path compatibility.
+Native 2.4.2 backup round trips and isolated retained-data/hash/history checks are
+required for this exact tuple. Subquery unnesting also retains ordinary negated
+filters used by Graph Preview label, lifecycle and ready-work queries.
+
+The engine supports recursive clean virtual merge bases (#12050) and matching
+ancestor primary-key projection (#12012), with normal/prepared regression scripts.
+Conflicting best ancestors, incompatible key layouts, NULL/colliding ancestor keys
+and unsupported specialized indexes refuse explicitly. Branch/working/tag references
+remain unchanged by diff queries, although deterministic virtual objects may be
+materialized. Conflict-base address traversal preserves those objects through full
+GC, native backup/restore and cold reopening. Older engines lack that additional
+reachability rule: rollback after these feature writes requires matching data and
+binary preimages. This does not implement arbitrary key reconciliation or automatic
+resolution of conflicting virtual bases.
 
 The official 2.5.0 base already propagates backup source-root errors
 ([Dolt #12057](https://github.com/dolthub/dolt/pull/12057)) and closes embedded
