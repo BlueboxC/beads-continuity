@@ -48,6 +48,35 @@ func doltServerConfig(beadsDir, doltPath string) *dolt.Config {
 	return cfg
 }
 
+// federationServerProbe reports whether a Dolt SQL server answers at this
+// workspace's configured endpoint. The host and port are resolved the way
+// doltServerConfig resolves them, so the probe asks about the same server the
+// remotes check would open.
+func federationServerProbe(beadsDir string) bool {
+	host := configfile.DefaultDoltServerHost
+	if bcfg, err := configfile.Load(beadsDir); err == nil && bcfg != nil {
+		host = bcfg.GetDoltServerHost()
+	}
+	port := doltserver.DefaultConfig(beadsDir).Port
+	if port <= 0 {
+		return false
+	}
+	return isDoltServerRunning(host, port)
+}
+
+// serverRunningOrProbeable reports whether the federation checks should treat
+// the server as up: the PID file says so, or, when it does not, the configured
+// endpoint answers a probe. A server bd did not start (launchd, systemd, a
+// container) writes no PID file under the workspace, so the PID file alone
+// reports it as down. The probe is injected so the decision is testable
+// without a listener; a PID-tracked server never triggers a dial.
+func serverRunningOrProbeable(state *doltserver.State, probe func() bool) bool {
+	if state != nil && state.Running {
+		return true
+	}
+	return probe()
+}
+
 // CheckLegacyCLIRemotes warns when legacy filesystem CLI remotes are not
 // represented in SQL, because bd now treats SQL remotes as the source of truth.
 func CheckLegacyCLIRemotes(path string) DoctorCheck {
@@ -202,7 +231,13 @@ func CheckFederationRemotesAPI(path string) DoctorCheck {
 	// correctly resolves PID file paths (in beadsDir, not doltPath)
 	// and handles orchestrator daemon PID files.
 	serverState, _ := doltserver.IsRunning(beadsDir)
-	serverRunning := serverState != nil && serverState.Running
+	// Without a PID file the branch below opens the database on the very
+	// server it then reports as not running: a workspace with an origin
+	// remote gets "Server not running (1 peers configured)", one without
+	// gets its remotes check skipped. Probe the endpoint before deciding.
+	serverRunning := serverRunningOrProbeable(serverState, func() bool {
+		return federationServerProbe(beadsDir)
+	})
 
 	if !serverRunning {
 		// No server running - check if we have remotes configured
@@ -267,6 +302,14 @@ func CheckFederationRemotesAPI(path string) DoctorCheck {
 		}
 	}
 
+	pid := 0
+	if serverState != nil {
+		pid = serverState.PID
+	}
+	return checkRemotesAPIListener(beadsDir, pid)
+}
+
+func checkRemotesAPIListener(beadsDir string, pid int) DoctorCheck {
 	// Server is running and peers are configured - check if remotesapi port is accessible.
 	// Read port from config instead of hardcoding 8080.
 	remotesAPIPort := configfile.DefaultDoltRemotesAPIPort
@@ -281,11 +324,15 @@ func CheckFederationRemotesAPI(path string) DoctorCheck {
 	// greeting to drain here.
 	conn, err := net.DialTimeout("tcp", addr, 2*time.Second)
 	if err != nil {
+		serverDesc := fmt.Sprintf("Server running (PID %d)", pid)
+		if pid == 0 {
+			serverDesc = "Server reachable (no PID file in this workspace)"
+		}
 		return DoctorCheck{
 			Name:     "Federation remotesapi",
 			Status:   StatusError,
 			Message:  fmt.Sprintf("remotesapi port %d not accessible", remotesAPIPort),
-			Detail:   fmt.Sprintf("Server running (PID %d) but remotesapi port unreachable: %v", serverState.PID, err),
+			Detail:   fmt.Sprintf("%s but remotesapi port unreachable: %v", serverDesc, err),
 			Fix:      "Check if dolt sql-server is running with --remotesapi-port flag",
 			Category: CategoryFederation,
 		}

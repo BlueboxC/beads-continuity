@@ -68,6 +68,32 @@ Detailed references: [knowledge](docs/core-concepts/knowledge.md),
 [Codex hooks and activity](docs/integrations/codex.md), and
 [HTTP operation](engdocs/SERVE_RUNBOOK.md).
 
+## Additional correctness fixes
+
+Adapted contributor proposals [#7720](https://github.com/gastownhall/beads/pull/7720),
+[#7723](https://github.com/gastownhall/beads/pull/7723),
+[#7724](https://github.com/gastownhall/beads/pull/7724),
+[#7725](https://github.com/gastownhall/beads/pull/7725),
+[#7726](https://github.com/gastownhall/beads/pull/7726),
+[#7727](https://github.com/gastownhall/beads/pull/7727),
+[#7729](https://github.com/gastownhall/beads/pull/7729),
+[#7730](https://github.com/gastownhall/beads/pull/7730),
+[#7685](https://github.com/gastownhall/beads/pull/7685) and
+[#7705](https://github.com/gastownhall/beads/pull/7705): exact-port credentials,
+untracked-server diagnostics, tracked worktree hook isolation, formula paths,
+padded variables, fresh-server refusal, infra counts, role-based links and
+truthful duplicate totals. Contributor regression cases are retained where the
+baseline supports their API; no newer HTTP-connected backend or count flags
+are introduced. Graph Preview, proxy routing and existing engine pins remain.
+
+## Build toolchain
+
+The root and both independent Go examples select Go 1.26.10 while retaining
+the Go 1.26.9 consumer floor. The Nix overlay pins the official 1.26.10 source
+archive and SHA-256; MCP CI jobs pin uv 0.13.4. This adapts Julian Knutsen's
+[PR #7732](https://github.com/gastownhall/beads/pull/7732), including its
+updated Go 1.26 devcontainer. The fork has no Bazel setup to transplant.
+
 ## Embedded engine compatibility
 
 The embedded engine keeps `driver/v2 v2.4.1`, starting from coffeegoddd's
@@ -254,6 +280,10 @@ Private reproduction reports, installation evidence and backups stay local.
   coverage. Native context-limit-triggered midturn recovery must be qualified for
   each deployed source/binary cut; historical positive cycles do not establish
   universal reliability or explain previously missing deliveries.
+
+## Batch hydration
+
+Batch hydration (#7712) snapshots parent ancestry once after the accepted parent phase for multi-blocking-edge creates. Existing target, cycle, skip and transaction policies remain; this does not introduce direct table copying or claim a complete set-based importer.
 
 ## Development
 

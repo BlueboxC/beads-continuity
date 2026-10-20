@@ -881,6 +881,20 @@ func PersistDependenciesWithOptionsResult(ctx context.Context, tx DBTX, issues [
 		}
 	}
 
+	blockingEdges := 0
+	for _, item := range pending {
+		if item.dep.Type == types.DepBlocks || item.dep.Type == types.DepConditionalBlocks {
+			blockingEdges++
+		}
+	}
+	checkHierarchy := func(dep *types.Dependency) error {
+		return CheckBlockingHierarchyInTx(ctx, tx, dep, nil)
+	}
+	if blockingEdges > 1 {
+		// Load lazily, after the parent phase has accepted its final hierarchy.
+		checkHierarchy = batchHierarchyChecker(ctx, tx)
+	}
+
 	// Persist hierarchy first so blocking edges in the same import see the full
 	// planned ancestry. The enclosing create transaction rolls this phase back
 	// if a later dependency is invalid.
@@ -913,7 +927,7 @@ func PersistDependenciesWithOptionsResult(ctx context.Context, tx DBTX, issues [
 			}
 
 			if kind != DepTargetExternal && types.ExtractPrefix(dep.IssueID) == types.ExtractPrefix(dep.DependsOnID) {
-				if err := CheckBlockingHierarchyInTx(ctx, tx, dep, nil); err != nil {
+				if err := checkHierarchy(dep); err != nil {
 					if opts.SkipDependencyValidationErrors {
 						recordSkippedDependency(opts, dep, err.Error())
 						continue

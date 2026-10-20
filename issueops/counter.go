@@ -58,7 +58,7 @@ type CountRequest struct {
 	// IssueType restricts the type, with the same match-nothing-rather-than-fail
 	// treatment Status gets and no alias expansion at all.
 	//
-	// It has a SECOND effect under IncludeInfra: an infra type routes the count
+	// Naming an infra type also routes the count
 	// to the ephemeral tier. See that field.
 	IssueType string
 	// Assignee restricts to one actor's rows; NoAssignee restricts to rows with
@@ -120,7 +120,7 @@ type CountRequest struct {
 	// the implementation. A caller does not supply it and cannot: that is the
 	// config load this role exists to keep off both front doors.
 	//
-	// Unset, the count is durable-plane only and applies none of those four —
+	// Unset, the count is durable-plane only unless IssueType names an infra type —
 	// the historical `bd count` answer, kept exactly so a scripted caller reads
 	// the same number it read yesterday.
 	IncludeInfra bool

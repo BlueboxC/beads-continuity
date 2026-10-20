@@ -43,8 +43,8 @@ func ValidateCountGroup(group issueops.CountGroup) (string, error) {
 // pinned by a golden-style test comparing this builder's output against
 // BuildListFilter's for the same request (count_test.go, GH#4387).
 //
-// cfg supplies the workspace's infra vocabulary and is only read under
-// IncludeInfra; a zero ListConfig falls back to the default infra set.
+// cfg supplies the workspace's infra vocabulary, loaded for IncludeInfra or a
+// named IssueType; a zero ListConfig falls back to the default infra set.
 func BuildCountFilter(in issueops.CountRequest, cfg ListConfig) (types.IssueFilter, error) {
 	filter := types.IssueFilter{
 		TitleSearch:         in.TitleSearch,
@@ -95,10 +95,9 @@ func BuildCountFilter(in issueops.CountRequest, cfg ListConfig) (types.IssueFilt
 	}
 
 	if in.IncludeInfra {
-		applyCountIncludeInfra(&filter, in.IssueType, cfg)
-	} else {
-		filter.SkipWisps = true
+		applyCountIncludeInfra(&filter, in.IssueType)
 	}
+	applyPlane(&filter, in.IssueType, false, in.IncludeInfra, cfg)
 	return filter, nil
 }
 
@@ -115,9 +114,8 @@ func BuildCountFilter(in issueops.CountRequest, cfg ListConfig) (types.IssueFilt
 //   - counting an infra type (agent/role/message, or the store-configured set)
 //     routes to the ephemeral wisps tier, like list's infra-type listing.
 //
-// A count without IncludeInfra never calls this and keeps its historical
-// durable-only semantics.
-func applyCountIncludeInfra(filter *types.IssueFilter, issueType string, cfg ListConfig) {
+// A count without IncludeInfra still routes named infra types through applyPlane.
+func applyCountIncludeInfra(filter *types.IssueFilter, issueType string) {
 	filter.SkipWisps = false
 
 	isTemplate := false
@@ -127,8 +125,4 @@ func applyCountIncludeInfra(filter *types.IssueFilter, issueType string, cfg Lis
 		filter.ExcludeTypes = append(filter.ExcludeTypes, "gate")
 	}
 
-	if issueType != "" && cfg.IsInfra(issueType) {
-		ephemeral := true
-		filter.Ephemeral = &ephemeral
-	}
 }

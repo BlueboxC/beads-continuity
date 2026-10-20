@@ -617,12 +617,12 @@ func resolveOrDescribe(ctx context.Context, s molReader, operand string, vars ma
 		}
 	}
 
-	// Not found as issue — fall through to the formula registry. parser.LoadByName
+	// Not found as issue — fall through to the formula registry or file path. The resolver
 	// returns "formula %q not found in search paths" for genuinely unknown names,
 	// which is the right error. This matches the resolution behavior of
 	// bd formula show / bd mol seed / bd mol pour / bd cook.
 	parser := formula.NewParser()
-	f, err := parser.LoadByName(operand)
+	f, err := loadFormulaByNameOrPath(parser, operand)
 	if err != nil {
 		return nil, "", fmt.Errorf("'%s' not found as issue or formula: %w", operand, err)
 	}

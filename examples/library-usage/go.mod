@@ -2,6 +2,8 @@ module example.com/beads-library-demo
 
 go 1.26.9
 
+toolchain go1.26.10
+
 require github.com/steveyegge/beads v0.0.0
 
 require (

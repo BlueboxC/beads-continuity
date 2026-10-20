@@ -25,6 +25,8 @@ Root DOX.md and the parent chain remain binding.
 - Reclaim requires a nonempty live assignee matching the expired lease holder under the existing actor rules. Recheck the observed holder and assignee before deletion/release; an unrelated orphan lease cannot release or journal another claim. Preserve replica and expiry guards.
 - Provenance ingest time is explicitly UTC at second precision, independent of occurred_at and server timezone. INSERT IGNORE retries retain the original ingest stamp; existing rows are not rewritten.
 
+- Multi-edge creates read parent ancestry once inside their transaction, after all accepted parent edges. Preserve both dependency planes, hierarchy/cycle refusals, cancellation and upsert-only behavior; ordinary single-edge checks keep their targeted query. This removes repeated ancestry SQL, not all per-edge persistence or cycle checks.
+
 ## Work Guidance
 
 Preserve issue semantics across supported storage adapters and shared conformance tests.

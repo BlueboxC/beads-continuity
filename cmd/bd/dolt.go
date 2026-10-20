@@ -799,7 +799,13 @@ required. Use this command for explicit control or diagnostics.
 Not available in proxied-server mode: there the proxy owns its dolt backend's
 lifecycle and starts it on demand, so a server started here would be a second,
 unsupervised one over the same data directory. Use 'bd dolt status' to see what
-is running and 'bd dolt stop' to shut it down.`,
+is running and 'bd dolt stop' to shut it down.
+
+With dolt.auto-start: false the server is managed outside bd, so a start that
+would create a new, empty data directory is refused: when bd has lost that
+server's port, a local start does not reconnect to it, it serves an empty
+database in place of the real one. Restore the endpoint instead, or pass
+--force to create a fresh local database anyway.`,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		beadsDir := selectedDoltBeadsDir()
 		if beadsDir == "" {
@@ -840,6 +846,10 @@ is running and 'bd dolt stop' to shut it down.`,
 			return HandleError("the configured Dolt server host is remote (%s); 'bd dolt start' only manages a local server.\nStart the server on that host, or clear dolt_server_host / dolt.host / BEADS_DOLT_SERVER_HOST to run one locally", host)
 		}
 		serverDir := doltserver.ResolveServerDir(beadsDir)
+		force, _ := cmd.Flags().GetBool("force")
+		if err := externallyManagedFreshStartRefusal(serverDir, force); err != nil {
+			return HandleError("%v", err)
+		}
 
 		state, err := doltserver.Start(serverDir)
 		if err != nil {
@@ -863,6 +873,38 @@ is running and 'bd dolt stop' to shut it down.`,
 		}
 		return nil
 	},
+}
+
+// externallyManagedFreshStartRefusal refuses a start that would initialize a
+// new, empty data directory for a workspace that declares its server managed
+// outside bd (dolt.auto-start: false). Such a workspace's database lives on
+// that other server; when bd cannot find its port, a repo-local start does
+// not reconnect to it. It runs `dolt init` on an empty .beads/dolt and serves
+// that instead, leaving a phantom database that shadows the real one and a
+// second server nothing supervises. Starting over an existing data directory
+// stays allowed: auto-start off still means "start it yourself" there. force
+// overrides the refusal for an operator who really wants a fresh local server.
+func externallyManagedFreshStartRefusal(serverDir string, force bool) error {
+	if force || !doltserver.IsAutoStartDisabled() {
+		return nil
+	}
+	if state, _ := doltserver.IsRunning(serverDir); state != nil && state.Running {
+		return nil // Start would adopt the running server, not create anything
+	}
+	dataDir := doltserver.ResolveDoltDir(serverDir)
+	if entries, err := os.ReadDir(dataDir); err == nil && len(entries) > 0 {
+		return nil
+	} else if err != nil && !os.IsNotExist(err) {
+		return nil // let Start report an unreadable data directory itself
+	}
+	return fmt.Errorf("refusing to start: %s has no Dolt data, so this would create a new, empty database\n\n"+
+		"Auto-start is off for this workspace (dolt.auto-start: false), which means its server is\n"+
+		"managed outside bd. If bd cannot reach that server, restore the endpoint it publishes\n"+
+		"(%s, dolt.port, or BEADS_DOLT_SERVER_PORT)\n"+
+		"instead of starting a local one: a local server here would serve an empty database in\n"+
+		"place of the real one.\n\n"+
+		"To create a fresh local database anyway: bd dolt start --force",
+		dataDir, filepath.Join(serverDir, doltserver.PortFileName))
 }
 
 var doltStopCmd = &cobra.Command{
@@ -1184,9 +1226,41 @@ is shown as not running, and the next bd command launches it.`,
 		if err != nil {
 			return HandleError("%v", err)
 		}
+		// The PID-file path only sees bd-managed servers. A launchd/systemd/
+		// orchestrator-managed server on a local host in dolt_mode=server
+		// (auto-start NOT disabled, not shared-server mode) leaves no PID file
+		// under this workspace's serverDir, so IsRunning reports "not running"
+		// while CRUD works fine (GH#6017). Before declaring it down,
+		// probe the resolved endpoint; if something is actually serving there,
+		// describe it via the external/SQL-probe path instead.
+		if localStatusNeedsExternalFallback(state, serverDir, cfg.GetDoltServerHost(), testServerConnection) {
+			runExternalDoltStatus(beadsDir, cfg)
+			return nil
+		}
 		renderLocalDoltStatus(state, serverDir)
 		return nil
 	},
+}
+
+// serverProbe reports whether a Dolt SQL endpoint is reachable at host:port.
+// Injectable so localStatusNeedsExternalFallback is unit-testable without a
+// live server.
+type serverProbe func(host string, port int) bool
+
+// localStatusNeedsExternalFallback decides whether the PID-file "not running"
+// result should be overridden by the external/SQL-probe path. True only when
+// the local PID path found no running bd-managed server AND something is
+// actually serving on the resolved endpoint — the launchd/systemd-managed
+// local-server case where CRUD works but no workspace PID file exists.
+func localStatusNeedsExternalFallback(state *doltserver.State, serverDir, host string, probe serverProbe) bool {
+	if state != nil && state.Running {
+		return false
+	}
+	port := doltserver.DefaultConfig(serverDir).Port
+	if port <= 0 {
+		return false
+	}
+	return probe(host, port)
 }
 
 // renderLocalDoltStatus writes the bd-managed (local PID-file) status of
@@ -1866,6 +1940,7 @@ func isTimeoutError(err error) bool {
 
 func init() {
 	doltSetCmd.Flags().Bool("update-config", false, "Also write to config.yaml for team-wide defaults")
+	doltStartCmd.Flags().Bool("force", false, "Start even if that creates a new, empty data directory in a workspace with dolt.auto-start: false")
 	doltStopCmd.Flags().Bool("force", false, "Force stop (proxied recovery still requires a bd/dolt executable match)")
 	doltPushCmd.Flags().Bool("force", false, "Force push (overwrite remote changes)")
 	doltPushCmd.Flags().String("remote", "", "Push to a specific named remote instead of the default")

@@ -719,7 +719,7 @@ jobs:
           set -euo pipefail
           source scripts/ci/lib/timing.sh
 
-          ci_time "install uv" -- pip install uv==0.11.16
+          ci_time "install uv" -- pip install uv==0.13.4
           ci_time "mcp package gate" -- make ci-package-mcp
 
       - name: Upload measurement artifacts

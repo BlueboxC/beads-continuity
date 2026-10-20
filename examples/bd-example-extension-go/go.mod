@@ -2,6 +2,8 @@ module bd-example-extension-go
 
 go 1.26.9
 
+toolchain go1.26.10
+
 require github.com/steveyegge/beads v0.0.0-00010101000000-000000000000
 
 require (

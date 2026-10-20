@@ -75,15 +75,14 @@ func (c *storeCounter) CountByGroup(ctx context.Context, req issueops.CountByGro
 // filter builds the storage filter, loading the workspace configuration only
 // when the request can read it.
 //
-// TWO THINGS ARE DELIBERATE. The load is SKIPPED unless IncludeInfra is set,
-// because that flag is the only thing in a count request the configuration
-// reaches. And when it does run it runs PER CALL rather than once at
+// TWO THINGS ARE DELIBERATE. The load is skipped unless IncludeInfra or a named IssueType needs the
+// workspace infra vocabulary. And when it does run it runs PER CALL rather than once at
 // construction: the infra vocabulary is workspace state a caller can change
 // between two counts, and a counter that cached it would answer for the older
 // workspace.
 func (c *storeCounter) filter(ctx context.Context, req issueops.CountRequest) (types.IssueFilter, error) {
 	var cfg workapi.ListConfig
-	if req.IncludeInfra {
+	if req.IncludeInfra || req.IssueType != "" {
 		loaded, err := workapi.LoadStoreListConfig(ctx, c.store)
 		if err != nil {
 			return types.IssueFilter{}, err

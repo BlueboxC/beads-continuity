@@ -521,16 +521,22 @@ func cycleDetectionTables() []string {
 // and its own ancestor or descendant. Cross-prefix/external targets must be
 // filtered by the caller because no local hierarchy can connect them.
 func CheckBlockingHierarchyInTx(ctx context.Context, tx DBTX, dep *types.Dependency, depTables []string) error {
+	if len(depTables) == 0 {
+		depTables = cycleDetectionTables()
+	}
+	return checkBlockingHierarchy(dep, func(node, candidate string) (bool, error) {
+		return isAncestorInTx(ctx, tx, node, candidate, depTables)
+	})
+}
+
+func checkBlockingHierarchy(dep *types.Dependency, ancestor func(string, string) (bool, error)) error {
 	if dep.Type != types.DepBlocks && dep.Type != types.DepConditionalBlocks {
 		return nil
 	}
 	if dep.IssueID == dep.DependsOnID {
 		return nil // The dedicated self-dependency check owns this error.
 	}
-	if len(depTables) == 0 {
-		depTables = cycleDetectionTables()
-	}
-	blockerIsAncestor, err := isAncestorInTx(ctx, tx, dep.IssueID, dep.DependsOnID, depTables)
+	blockerIsAncestor, err := ancestor(dep.IssueID, dep.DependsOnID)
 	if err != nil {
 		return fmt.Errorf("failed to check blocker ancestry: %w", err)
 	}
@@ -539,7 +545,7 @@ func CheckBlockingHierarchyInTx(ctx context.Context, tx DBTX, dep *types.Depende
 			IssueID: dep.IssueID, BlockerID: dep.DependsOnID, BlockerIsAncestor: true,
 		}
 	}
-	blockerIsDescendant, err := isAncestorInTx(ctx, tx, dep.DependsOnID, dep.IssueID, depTables)
+	blockerIsDescendant, err := ancestor(dep.DependsOnID, dep.IssueID)
 	if err != nil {
 		return fmt.Errorf("failed to check blocker ancestry: %w", err)
 	}

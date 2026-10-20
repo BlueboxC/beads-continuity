@@ -440,16 +440,7 @@ func applyTypeSuppressions(in issueops.ListRequest, cfg ListConfig, filter *type
 		}
 	}
 
-	// The plane bit. Three requests admit the wisp table: an explicit
-	// IncludeEphemeral, IncludeInfra (which admits the plane AND drops the
-	// infra-type exclusions above), and naming an infra type (which routed to
-	// the plane alone in BuildListFilter). Everything else is the durable
-	// listing. IncludeAllTypes is a fourth, via the early return above — it is
-	// the union of these flags, so it must decide the plane too, not only the
-	// type exclusions.
-	if !in.IncludeEphemeral && !in.IncludeInfra && (in.IssueType == "" || !cfg.IsInfra(in.IssueType)) {
-		filter.SkipWisps = true
-	}
+	applyPlane(filter, in.IssueType, in.IncludeEphemeral, in.IncludeInfra, cfg)
 }
 
 // splitStatusSelector splits a --status selector into its trimmed
@@ -531,4 +522,14 @@ func applyStatusParts(filter *types.IssueFilter, parts []string, customStatusNam
 		filter.Statuses = append(filter.Statuses, s)
 	}
 	return nil
+}
+
+// applyPlane keeps named infrastructure counts and listings on the same tier.
+func applyPlane(filter *types.IssueFilter, issueType string, includeEphemeral, includeInfra bool, cfg ListConfig) {
+	infra := issueType != "" && cfg.IsInfra(issueType)
+	filter.SkipWisps = !includeEphemeral && !includeInfra && !infra
+	if infra {
+		ephemeral := true
+		filter.Ephemeral = &ephemeral
+	}
 }
