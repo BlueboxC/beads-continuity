@@ -72,9 +72,9 @@ Detailed references: [knowledge](docs/core-concepts/knowledge.md),
 
 The embedded engine keeps `driver/v2 v2.4.1`, starting from coffeegoddd's
 [upstream proposal #7254](https://github.com/gastownhall/beads/pull/7254).
-It pins Dolt v2.5.0 plus four engine corrections at
-[BlueboxC/dolt `0a39207fc4b1`](https://github.com/BlueboxC/dolt/commit/0a39207fc4b10b4a05d88747b94ad525056e13f6),
-with go-mysql-server `239e0ad6b2f9`. The engine remains a Go dependency;
+It pins Dolt v2.5.0 plus the retained storage corrections and view fix at
+[BlueboxC/dolt `a46b6ea0c4e3`](https://github.com/BlueboxC/dolt/commit/a46b6ea0c4e3cc4450a4f95c5d67df9c0971e568),
+with the [SQL analyzer correction](https://github.com/BlueboxC/go-mysql-server/commit/80039190c7cb90a12923b7e8bac8f820782b873a) on base `239e0ad6b2f9`. The engine remains a Go dependency;
 Beads does not implement engine-specific SQL workarounds.
 
 The official 2.5.0 base already propagates backup source-root errors
@@ -89,6 +89,7 @@ incorrect output; it does not add arbitrary primary-key-change alignment.
 
 - [#12139](https://github.com/dolthub/dolt/issues/12139) preserves every child-parent diff for both `to_commit` and `from_commit` shared-parent lookups and full history scans, including prepared queries.
 - [#12138](https://github.com/dolthub/dolt/issues/12138) snapshots savepoints from session branch state, avoiding unrelated create/drop races while retaining later-used branch rollback.
+- [#12141](https://github.com/dolthub/dolt/issues/12141) preserves the column identity of view projections in normal and prepared filters, adapting angelamayxie’s [GMS PR #4044](https://github.com/dolthub/go-mysql-server/pull/4044). Both the Dolt module and Beads explicitly replace the analyzer because Go dependency replacements are not transitive. Retain the newer MIN/MAX index-bounds and decimal MOD fixes absent from the proposal branch.
 
 Contributor tests and attribution remain in that engine fork. Its tag checks also preserve 2.5.0's crossed-column protection and historical warning behavior.
 

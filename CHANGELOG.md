@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- Fix Dolt view-column filter binding (#12141) with the reviewed SQL analyzer correction while retaining current MIN/MAX, MOD and storage fixes.
+
 ### Fixed in Beads Continuity
 
 - Refuse YAML unsets that orphan values or change unrelated settings; preserve absent-key files, final newlines and indented documents (PR #7684).

@@ -37,6 +37,8 @@ Root DOX.md and the parent chain remain binding.
 
 - YAML unset validates the proposed edit before writing: refuse multiline, orphaned or collateral changes; absent keys are exact no-ops. Preserve EOF, private user-file permissions and whole-document indentation. Public unset APIs retain error-only results.
 
+- Embedded dependency corrections retain explicit main-module pins for both Dolt and its SQL analyzer. View alias identity must survive normal/prepared predicates; preserve existing diff/savepoint behavior and qualify the complete tuple before installation.
+
 ## Work Guidance
 
 Tracker adapters share configuration resolution: local integration credentials never query Dolt, including Notion authentication; authenticated tracker endpoints use explicit local YAML/environment. If no local destination exists, a historical nonempty synced endpoint or store failure refuses connection instead of choosing a public default. Ordinary values keep storage-first/environment fallback including store errors. Credential classification also recognizes case and surrounding-space variants without normalizing ordinary stored keys.
