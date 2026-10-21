@@ -43,6 +43,8 @@ Root DOX.md and the parent chain remain binding.
 
 - Shared user-level agent templates apply only in initialized Beads repositories and retain the fork conservative authority profile. Project templates keep their existing wording.
 
+- Successful tracker pulls record the hash of the imported representation with the assigned local ID, after the issue write. Dry runs and failed writes do not advance this push baseline. Cache and issue writes remain separate, rather than crash-atomic.
+
 ## Work Guidance
 
 Tracker adapters share configuration resolution: local integration credentials never query Dolt, including Notion authentication; authenticated tracker endpoints use explicit local YAML/environment. If no local destination exists, a historical nonempty synced endpoint or store failure refuses connection instead of choosing a public default. Ordinary values keep storage-first/environment fallback including store errors. Credential classification also recognizes case and surrounding-space variants without normalizing ordinary stored keys.
