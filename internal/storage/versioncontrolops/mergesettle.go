@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"sort"
 	"strings"
 
 	"github.com/steveyegge/beads/internal/storage"
@@ -60,7 +61,10 @@ func MergeAndSettleWithStrategy(ctx context.Context, db DBConn, ref, strategy st
 	// Capture pre-merge cleanliness before anything runs: abortMerge's
 	// hard-reset fallback is only safe when nothing uncommitted predates
 	// the merge (bd-578h9.2).
-	preMergeClean := workingSetClean(ctx, db)
+	preMergeDirty, err := mergeDirtyTables(ctx, db)
+	if err != nil {
+		return err
+	}
 
 	if _, err := db.ExecContext(ctx, "SET @@dolt_allow_commit_conflicts = 1"); err != nil {
 		return fmt.Errorf("set dolt_allow_commit_conflicts: %w", err)
@@ -74,7 +78,7 @@ func MergeAndSettleWithStrategy(ctx context.Context, db DBConn, ref, strategy st
 		// DOLT_PULL swallows "Already up to date." internally; we do the same.
 		mergeErr = nil
 	}
-	return SettleMerge(ctx, db, mergeErr, preMergeClean, strategy)
+	return SettleMerge(ctx, db, mergeErr, preMergeDirty, strategy)
 }
 
 // MergeConflictsError reports the conflicts a settle pass refused to
@@ -118,8 +122,8 @@ var ErrPullBehindFastForwardable = errors.New("pull merged nothing but the local
 // cascade violations (bd-6dnrw.4), and leaves the settled working set in
 // place — or aborts the merge when anything needs the operator. mergeErr is
 // the merge statement's own error; it is surfaced whenever nothing was
-// resolved or repaired. preMergeClean reports whether the working set was
-// clean before the merge ran; it gates abortMerge's hard-reset fallback.
+// resolved or repaired. preMergeDirty identifies changes that predate the
+// merge; it limits staging and gates abortMerge's hard-reset fallback.
 // strategy is the #4992 operator escape hatch: "" preserves the exact
 // MergeAndSettle behavior below (a declined conflict aborts with
 // MergeConflictsError); "ours" or "theirs" resolves whatever the auto-resolver
@@ -127,7 +131,8 @@ var ErrPullBehindFastForwardable = errors.New("pull merged nothing but the local
 // server-mode settleMergeInTx exactly; the abort stands in for that path's
 // transaction rollback, restoring the pre-merge working set so a retry is
 // possible.
-func SettleMerge(ctx context.Context, db DBConn, mergeErr error, preMergeClean bool, strategy string) error {
+func SettleMerge(ctx context.Context, db DBConn, mergeErr error, preMergeDirty map[string]bool, strategy string) error {
+	preMergeClean := len(preMergeDirty) == 0
 	// Check for merge conflicts regardless of whether the merge errored.
 	// Some Dolt versions error on conflicts, others leave them in the working set.
 	resolved, resolveErr := TryAutoResolveMergeConflicts(ctx, db)
@@ -208,6 +213,10 @@ func SettleMerge(ctx context.Context, db DBConn, mergeErr error, preMergeClean b
 	// classes could never settle when the resolver committed first (bd-578h9.14).
 	switch {
 	case resolved:
+		if err := stageMergedTables(ctx, db, preMergeDirty); err != nil {
+			abortMerge(ctx, db, preMergeClean)
+			return err
+		}
 		if err := CommitResolvedConflicts(ctx, db); err != nil {
 			abortMerge(ctx, db, preMergeClean)
 			if mergeErr != nil {
@@ -216,6 +225,10 @@ func SettleMerge(ctx context.Context, db DBConn, mergeErr error, preMergeClean b
 			return err
 		}
 	case strategyResolved:
+		if err := stageMergedTables(ctx, db, preMergeDirty); err != nil {
+			abortMerge(ctx, db, preMergeClean)
+			return err
+		}
 		msg := fmt.Sprintf("Resolve merge conflicts using '%s' strategy", strategy)
 		if _, err := db.ExecContext(ctx, "CALL DOLT_COMMIT('-m', ?)", msg); err != nil {
 			abortMerge(ctx, db, preMergeClean)
@@ -263,7 +276,11 @@ func MergeWithStrategy(ctx context.Context, db DBConn, ref, author, strategy str
 	// Capture pre-merge cleanliness before anything runs: abortMerge's
 	// hard-reset fallback is only safe when nothing uncommitted predates the
 	// merge (bd-578h9.2), same as MergeAndSettle.
-	preMergeClean := workingSetClean(ctx, db)
+	preMergeDirty, err := mergeDirtyTables(ctx, db)
+	if err != nil {
+		return nil, err
+	}
+	preMergeClean := len(preMergeDirty) == 0
 
 	if _, err := db.ExecContext(ctx, "SET @@dolt_allow_commit_conflicts = 1"); err != nil {
 		return nil, fmt.Errorf("set dolt_allow_commit_conflicts: %w", err)
@@ -328,6 +345,10 @@ func MergeWithStrategy(ctx context.Context, db DBConn, ref, author, strategy str
 		return conflicts, fmt.Errorf("conflicts resolved with '%s' strategy but merge left constraint violations bd cannot auto-repair; inspect dolt_constraint_violations and resolve before retrying", strategy)
 	}
 
+	if err := stageMergedTables(ctx, db, preMergeDirty); err != nil {
+		abortMerge(ctx, db, preMergeClean)
+		return conflicts, err
+	}
 	if err := StageAndCommit(ctx, db, dirtyTables,
 		fmt.Sprintf("Resolve merge conflicts from %s using %s strategy", ref, strategy), author); err != nil {
 		abortMerge(ctx, db, preMergeClean)
@@ -352,15 +373,43 @@ func abortMerge(ctx context.Context, db DBConn, preMergeClean bool) {
 	}
 }
 
-// workingSetClean reports whether dolt_status is empty. Errors count as
-// dirty so the hard-reset fallback stays conservative.
-func workingSetClean(ctx context.Context, db DBConn) bool {
-	rows, err := db.QueryContext(ctx, "SELECT 1 FROM dolt_status LIMIT 1")
+func mergeDirtyTables(ctx context.Context, db DBConn) (map[string]bool, error) {
+	rows, err := db.QueryContext(ctx, "SELECT table_name FROM dolt_status")
 	if err != nil {
-		return false
+		return nil, fmt.Errorf("read merge working tables: %w", err)
 	}
 	defer rows.Close()
-	return !rows.Next() && rows.Err() == nil
+	tables := make(map[string]bool)
+	for rows.Next() {
+		var table string
+		if err := rows.Scan(&table); err != nil {
+			return nil, err
+		}
+		tables[table] = true
+	}
+	return tables, rows.Err()
+}
+
+// A conflicted merge leaves even cleanly merged companion tables unstaged.
+// Publish those tables too, without absorbing pre-existing unrelated edits.
+func stageMergedTables(ctx context.Context, db DBConn, preserve map[string]bool) error {
+	dirty, err := mergeDirtyTables(ctx, db)
+	if err != nil {
+		return err
+	}
+	tables := make([]string, 0, len(dirty))
+	for table := range dirty {
+		if !preserve[table] {
+			tables = append(tables, table)
+		}
+	}
+	sort.Strings(tables)
+	for _, table := range tables {
+		if _, err := db.ExecContext(ctx, "CALL DOLT_ADD(?)", table); err != nil {
+			return fmt.Errorf("stage merged table %s: %w", table, err)
+		}
+	}
+	return nil
 }
 
 // TryAutoResolveMergeConflicts auto-resolves merge conflicts that are safe to
