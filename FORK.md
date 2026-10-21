@@ -98,8 +98,8 @@ updated Go 1.26 devcontainer. The fork has no Bazel setup to transplant.
 
 The embedded engine keeps `driver/v2 v2.4.1`, starting from coffeegoddd's
 [upstream proposal #7254](https://github.com/gastownhall/beads/pull/7254).
-It pins Dolt v2.5.0 plus the retained storage corrections, catalog and SQL fixes at
-[BlueboxC/dolt `0b951e1328bf`](https://github.com/BlueboxC/dolt/commit/0b951e1328bfc933cb87b8a14c598d00e1c29e67),
+It pins Dolt v2.5.1 plus the retained storage corrections, catalog and SQL fixes at
+[BlueboxC/dolt `e5a6f33b39c1`](https://github.com/BlueboxC/dolt/commit/e5a6f33b39c16c914ad046a5f44b2095c12cc57d),
 with the [SQL analyzer correction](https://github.com/BlueboxC/go-mysql-server/commit/e43b463224d6f3830540d0af03b1165c381ff280) on base `239e0ad6b2f9`. The engine remains a Go dependency;
 Beads does not implement engine-specific SQL workarounds.
 
@@ -245,6 +245,12 @@ preserving this fork's existing corrections:
 | [#7327](https://github.com/gastownhall/beads/issues/7327) | Dolt server fixtures disable asynchronous event flushing before creating a temporary HOME, preventing detached metrics processes from racing configuration cleanup. Backend shutdown waiting remains unchanged. | Fork investigation with Dolt 2.2.0; the reported cleanup race reproduced locally |
 
 These adaptations do not merge, approve or reopen the upstream pull requests.
+
+The 21 October follow-up adapts julianknutsen's PRs [#7738](https://github.com/gastownhall/beads/pull/7738), [#7751](https://github.com/gastownhall/beads/pull/7751) and [#7752](https://github.com/gastownhall/beads/pull/7752): doctor discovery preserves metadata, personal migration binds the exact destination and commits it before source deletion, and external-endpoint diagnostics avoid starting an empty shadow database. The migration retains collision/dirty-target refusal and commit-uncertainty protection. Native embedded, server and proxied mode boundaries remain explicit.
+
+The Perl timeout fallback supervises Go children through a bounded TERM/KILL sequence ([#7753](https://github.com/gastownhall/beads/issues/7753)). The owned server-log portion of gascity-eddie's [#7735](https://github.com/gastownhall/beads/pull/7735) rotates before opening the child descriptor; custom log paths remain untouched. The stronger existing runtime proxy-log bound stays in place.
+
+PRs [#7742](https://github.com/gastownhall/beads/pull/7742), [#7750](https://github.com/gastownhall/beads/pull/7750) and [#7743](https://github.com/gastownhall/beads/pull/7743) target a later ordinary-native history activation path absent from this v1.3.1-based fork. They are not imported as feature activation. Existing explicit Graph Preview history retains its independent lifecycle and recorder contracts.
 
 The GitLab gate extension follows vishnujayvel's [#7432](https://github.com/gastownhall/beads/issues/7432)
 requirements. Their public synchronization branch does not implement these gate

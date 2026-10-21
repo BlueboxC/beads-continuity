@@ -2325,7 +2325,8 @@ func testDoltConnection() error {
 	}
 
 	host := cfg.GetDoltServerHost()
-	port := doltserver.DefaultConfig(beadsDir).Port
+	dc := doltserver.DialConfig(beadsDir)
+	port := dc.Port
 	addr := fmt.Sprintf("%s:%d", host, port)
 
 	if jsonOutput {
@@ -2349,7 +2350,7 @@ func testDoltConnection() error {
 		fmt.Printf("%s\n", ui.RenderPass("✓ Connection successful"))
 	} else {
 		fmt.Printf("%s\n", ui.RenderWarn("✗ Connection failed"))
-		fmt.Println("\nStart the server with: bd dolt start")
+		fmt.Println("\n" + unreachableServerAdvice(beadsDir, host, dc))
 		return SilentExit()
 	}
 
@@ -2487,7 +2488,8 @@ func openDoltServerConnection() (*sql.DB, func(), error) {
 	}
 
 	host := cfg.GetDoltServerHost()
-	port := doltserver.DefaultConfig(beadsDir).Port
+	dc := doltserver.DialConfig(beadsDir)
+	port := dc.Port
 	user := cfg.GetDoltServerUser()
 	password := os.Getenv("BEADS_DOLT_PASSWORD")
 
@@ -2514,11 +2516,22 @@ func openDoltServerConnection() (*sql.DB, func(), error) {
 	if err := db.PingContext(ctx); err != nil {
 		_ = db.Close()
 		fmt.Fprintf(os.Stderr, "Error: cannot reach Dolt server at %s:%d: %v\n", host, port, err)
-		fmt.Fprintln(os.Stderr, "Start the server with: bd dolt start")
+		fmt.Fprintln(os.Stderr, unreachableServerAdvice(beadsDir, host, dc))
 		return nil, nil, SilentExit()
 	}
 
 	return db, func() { _ = db.Close() }, nil
+}
+
+// unreachableServerAdvice is what to do about a Dolt server at host and dc's
+// port that did not answer: the externally managed advice when a setting
+// naming the port declares the server so (bd starts no server there, and
+// `bd dolt start` would start its own on that port), else `bd dolt start`.
+func unreachableServerAdvice(beadsDir, host string, dc *doltserver.Config) string {
+	if advice := doltserver.UnreachableEndpointAdvice(beadsDir, host, dc.Port, dc.PortSource); advice != "" {
+		return advice
+	}
+	return "Start the server with: bd dolt start"
 }
 
 // doltServerPidFile returns the path to the PID file for the managed dolt server.

@@ -106,7 +106,7 @@ func generateHookSection(hookName string) string {
 		"    fi\n" +
 		"  elif command -v perl >/dev/null 2>&1; then\n" +
 		"    _bd_timeout_backend=perl\n" +
-		"    if perl -e 'alarm shift; exec @ARGV' -- \"$_bd_timeout\" bd hooks run " + hookName + " \"$@\"; then\n" +
+		"    if perl -e 'use Errno qw(EINTR); my $t=shift; my $pid=fork; defined $pid or die \"fork: $!\"; if (!$pid) { setpgrp(0,0); exec {$ARGV[0]} @ARGV; exit 127; } setpgrp($pid,$pid); my $expired=0; $SIG{ALRM}=sub { $expired=1; kill(\"TERM\",-$pid) || kill(\"TERM\",$pid); $SIG{ALRM}=sub { kill(\"KILL\",-$pid) || kill(\"KILL\",$pid); }; alarm 1; }; alarm $t; my $r; do { $r=waitpid($pid,0); } while ($r<0 && $! == EINTR); my $s=$?; alarm 0; if ($expired) { kill(\"KILL\",-$pid); exit 142; } $r<0 and die \"waitpid: $!\"; exit($s & 127 ? 128+($s & 127) : $s >> 8);' -- \"$_bd_timeout\" bd hooks run " + hookName + " \"$@\"; then\n" +
 		"      _bd_exit=0\n" +
 		"    else\n" +
 		"      _bd_exit=$?\n" +

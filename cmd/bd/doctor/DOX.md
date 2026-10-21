@@ -16,6 +16,8 @@ Root DOX.md and the parent chain remain binding.
 
 - Repair connections resolve credentials for the exact dialed port. Federation status probes a resolved endpoint when no managed PID is available and reports missing PID without dereferencing nil state. Preserve endpoint and project identity checks.
 
+- Multi-repository type discovery reads legacy metadata without rewriting it before a database exists; native type reads skip graph/future formats and retain the YAML fallback.
+
 ## Work Guidance
 
 Diagnose before repair; preserve recovery evidence. Use existing doctor operations rather than adding parallel repair commands.

@@ -3,35 +3,201 @@ package main
 import (
 	"bufio"
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
+	"runtime"
+	"slices"
 	"strings"
 
 	"github.com/spf13/cobra"
-	"github.com/steveyegge/beads/internal/doltserver"
+	"github.com/steveyegge/beads/internal/beads"
+	"github.com/steveyegge/beads/internal/configfile"
 	"github.com/steveyegge/beads/internal/routing"
 	"github.com/steveyegge/beads/internal/storage"
 	"github.com/steveyegge/beads/internal/storage/dolt"
+	"github.com/steveyegge/beads/internal/storage/doltutil"
+	dbidentifier "github.com/steveyegge/beads/internal/storage/domain/db"
+	"github.com/steveyegge/beads/internal/storage/embeddeddolt"
 	"github.com/steveyegge/beads/internal/types"
 	"github.com/steveyegge/beads/internal/ui"
+	"github.com/steveyegge/beads/internal/utils"
 )
 
-// openMigrationPlanningStore opens the personal planning workspace's store for
-// the copy phase below.
-//
-// It is a factory rather than an inline dolt.New because the store it returns
-// is WRITTEN THROUGH: the migration creates every issue in the planning
-// workspace and then deletes them from the project. Those are ordinary bead
-// mutations in another workspace, so they belong in that workspace's events
-// journal if it has one enabled — and the setting is read from there, not from
-// the workspace bd was launched in.
-func openMigrationPlanningStore(ctx context.Context, planningBeadsDir string) (s storage.DoltStorage, err error) {
-	defer func() { s, err = activateEventsJournalStore(planningBeadsDir, s, err) }()
-	return dolt.New(ctx, &dolt.Config{
-		Path:     doltserver.ResolveDoltDir(planningBeadsDir),
-		BeadsDir: planningBeadsDir,
-	})
+func openMigrationPlanningStore(ctx context.Context, planningBeadsDir string, projectStore storage.DoltStorage, actor string) (storage.DoltStorage, error) {
+	if err := refuseUninitializablePlanningRepo(planningBeadsDir); err != nil {
+		return nil, err
+	}
+	initialized, err := initializePlanningRepo(ctx, planningBeadsDir, projectStore)
+	if err != nil {
+		return nil, fmt.Errorf("initialize planning repo: %w", err)
+	}
+	database, err := migrationTargetDatabase(planningBeadsDir, true)
+	if err != nil {
+		return nil, err
+	}
+	planningStore, err := openMigrationTargetStore(ctx, planningBeadsDir, database, true)
+	if err != nil {
+		return nil, err
+	}
+	if err := settlePlanningWorkingSet(ctx, planningStore, filepath.Dir(planningBeadsDir), initialized, actor); err != nil {
+		_ = planningStore.Close()
+		return nil, err
+	}
+	return planningStore, nil
+}
+
+func settlePlanningWorkingSet(ctx context.Context, planningStore storage.DoltStorage, planningRepo string, initialized bool, actor string) error {
+	if initialized {
+		message := formatDoltAutoCommitMessage("migrate-personal: initialize planning repo", actor, nil)
+		if err := commitPlanningWrites(ctx, planningStore, message); err != nil {
+			return fmt.Errorf("failed to commit the planning repo's initialization: %w", err)
+		}
+	}
+	return refuseUncommittedPlanningChanges(ctx, planningStore, planningRepo)
+}
+
+func refuseUncommittedPlanningChanges(ctx context.Context, planningStore storage.DoltStorage, planningRepo string) error {
+	commits, err := commitsPlanningWrites(planningStore)
+	if err != nil || !commits {
+		return err
+	}
+	status, err := planningStore.Status(ctx)
+	if err != nil {
+		return fmt.Errorf("failed to read the planning repo's uncommitted changes: %w", err)
+	}
+	var tables []string
+	for _, entry := range slices.Concat(status.Staged, status.Unstaged) {
+		tables = append(tables, entry.Table)
+	}
+	if len(tables) == 0 {
+		return nil
+	}
+	slices.Sort(tables)
+	return fmt.Errorf("planning repo %s has uncommitted changes (%s), which migrate-personal's commit would publish; commit them there with `bd dolt commit`, then rerun; nothing was moved", planningRepo, strings.Join(slices.Compact(tables), ", "))
+}
+
+func refuseUninitializablePlanningRepo(planningBeadsDir string) error {
+	if _, err := os.Lstat(filepath.Join(planningBeadsDir, graphPreviewMarker)); !os.IsNotExist(err) {
+		return fmt.Errorf("personal migration requires a native planning workspace; graph-format marker found or unreadable")
+	}
+	cfg, err := configfile.LoadForDiscovery(planningBeadsDir)
+	if err != nil {
+		return err
+	}
+	if err := validateConfiguredBackend(cfg, planningBeadsDir); err != nil {
+		return err
+	}
+	mode, err := cfg.GetGraphMode()
+	if err != nil {
+		return err
+	}
+	if mode != configfile.GraphModeDependency {
+		return fmt.Errorf("personal migration requires a native planning workspace; graph mode %q is not admitted", mode)
+	}
+
+	if redirect := beads.ResolveRedirect(planningBeadsDir); utils.CanonicalizePath(redirect.TargetDir) != utils.CanonicalizePath(planningBeadsDir) {
+		return redirectedPlanningRepoError(planningBeadsDir, redirect.TargetDir, redirect.SourceDatabase)
+	}
+	if _, err := os.Stat(filepath.Join(planningBeadsDir, "metadata.json")); err == nil {
+		return nil
+	}
+	if err := guardLegacyUpgradeWorkspace(planningBeadsDir); err != nil {
+		return err
+	}
+	if databases := embeddeddolt.Databases(planningBeadsDir); len(databases) > 1 {
+		return fmt.Errorf("planning repo %s has no metadata.json and holds several databases (%s); give it a metadata.json whose dolt_database names the one to use, then rerun", filepath.Dir(planningBeadsDir), strings.Join(databases, ", "))
+	}
+	return nil
+}
+
+func redirectedPlanningRepoError(planningBeadsDir, target, stubDatabase string) error {
+	planningRepo, targetRepo := filepath.Dir(planningBeadsDir), filepath.Dir(target)
+	if stubDatabase != "" {
+		if targetDatabase, err := migrationTargetDatabase(target, true); err != nil || targetDatabase != stubDatabase {
+			return fmt.Errorf("planning repo %s redirects to %s, where bd uses the database %q that the planning repo names; routing.contributor cannot select that database (set to %s, it selects that repository's own)", planningRepo, targetRepo, stubDatabase, targetRepo)
+		}
+	}
+	return fmt.Errorf("planning repo %s redirects to %s; set routing.contributor to that repository instead", planningRepo, targetRepo)
+}
+
+func initializePlanningRepo(ctx context.Context, planningBeadsDir string, projectStore storage.DoltStorage) (bool, error) {
+	_, statErr := os.Stat(filepath.Join(planningBeadsDir, "metadata.json"))
+	if statErr != nil {
+		if databases := embeddeddolt.Databases(planningBeadsDir); len(databases) == 1 {
+			return true, adoptPlanningDatabase(ctx, planningBeadsDir, databases[0], projectStore)
+		}
+	}
+	return statErr != nil, ensureBeadsDirForPath(ctx, filepath.Dir(planningBeadsDir), projectStore, true)
+}
+
+func adoptPlanningDatabase(ctx context.Context, planningBeadsDir, database string, projectStore storage.DoltStorage) error {
+	planningStore, err := newDoltStore(ctx, &dolt.Config{BeadsDir: planningBeadsDir, Database: database})
+	if err != nil {
+		return fmt.Errorf("failed to open planning database %q: %w", database, err)
+	}
+	var projectID string
+	err = refuseUncommittedPlanningChanges(ctx, planningStore, filepath.Dir(planningBeadsDir))
+	if err == nil {
+		projectID, err = planningDatabaseSettings(ctx, planningStore, projectStore)
+	}
+	if closeErr := planningStore.Close(); err == nil {
+		err = closeErr
+	}
+	if err != nil {
+		return err
+	}
+	cfg := configfile.DefaultConfig()
+	cfg.Backend = configfile.BackendDolt
+	cfg.DoltDatabase = database
+	cfg.DoltMode = configfile.DoltModeEmbedded
+	cfg.ProjectID = projectID
+	if err := cfg.Save(planningBeadsDir); err != nil {
+		return fmt.Errorf("failed to write metadata.json: %w", err)
+	}
+	return nil
+}
+
+func planningDatabaseSettings(ctx context.Context, planningStore, projectStore storage.DoltStorage) (string, error) {
+	prefix, err := planningStore.GetConfig(ctx, "issue_prefix")
+	if err != nil {
+		return "", fmt.Errorf("failed to read the planning database's issue_prefix: %w", err)
+	}
+	if prefix == "" {
+		if projectPrefix, err := projectStore.GetConfig(ctx, "issue_prefix"); err == nil && projectPrefix != "" {
+			if err := planningStore.SetConfig(ctx, "issue_prefix", projectPrefix); err != nil {
+				return "", fmt.Errorf("failed to set prefix in planning store: %w", err)
+			}
+		}
+	}
+	projectID, err := planningStore.GetMetadata(ctx, "_project_id")
+	if err != nil {
+		return "", fmt.Errorf("failed to read the planning database's project identity: %w", err)
+	}
+	if projectID == "" {
+		projectID = configfile.GenerateProjectID()
+	}
+	return projectID, nil
+}
+
+func refuseSelfPlanningRepo(planningPath, planningBeadsDir, projectBeadsDir string) error {
+	if projectBeadsDir == "" {
+		return nil
+	}
+	planning := utils.CanonicalizePath(beads.FollowRedirect(planningBeadsDir))
+	project := utils.CanonicalizePath(beads.FollowRedirect(projectBeadsDir))
+	same := planning == project
+	if !same {
+		planningCfg, perr := configfile.LoadForDiscovery(planning)
+		projectCfg, qerr := configfile.LoadForDiscovery(project)
+		same = perr == nil && qerr == nil && planningCfg != nil && projectCfg != nil &&
+			planningCfg.ProjectID != "" && planningCfg.ProjectID == projectCfg.ProjectID
+	}
+	if same {
+		return fmt.Errorf("planning repo %s is this project's own workspace; set routing.contributor to a separate planning repository (e.g. ~/.beads-planning)", planningPath)
+	}
+	return nil
 }
 
 var migratePersonalCmd = &cobra.Command{
@@ -70,7 +236,6 @@ func runMigratePersonal(cmd *cobra.Command, args []string) error {
 
 	identity := getActorWithGit()
 
-	// Find personal issues in project DB
 	filter := types.IssueFilter{Limit: 0}
 	allIssues, err := store.SearchIssues(ctx, "", filter)
 	if err != nil {
@@ -89,7 +254,6 @@ func runMigratePersonal(cmd *cobra.Command, args []string) error {
 		return nil
 	}
 
-	// Show list
 	fmt.Printf("\n%s personal issues created by %s found in project database:\n\n",
 		ui.RenderBold(fmt.Sprintf("%d", len(personal))), ui.RenderAccent(identity))
 	for _, issue := range personal {
@@ -97,10 +261,8 @@ func runMigratePersonal(cmd *cobra.Command, args []string) error {
 	}
 	fmt.Println()
 
-	// Get planning repo path
 	planningRaw := getRoutingConfigValue(ctx, store, "routing.contributor")
 	if planningRaw == "" {
-		// Backward compat
 		planningRaw = getRoutingConfigValue(ctx, store, "contributor.planning_repo")
 	}
 	if planningRaw == "" {
@@ -108,84 +270,39 @@ func runMigratePersonal(cmd *cobra.Command, args []string) error {
 	}
 	planningPath := routing.ExpandPath(planningRaw)
 
-	// Validate planning DB path before any destructive operation
 	planningBeadsDir := filepath.Join(planningPath, ".beads")
 	if _, err := os.Stat(planningBeadsDir); os.IsNotExist(err) {
 		return fmt.Errorf("planning repo at %s has no .beads directory; initialize it first with 'bd init'", planningPath)
 	}
+	if err := refuseSelfPlanningRepo(planningPath, planningBeadsDir, resolveCommandBeadsDir(dbPath)); err != nil {
+		return err
+	}
 
 	fmt.Printf("Move to planning repo: %s\n\n", ui.RenderAccent(planningPath))
 
-	// Prompt for confirmation
-	if !migratePersonalYes {
-		fmt.Printf("Move %d issues? [Y/n]: ", len(personal))
-		reader := bufio.NewReader(os.Stdin)
-		response, err := readLineWithContext(ctx, reader, os.Stdin)
-		if err != nil {
-			if isCanceled(err) {
-				fmt.Fprintln(os.Stderr, "Aborted.")
-				return nil
-			}
-			response = ""
-		}
-		response = strings.TrimSpace(strings.ToLower(response))
-		if response == "n" || response == "no" {
-			fmt.Println("Aborted — no changes made.")
-			return nil
-		}
+	if !migratePersonalYes && !confirmMigratePersonal(ctx, len(personal)) {
+		return nil
 	}
 
-	// Open planning store (writable). This is a SECOND workspace's store, and
-	// the copy below creates and deletes real beads in it, so it takes the
-	// planning workspace's own events-journal setting — not the launching
-	// workspace's. See openMigrationPlanningStore.
-	planningStore, err := openMigrationPlanningStore(ctx, planningBeadsDir)
+	planningStore, err := openMigrationPlanningStore(ctx, planningBeadsDir, store, identity)
 	if err != nil {
 		return fmt.Errorf("failed to open planning store at %s: %w", planningPath, err)
 	}
 	defer func() { _ = planningStore.Close() }()
 
-	// Phase 1: Copy everything to the planning DB before touching the project
-	// DB. The copy is all-or-error — any failed step rolls back the planning-DB
-	// rows we created and aborts without deleting anything from the project DB,
-	// so a partial copy can never be mistaken for success and lose data
-	// (maphew review, be-e2nb).
-	//
-	// Phase 1a: create every issue row first, so same-prefix dependencies
-	// between two migrated issues resolve in phase 1b regardless of copy order.
-	var created []string
-	rollback := func() {
-		if len(created) > 0 {
-			_, _ = planningStore.DeleteIssues(ctx, created, false, false, false)
-		}
-	}
-	for _, issue := range personal {
-		if err := planningStore.CreateIssue(ctx, issue, identity); err != nil {
-			rollback()
-			return fmt.Errorf("failed to copy issue %s to planning DB: %w", issue.ID, err)
-		}
-		created = append(created, issue.ID)
+	if err := refuseIssuesAlreadyInPlanning(ctx, planningStore, personal, planningPath); err != nil {
+		return err
 	}
 
-	// Phase 1b: copy labels, dependency records, and comments for every issue.
-	for _, issue := range personal {
-		if err := copyIssueRelations(ctx, store, planningStore, issue, identity); err != nil {
-			rollback()
-			return fmt.Errorf("failed to copy %s to planning DB: %w", issue.ID, err)
-		}
+	ids, err := copyIssuesToPlanning(ctx, store, planningStore, personal, identity)
+	if err != nil {
+		return err
 	}
 
-	// Phase 2: Delete all from project DB in a single transaction. The planning
-	// copy is complete at this point. If the delete fails, the planning repo
-	// already holds the good copy and the project DB is untouched, so we tell
-	// the user to resolve the duplicate rather than silently losing data.
-	ids := make([]string, len(personal))
-	for i, issue := range personal {
-		ids[i] = issue.ID
+	if err := deleteMovedIssues(ctx, store, ids, planningPath); err != nil {
+		return err
 	}
-	if _, err := store.DeleteIssues(ctx, ids, false, false, false); err != nil {
-		return fmt.Errorf("issues copied to planning repo %s but deleting them from the project DB failed; resolve the duplicate manually: %w", planningPath, err)
-	}
+	commandDidWrite.Store(true)
 
 	fmt.Printf("\n%s Moved %d %s to %s\n",
 		ui.RenderPass("✓"),
@@ -195,12 +312,120 @@ func runMigratePersonal(cmd *cobra.Command, args []string) error {
 	return nil
 }
 
-// copyIssueRelations copies the labels, dependency records, and comments for a
-// single issue from src to dst. The issue row itself must already exist in dst
-// (created in phase 1a of runMigratePersonal). Every step — including the reads
-// from src — is fatal on error so the caller can abort the migration before any
-// source data is deleted; a partial copy must never be mistaken for success
-// (maphew review, be-e2nb).
+func confirmMigratePersonal(ctx context.Context, n int) bool {
+	fmt.Printf("Move %d issues? [Y/n]: ", n)
+	reader := bufio.NewReader(os.Stdin)
+	response, err := readLineWithContext(ctx, reader, os.Stdin)
+	if err != nil {
+		if isCanceled(err) {
+			fmt.Fprintln(os.Stderr, "Aborted.")
+			return false
+		}
+		response = ""
+	}
+	response = strings.TrimSpace(strings.ToLower(response))
+	if response == "n" || response == "no" {
+		fmt.Println("Aborted — no changes made.")
+		return false
+	}
+	return true
+}
+
+func refuseIssuesAlreadyInPlanning(ctx context.Context, planningStore storage.DoltStorage, personal []*types.Issue, planningPath string) error {
+	for _, issue := range personal {
+		_, err := planningStore.GetIssue(ctx, issue.ID)
+		switch {
+		case err == nil:
+			if isPlanningRepoMirror(issue, planningPath) {
+				return repoSyncMirrorRefusal(issue, planningPath, runtime.GOOS)
+			}
+			return fmt.Errorf("issue %s already exists in the planning repo %s; nothing was moved", issue.ID, planningPath)
+		case !errors.Is(err, storage.ErrNotFound):
+			return fmt.Errorf("failed to check the planning DB for %s: %w", issue.ID, err)
+		}
+	}
+	return nil
+}
+
+func isPlanningRepoMirror(issue *types.Issue, planningPath string) bool {
+	if issue.SourceRepo == "" || issue.SourceRepo == "." {
+		return false
+	}
+	return utils.CanonicalizePath(routing.ExpandPath(issue.SourceRepo)) == utils.CanonicalizePath(planningPath)
+}
+
+func repoSyncMirrorRefusal(issue *types.Issue, planningPath, goos string) error {
+	repo := shellQuotedPathFor(goos, issue.SourceRepo)
+	return fmt.Errorf("issue %s already exists in the planning repo %s; the project copy was imported from %s by `bd repo sync` (remove those copies with `bd repo remove %s`, then rerun, and run `bd repo add %s` again if you want them hydrated); nothing was moved",
+		issue.ID, planningPath, issue.SourceRepo, repo, repo)
+}
+
+func shellQuotedPathFor(goos, path string) string {
+	if goos == "windows" {
+		return `"` + path + `"`
+	}
+	return doltutil.ShellQuote(path)
+}
+
+func copyIssuesToPlanning(ctx context.Context, src, dst storage.DoltStorage, personal []*types.Issue, actor string) ([]string, error) {
+	var created []string
+	rollback := func(err error) ([]string, error) {
+		if len(created) == 0 {
+			return nil, err
+		}
+		if _, rollbackErr := dst.DeleteIssues(ctx, created, false, false, false); rollbackErr != nil {
+			return nil, fmt.Errorf("%w; rolling the copy back failed too, so the planning DB still holds %s: %w", err, strings.Join(created, ", "), rollbackErr)
+		}
+		return nil, err
+	}
+	for _, issue := range personal {
+		if err := dst.CreateIssue(ctx, issue, actor); err != nil {
+			return rollback(fmt.Errorf("failed to copy issue %s to planning DB: %w", issue.ID, err))
+		}
+		created = append(created, issue.ID)
+	}
+	for _, issue := range personal {
+		if err := copyIssueRelations(ctx, src, dst, issue, actor); err != nil {
+			return rollback(fmt.Errorf("failed to copy %s to planning DB: %w", issue.ID, err))
+		}
+	}
+	err := commitPlanningWrites(ctx, dst, formatDoltAutoCommitMessage("migrate-personal", actor, created))
+	switch {
+	case errors.Is(err, storage.ErrCommitIndeterminate):
+		return nil, fmt.Errorf("committing the copy in the planning repo may have failed: %w; the copy is left there and nothing was deleted from the project DB, so run `bd dolt commit` in the planning repo, then resolve the duplicate manually", err)
+	case err != nil:
+		return rollback(fmt.Errorf("failed to commit the copy in the planning repo: %w", err))
+	}
+	return created, nil
+}
+
+func commitsPlanningWrites(dst storage.DoltStorage) (bool, error) {
+	if !isEmbeddedStore(dst) {
+		return false, nil
+	}
+	mode, err := getDoltAutoCommitMode()
+	return mode == doltAutoCommitOn, err
+}
+
+func commitPlanningWrites(ctx context.Context, dst storage.DoltStorage, message string) error {
+	commits, err := commitsPlanningWrites(dst)
+	if err != nil || !commits {
+		return err
+	}
+	return maybeAutoCommitStore(ctx, dst, doltAutoCommitParams{MessageOverride: message})
+}
+
+func deleteMovedIssues(ctx context.Context, projectStore storage.DoltStorage, ids []string, planningPath string) error {
+	opsCtx, err := issueOpsContext(ctx)
+	if err == nil {
+		_, err = projectStore.DeleteIssues(opsCtx, ids, false, false, false)
+	}
+	if err != nil {
+		return fmt.Errorf("issues copied to planning repo %s but deleting them from the project DB failed; resolve the duplicate manually: %w", planningPath, err)
+	}
+	return nil
+}
+
 func copyIssueRelations(ctx context.Context, src, dst storage.DoltStorage, issue *types.Issue, actor string) error {
 	labels, err := src.GetLabels(ctx, issue.ID)
 	if err != nil {
@@ -227,10 +452,6 @@ func copyIssueRelations(ctx context.Context, src, dst storage.DoltStorage, issue
 		return fmt.Errorf("read comments for %s: %w", issue.ID, err)
 	}
 	for _, c := range comments {
-		// ImportIssueComment writes a structured comment row preserving the
-		// original author and created_at. AddComment would instead record an
-		// event-style entry that GetIssueComments never returns, silently
-		// dropping the comment from the migrated issue (maphew review, be-e2nb).
 		if _, err := dst.ImportIssueComment(ctx, issue.ID, c.Author, c.Text, c.CreatedAt); err != nil {
 			return fmt.Errorf("copy comment for %s: %w", issue.ID, err)
 		}
@@ -244,4 +465,41 @@ func pluralIssue(n int) string {
 		return "issue"
 	}
 	return "issues"
+}
+
+// migrationTargetDatabase pins the destination against launcher overrides.
+func migrationTargetDatabase(beadsDir string, _ bool) (string, error) {
+	cfg, err := configfile.LoadForDiscovery(beadsDir)
+	if err != nil {
+		return "", err
+	}
+	if cfg == nil || strings.TrimSpace(cfg.DoltDatabase) == "" {
+		return "", fmt.Errorf("planning repo %s has no dolt_database; bootstrap it there before migrating", filepath.Dir(beadsDir))
+	}
+	if err := dbidentifier.ValidateIdentifier(cfg.DoltDatabase); err != nil {
+		return "", err
+	}
+	return cfg.DoltDatabase, nil
+}
+
+// openMigrationTargetStore opens only the planning workspace's selected database.
+func openMigrationTargetStore(ctx context.Context, beadsDir, database string, _ bool) (s storage.DoltStorage, err error) {
+	defer func() { s, err = activateEventsJournalStore(beadsDir, s, err) }()
+	cfg, err := configfile.LoadForDiscovery(beadsDir)
+	if err != nil {
+		return nil, err
+	}
+	if cfg == nil {
+		return nil, fmt.Errorf("planning repository has no metadata")
+	}
+	if cfg.IsDoltProxiedServerMode() {
+		return nil, errProxiedStoreUnrouted()
+	}
+	if cfg.IsDoltServerMode() {
+		return dolt.NewFromConfigWithOptions(ctx, beadsDir, &dolt.Config{Database: database})
+	}
+	if !slices.Contains(embeddeddolt.Databases(beadsDir), database) {
+		return nil, fmt.Errorf("planning database %q is missing in %s; run bd bootstrap there first", database, beadsDir)
+	}
+	return newDoltStore(ctx, &dolt.Config{BeadsDir: beadsDir, Database: database})
 }

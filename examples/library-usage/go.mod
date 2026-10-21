@@ -63,7 +63,7 @@ require (
 	github.com/dolthub/dolt/go v0.40.5-0.20261017004643-ea6ad5e1b773 // indirect
 	github.com/dolthub/driver/v2 v2.4.1 // indirect
 	github.com/dolthub/eventsapi_schema v0.0.0-20260715220557-d9b4a1c6b4d4 // indirect
-	github.com/dolthub/file-locks v0.1.1 // indirect
+	github.com/dolthub/file-locks v0.1.2 // indirect
 	github.com/dolthub/flatbuffers/v23 v23.3.3-dh.2 // indirect
 	github.com/dolthub/go-icu-regex v0.0.0-20260610153742-72563bc7ca83 // indirect
 	github.com/dolthub/go-mysql-server v0.20.1-0.20261016230655-239e0ad6b2f9 // indirect
@@ -185,6 +185,6 @@ replace github.com/steveyegge/beads => ../..
 
 replace github.com/dolthub/file-locks => github.com/shrisha/file-locks v0.1.2-0.20261015205944-1006a916595c
 
-replace github.com/dolthub/dolt/go => github.com/BlueboxC/dolt/go v0.0.0-20261020211736-0b951e1328bf
+replace github.com/dolthub/dolt/go => github.com/BlueboxC/dolt/go v0.0.0-20261021103624-e5a6f33b39c1
 
 replace github.com/dolthub/go-mysql-server => github.com/BlueboxC/go-mysql-server v0.0.0-20261020211445-e43b463224d6

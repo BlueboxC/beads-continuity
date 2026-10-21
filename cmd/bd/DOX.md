@@ -110,6 +110,10 @@ Root DOX.md and the parent chain remain binding.
 - `link` uses the existing dependency-editor role while retaining Graph Preview/proxy routing, custom type lengths and hierarchy guards. Duplicate output keeps page count plus true total/truncation; limit zero remains unlimited.
 - Local server status probes the resolved endpoint before declaring an untracked server down. Explicit start refuses an empty externally managed workspace unless forced; unresolved port diagnostics do not recommend initializing a replacement database.
 
+- Personal migration uses the planning workspace mode and exact database, preserves its events setting, refuses redirects, graph formats, self-targets, collisions and missing named databases, and commits a complete destination before deleting the source. Uncertain destination commits retain both copies; batch/off preserve explicit commit policy.
+
+- Generated Git hook shims keep Perl as a supervising parent, bound TERM-resistant children with KILL and reap them. GNU timeout and existing exit-status policy remain supported.
+
 ## Work Guidance
 
 - Metadata JSON inputs are bounded at 4 MiB for inline and `@file` forms, independently of the 1 MiB graph body/property inputs. Refuse oversize or invalid input before mutation; preserve revision guards and retained versions. Graph status advertises the metadata input budget. Complete graph acquisition retains its separate 16 MiB bound.

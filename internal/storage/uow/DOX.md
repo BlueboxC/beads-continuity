@@ -21,6 +21,8 @@ Root DOX.md and the parent chain remain binding.
 - Scoped heartbeat publication commits SQL before staging named history tables, preserving concurrent working-set writes. Unknown SQL commit poisons the transaction and never replays; a history-publication failure after SQL commit is advisory and cannot replay a durable mutation. Readonly never commits. Refresh adds no history/hook; re-arm emits on_update once.
 - Scoped Dolt publication uses schema.DrainCall for every result set, including an empty first set. Later result errors are advisory after SQL commit, stop publication and discard the session; successful draining preserves connection reuse.
 
+- Server-log rotation is explicit per provider and applies only to the default owned path. Preserve context-aware discovery and per-connection authenticated proxy resolution when forwarding this option.
+
 ## Work Guidance
 
 Verify commit, rollback and failure behavior at the affected transaction boundary.

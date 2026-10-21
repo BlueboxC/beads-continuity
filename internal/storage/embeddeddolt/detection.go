@@ -10,15 +10,21 @@ import (
 // non-symlink directory with at least one entry, but entry names and private
 // repository files are never interpreted or opened.
 func HasRepository(beadsDir string) bool {
+	return len(Databases(beadsDir)) > 0
+}
+
+// Databases lists only non-symlink database directories with a populated Dolt marker.
+func Databases(beadsDir string) []string {
 	root := filepath.Join(beadsDir, "embeddeddolt")
 	info, err := os.Lstat(root)
 	if err != nil || !info.IsDir() || info.Mode()&os.ModeSymlink != 0 {
-		return false
+		return nil
 	}
 	databases, err := os.ReadDir(root)
 	if err != nil {
-		return false
+		return nil
 	}
+	var result []string
 	for _, database := range databases {
 		if !database.IsDir() || database.Type()&os.ModeSymlink != 0 {
 			continue
@@ -29,8 +35,8 @@ func HasRepository(beadsDir string) bool {
 		}
 		entries, err := os.ReadDir(filepath.Join(root, database.Name(), ".dolt"))
 		if err == nil && len(entries) > 0 {
-			return true
+			result = append(result, database.Name())
 		}
 	}
-	return false
+	return result
 }

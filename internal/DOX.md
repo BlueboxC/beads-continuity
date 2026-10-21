@@ -31,7 +31,7 @@ Root DOX.md and the parent chain remain binding.
 
 - Query lexing decodes UTF-8 while retaining byte offsets and whole-rune backup. Quoted strings preserve consumed bytes, including invalid UTF-8 and unknown escaped bytes; invalid bytes outside quotes are rejected. Numbers and durations use ASCII digits; identifiers allow combining marks after their first character. Literal NUL is rejected, including inside quotes, and is distinct from EOF.
 
-- Metadata-only fallback port discovery reads legacy configuration without migrating it.
+- Metadata-only fallback port discovery reads legacy configuration without migrating it. Diagnostic dialing honors the actual legacy-port precedence. Named runtime ports declare an external lifecycle unless the exact endpoint has a live workspace-owned server; explicit external/shared/remote declarations remain authoritative. This does not change the embedded/proxy storage selector.
 
 - Strict readonly shared workspace gates open files read-only; absent ordinary gates yield empty handles without creation. Existing-only proxy/Graph Preview gates still refuse absent files. Existing gates exclude maintenance, empty handles release safely, and exclusive callers retain creation.
 

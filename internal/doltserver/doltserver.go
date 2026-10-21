@@ -1102,22 +1102,30 @@ func EnsureRunningDetailed(beadsDir string) (port int, startedByUs bool, err err
 	// it would conflict with the external one.
 	mode := ResolveServerMode(beadsDir)
 	if mode == ServerModeExternal {
-		cfg := DefaultConfig(beadsDir)
+		cfg := DialConfig(beadsDir)
 		if host, ok := externalNonLocalhostHost(beadsDir); ok {
 			// Configured for a non-localhost external server:
 			// "bd dolt start" is not the right advice (GH#3518).
-			return 0, false, fmt.Errorf("Dolt server at %s:%d is unreachable, and bd will not "+
+			return 0, false, &externallyManagedError{fmt.Sprintf("Dolt server at %s:%d is unreachable, and bd will not "+
 				"start a local server because an external one is configured.\n\n"+
 				"Verify the external server is running and reachable from this host:\n"+
 				"  nc -zv %s %d  # or curl %s:%d for an HTTP-style check\n"+
 				"  bd dolt status   # detailed external-server check",
-				host, cfg.Port, host, cfg.Port, host, cfg.Port)
+				host, cfg.Port, host, cfg.Port, host, cfg.Port)}
 		}
-		return 0, false, fmt.Errorf("Dolt server is not running on port %d, and auto-start is suppressed "+
+		// A named port declares the server external: "bd dolt start" would
+		// start bd's own server on it instead of the one that belongs there.
+		// DialConfig names the legacy BEADS_DOLT_PORT the way the store
+		// dials it.
+		if advice := UnreachableEndpointAdvice(beadsDir, cfg.Host, cfg.Port, cfg.PortSource); advice != "" {
+			return 0, false, &externallyManagedError{fmt.Sprintf("Dolt server is not running on port %d.\n\n%s",
+				cfg.Port, advice)}
+		}
+		return 0, false, &externallyManagedError{fmt.Sprintf("Dolt server is not running on port %d, and auto-start is suppressed "+
 			"because the server is externally managed (dolt.auto-start: false or explicit port configured).\n\n"+
 			"Start the external server, or enable auto-start to allow bd to manage the server.\n"+
 			"  To start manually: bd dolt start\n"+
-			"  To check status: bd dolt status", cfg.Port)
+			"  To check status: bd dolt status", cfg.Port)}
 	}
 
 	// Defense-in-depth: if dolt.auto-start is explicitly disabled in
@@ -2144,4 +2152,15 @@ func IsPreV56DoltDir(doltDir string) bool {
 	markerPath := filepath.Join(doltDir, bdDoltMarker)
 	_, err := os.Stat(markerPath)
 	return os.IsNotExist(err)
+}
+
+// DialConfig matches the actual legacy-port precedence used by the store.
+func DialConfig(beadsDir string) *Config {
+	cfg := DefaultConfig(beadsDir)
+	if os.Getenv("BEADS_DOLT_SERVER_PORT") == "" && !cfg.PortSource.IsAuthoritative() {
+		if p, err := strconv.Atoi(os.Getenv("BEADS_DOLT_PORT")); err == nil && p > 0 {
+			cfg.Port, cfg.PortSource = p, PortSourceEnv
+		}
+	}
+	return cfg
 }

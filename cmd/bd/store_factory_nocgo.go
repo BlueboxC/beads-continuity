@@ -22,6 +22,11 @@ func isEmbeddedMode() bool {
 	return false
 }
 
+// isEmbeddedStore answers for the destination, rather than the launching command.
+func isEmbeddedStore(st storage.DoltStorage) bool {
+	return false
+}
+
 func usesProxiedServer() bool {
 	if shouldUseGlobals() {
 		return proxiedServerMode

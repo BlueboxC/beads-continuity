@@ -437,6 +437,9 @@ type Config struct {
 	// creation of shadow databases on the wrong server.
 	CreateIfMissing bool
 
+	// OpenedByInit labels endpoint advice only; it never bypasses identity checks.
+	OpenedByInit bool
+
 	// ServerMode indicates this config targets an external dolt sql-server
 	// rather than the embedded Dolt engine. Set by the store factory based
 	// on metadata.json dolt_mode or BEADS_DOLT_SERVER_MODE env var.
@@ -1862,6 +1865,16 @@ func newServerMode(ctx context.Context, cfg *Config) (*DoltStore, error) {
 			}
 			port, startedByUs, startErr := ensureRunningDetailed(resolvedBeadsDir)
 			if startErr != nil {
+				// EnsureRunning refused, rather than failed, to start a
+				// server bd does not manage. When a named port is what
+				// declares it so, report the failed dial the way an open
+				// that cannot auto-start does (below): "auto-start failed"
+				// and "bd dolt start" describe a start bd must not make.
+				if errors.Is(startErr, doltserver.ErrExternallyManaged) {
+					if hint := externallyManagedPortHint(cfg, resolvedBeadsDir, addr); hint != "" {
+						return nil, fmt.Errorf("Dolt server unreachable at %s: %w\n\n%s", addr, dialErr, hint)
+					}
+				}
 				return nil, fmt.Errorf("Dolt server unreachable at %s and auto-start failed: %w\n\n"+
 					"To start manually: bd dolt start\n"+
 					"To disable auto-start: set dolt.auto-start: false in .beads/config.yaml",
@@ -1977,6 +1990,14 @@ func newServerMode(ctx context.Context, cfg *Config) (*DoltStore, error) {
 					cfg.ServerHost, cfg.ServerPort,
 					cfg.ServerHost, cfg.ServerPort,
 					cfg.ServerHost, cfg.ServerPort)
+			} else if named := externallyManagedPortHint(cfg, resolvedBeadsDir, addr); named != "" {
+				// A named port declares the server externally managed
+				// (BEADS_DOLT_SERVER_PORT, dolt_server_port), which is
+				// why auto-start is off here: "bd dolt start" would start
+				// bd's own server on that port, not the one that belongs
+				// there. Checked before the auto-start-disabled hint,
+				// whose remedy is that same command.
+				hint = named
 			} else if !cfg.AutoStart && doltserver.IsAutoStartDisabled() {
 				hint = "Dolt server auto-start is disabled (dolt.auto-start: false).\n" +
 					"Start the server manually:\n  bd dolt start"
@@ -2270,6 +2291,27 @@ func serverOpenCanAutoStart(cfg *Config) bool {
 		cfg.ServerSocket == "" && isLocalHost(cfg.ServerHost)
 }
 
+// externallyManagedPortHint is the advice for an unreachable TCP endpoint on
+// this machine whose port is named by a setting that declares its server
+// externally managed (doltserver.ExternalPortSetting), or "" for any other
+// endpoint, which keeps its own advice. addr is the endpoint that was dialed.
+func externallyManagedPortHint(cfg *Config, beadsDir, addr string) string {
+	if cfg.ServerSocket != "" || isExternalServerHost(cfg.ServerHost) {
+		return ""
+	}
+	decl := doltserver.ExternalPortSetting(beadsDir, cfg.ServerPortSource, cfg.ServerPort)
+	if decl.NamesEndpoint && cfg.OpenedByInit && cfg.ServerPortSource == doltserver.PortSourceCallerExplicit {
+		// bd init's only caller-explicit port is its --server-port flag,
+		// which it promotes into BEADS_DOLT_SERVER_PORT: name what was typed.
+		decl.Setting = "--server-port"
+	}
+	return decl.Advice(addr)
+}
+
+// persistResolvedPortFile records the port a successful local open reached in
+// bd's port file. It writes no pid file, so the record does not make the
+// server bd's own: doltserver.ExternalPortSetting still names the setting
+// that declared the port when a later open finds the server down.
 func persistResolvedPortFile(cfg *Config, beadsDir string) error {
 	if cfg.DisableAutoStart || !shouldPersistResolvedPortFile() {
 		return nil

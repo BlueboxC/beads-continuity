@@ -71,3 +71,12 @@ func TestApplyProviderOptions(t *testing.T) {
 		t.Fatal("applyProviderOptions(WithPreview()).preview = false, want true")
 	}
 }
+
+func TestServerLogRotationIsExplicit(t *testing.T) {
+	if applyProviderOptions(nil).rotateServerLog {
+		t.Fatal("rotation must be opt-in")
+	}
+	if got := applyProviderOptions([]ProviderOption{WithServerLogRotation()}); got != (providerOptions{rotateServerLog: true}) {
+		t.Fatalf("unexpected options: %+v", got)
+	}
+}

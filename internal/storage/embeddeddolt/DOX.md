@@ -22,6 +22,8 @@ Root DOX.md and the parent chain remain binding.
 
 - Heartbeat shares live-claim validation and row-lock re-arm fencing with native/UOW. Refresh changes only the lease; successful re-arm records a mutation and its history commit. Retained Issue versions require the Graph Preview recorder.
 
+- Metadata-less planning adoption lists only populated, non-symlink database markers; ambiguous sets refuse and selected existing databases are never replaced by a new default.
+
 ## Work Guidance
 
 Respect embedded writer and transaction constraints; use disposable stores for tests. SnapshotMemories uses one existing read transaction and lends only Recall/List within its synchronous callback. Do not call outer store operations or retain the reader beyond the callback. Nil callbacks, cancellation and read/callback errors fail without publishing partial results or writing records. Memories.Apply validates keys before opening a transaction, checks every expected value before mutation and atomically writes/deletes through the existing SQL helpers. Equal values skip writes; return counts only after successful commit. No engine-specific lock, schema change or retry layer.

@@ -56,19 +56,21 @@ func NewExternalDoltServerUOWProvider(
 		return nil, fmt.Errorf("uow: external TLS: %w", err)
 	}
 
+	resolved := applyProviderOptions(opts)
 	proxyOpts := proxy.OpenOpts{
-		Backend:     proxy.BackendExternal,
-		LogFilePath: serverLogFilePath,
-		External:    external,
-		IdleTimeout: idleTimeout,
-		Port:        proxyPort,
+		Backend:       proxy.BackendExternal,
+		LogFilePath:   serverLogFilePath,
+		RotateLogFile: resolved.rotateServerLog,
+		External:      external,
+		IdleTimeout:   idleTimeout,
+		Port:          proxyPort,
 	}
 	ep, err := proxy.GetCreateDatabaseProxyServerEndpointContext(ctx, absServerRootDir, proxyOpts)
 	if err != nil {
 		return nil, fmt.Errorf("uow: get proxy endpoint: %w", err)
 	}
 
-	return openAndInitSchema(ctx, ep, database, rootUser, rootPassword, tlsConfigName, teamServer, expectedProjectID, applyProviderOptions(opts), proxyDialContext(absServerRootDir, proxyOpts))
+	return openAndInitSchema(ctx, ep, database, rootUser, rootPassword, tlsConfigName, teamServer, expectedProjectID, resolved, proxyDialContext(absServerRootDir, proxyOpts))
 }
 
 func registerExternalTLSConfig(external configfile.ExternalDoltConfig) (string, error) {

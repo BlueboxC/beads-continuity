@@ -223,6 +223,18 @@ func openProxiedServerUOWProvider(ctx context.Context, beadsDir, databaseOverrid
 	return newSQLServerUOWProvider(ctx, beadsDir, topology, opts...)
 }
 
+// serverLogProviderOptions is opts plus uow.WithServerLogRotation() when the
+// server log is bd's default one, built on a fresh slice like
+// proxiedProviderOptions. A custom log (BEADS_PROXIED_SERVER_LOG or the
+// sidecar's log path) is the operator's: bd neither rotates it at proxy start
+// nor retires it on migration (proxiedLogAssets), so both follow isCustomLog.
+func serverLogProviderOptions(opts []uow.ProviderOption, isCustomLog bool) []uow.ProviderOption {
+	if isCustomLog {
+		return opts
+	}
+	return append(append([]uow.ProviderOption{}, opts...), uow.WithServerLogRotation())
+}
+
 // newSQLServerUOWProvider is the single funnel every unit-of-work provider bd
 // builds passes through — the proxied CLI path AND `bd serve`'s own provider
 // for server-mode workspaces. Activation is applied by the two constructors it
@@ -465,6 +477,7 @@ func newExternalProxiedServerUOWProvider(ctx context.Context, beadsDir string, t
 			return nil, fmt.Errorf("newExternalProxiedServerUOWProvider: proxied server log (from env or %s): %w", configfile.ProxiedServerClientInfoFileName, err)
 		}
 	}
+	opts = serverLogProviderOptions(opts, isCustomLog)
 
 	if err := os.MkdirAll(rootPath, config.BeadsDirPerm); err != nil {
 		return nil, fmt.Errorf("newExternalProxiedServerUOWProvider: mkdir %s: %w", rootPath, err)
@@ -527,6 +540,7 @@ func newManagedProxiedServerUOWProvider(ctx context.Context, beadsDir string, to
 			return nil, fmt.Errorf("newProxiedServerUOWProvider: proxied server log (from env or %s): %w", configfile.ProxiedServerClientInfoFileName, err)
 		}
 	}
+	opts = serverLogProviderOptions(opts, isCustomLog)
 
 	return uow.NewDoltServerUOWProvider(
 		ctx,

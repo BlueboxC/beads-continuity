@@ -27,7 +27,7 @@ Root DOX.md and the parent chain remain binding.
 - Circuit housekeeping runs at most once per process and expires only closed files older than 24 hours. Explicit doctor maintenance retains its own sweep.
 - Closed-file cleanup regressions use literal 23-hour retention and 25-hour expiration examples, independently of the TTL constant, for both legacy and live directories.
 
-- A TCP open without any resolved port reports the missing endpoint separately from a failed connection; socket and explicit-port paths retain existing diagnostics. Do not suggest a fresh database as reconnection.
+- A TCP open without any resolved port reports the missing endpoint separately from a failed connection; socket and explicit-port paths retain existing diagnostics. Do not suggest a fresh database as reconnection. An unreachable named externally managed port identifies its declaring setting and never recommends starting a different local server; preserve owned/shared-server advice and the underlying dial error.
 
 ## Work Guidance
 

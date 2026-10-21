@@ -39,6 +39,12 @@ func isEmbeddedMode() bool {
 	return !usesSQLServer()
 }
 
+// isEmbeddedStore answers for the destination, rather than the launching command.
+func isEmbeddedStore(st storage.DoltStorage) bool {
+	_, ok := storage.UnwrapStore(st).(*embeddeddolt.EmbeddedDoltStore)
+	return ok
+}
+
 func usesProxiedServer() bool {
 	if shouldUseGlobals() {
 		return proxiedServerMode

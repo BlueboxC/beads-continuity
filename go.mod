@@ -45,7 +45,7 @@ require (
 	github.com/buger/jsonparser v1.1.2 // indirect
 	github.com/cenkalti/backoff/v5 v5.0.3 // indirect
 	github.com/cockroachdb/apd/v3 v3.2.3 // indirect
-	github.com/dolthub/file-locks v0.1.1 // indirect
+	github.com/dolthub/file-locks v0.1.2 // indirect
 	github.com/dprotaso/go-yit v0.0.0-20220510233725-9ba8df137936 // indirect
 	github.com/fsnotify/fsnotify v1.9.0 // indirect
 	github.com/getkin/kin-openapi v0.144.0 // indirect
@@ -293,6 +293,6 @@ retract (
 
 replace github.com/dolthub/file-locks => github.com/shrisha/file-locks v0.1.2-0.20261015205944-1006a916595c
 
-replace github.com/dolthub/dolt/go => github.com/BlueboxC/dolt/go v0.0.0-20261020211736-0b951e1328bf
+replace github.com/dolthub/dolt/go => github.com/BlueboxC/dolt/go v0.0.0-20261021103624-e5a6f33b39c1
 
 replace github.com/dolthub/go-mysql-server => github.com/BlueboxC/go-mysql-server v0.0.0-20261020211445-e43b463224d6

@@ -58,10 +58,12 @@ func NewDoltServerUOWProvider(
 		return nil, fmt.Errorf("uow: creating server root directory: %w", err)
 	}
 
+	resolved := applyProviderOptions(opts)
 	proxyOpts := proxy.OpenOpts{
 		Backend:        backend,
 		ConfigFilePath: serverConfigFilePath,
 		LogFilePath:    serverLogFilePath,
+		RotateLogFile:  resolved.rotateServerLog,
 		DoltBinPath:    absDoltBinExec,
 		Database:       database,
 		IdleTimeout:    idleTimeout,
@@ -72,5 +74,5 @@ func NewDoltServerUOWProvider(
 		return nil, fmt.Errorf("uow: get proxy endpoint: %w", err)
 	}
 
-	return openAndInitSchema(ctx, ep, database, rootUser, rootPassword, "", teamServer, expectedProjectID, applyProviderOptions(opts), proxyDialContext(absServerRootDir, proxyOpts))
+	return openAndInitSchema(ctx, ep, database, rootUser, rootPassword, "", teamServer, expectedProjectID, resolved, proxyDialContext(absServerRootDir, proxyOpts))
 }

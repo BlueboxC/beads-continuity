@@ -104,9 +104,29 @@ func discoverChildTypes(repoPath string) []string {
 	return nil
 }
 
+// nativeTypeDiscoveryConfig classifies additional repositories without migrating
+// their legacy metadata. Graph workspaces use a different adapter in this fork.
+func nativeTypeDiscoveryConfig(beadsDir string) (*configfile.Config, error) {
+	cfg, err := configfile.LoadForDiscovery(beadsDir)
+	if err != nil || cfg == nil {
+		return cfg, err
+	}
+	mode, err := cfg.GetGraphMode()
+	if err != nil {
+		return nil, err
+	}
+	if mode != configfile.GraphModeDependency {
+		return nil, fmt.Errorf("native type discovery does not open graph mode %q", mode)
+	}
+	if _, err := os.Lstat(filepath.Join(beadsDir, "graph-preview-format")); !os.IsNotExist(err) {
+		return nil, fmt.Errorf("native type discovery cannot open a graph-format workspace: %v", err)
+	}
+	return cfg, nil
+}
+
 // readTypesFromDB reads types.custom from the database config table
 func readTypesFromDB(beadsDir string) ([]string, error) {
-	cfg, err := configfile.Load(beadsDir)
+	cfg, err := nativeTypeDiscoveryConfig(beadsDir)
 	if err != nil || cfg == nil {
 		return nil, fmt.Errorf("no config")
 	}
@@ -114,7 +134,7 @@ func readTypesFromDB(beadsDir string) ([]string, error) {
 		return nil, fmt.Errorf("not dolt backend")
 	}
 
-	doltPath := getDatabasePath(beadsDir)
+	doltPath := cfg.DatabasePath(beadsDir)
 	if _, err := os.Stat(doltPath); os.IsNotExist(err) {
 		return nil, err
 	}
@@ -159,7 +179,7 @@ func readTypesFromYAML(beadsDir string) ([]string, error) {
 func findUnknownTypesInHydratedIssues(repoPath string, multiRepo *config.MultiRepoConfig) []string {
 	beadsDir := ResolveBeadsDirForRepo(repoPath)
 
-	cfg, err := configfile.Load(beadsDir)
+	cfg, err := nativeTypeDiscoveryConfig(beadsDir)
 	if err != nil || cfg == nil {
 		return nil
 	}
@@ -167,7 +187,7 @@ func findUnknownTypesInHydratedIssues(repoPath string, multiRepo *config.MultiRe
 		return nil
 	}
 
-	doltPath := getDatabasePath(beadsDir)
+	doltPath := cfg.DatabasePath(beadsDir)
 	if _, err := os.Stat(doltPath); os.IsNotExist(err) {
 		return nil
 	}

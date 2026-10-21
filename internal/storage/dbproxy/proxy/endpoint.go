@@ -19,6 +19,7 @@ import (
 	"github.com/steveyegge/beads/internal/atomicfile"
 	"github.com/steveyegge/beads/internal/configfile"
 	"github.com/steveyegge/beads/internal/debug"
+	"github.com/steveyegge/beads/internal/doltserver"
 	"github.com/steveyegge/beads/internal/fdhygiene"
 	"github.com/steveyegge/beads/internal/lockfile"
 	"github.com/steveyegge/beads/internal/procid"
@@ -68,6 +69,12 @@ type OpenOpts struct {
 	Database       string
 	Port           int
 	External       configfile.ExternalDoltConfig
+
+	// RotateLogFile lets the proxy start rotate an oversized LogFilePath
+	// (internal/doltserver.MaybeRotateLogFile). Set it only for a log bd
+	// owns: proxy.lock guards rootDir, not an operator's log elsewhere,
+	// which another workspace's live proxy may still be writing.
+	RotateLogFile bool
 }
 
 const (
@@ -523,6 +530,12 @@ func forkExecChild(rootDir string, opts OpenOpts, port int, stopEpoch string, lo
 		if ext.KeepAlivePeriod != 0 {
 			args = append(args, "--external-keep-alive", ext.KeepAlivePeriod.String())
 		}
+	}
+
+	// Only the owned server log rotates at startup, before opening the child fd.
+	// proxy.log retains this fork's stronger bounded runtime writer.
+	if opts.RotateLogFile {
+		doltserver.MaybeRotateLogFile(opts.LogFilePath)
 	}
 
 	logFile, err := os.OpenFile(opts.LogFilePath, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o600) //nolint:gosec // G304: logFilePath is caller-derived (workspace path), not user-request input

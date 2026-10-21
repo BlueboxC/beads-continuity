@@ -229,8 +229,8 @@ func TestGenerateHookSection_Timeout(t *testing.T) {
 	if !strings.Contains(section, `"$_bd_timeout_command" -- "$_bd_timeout"`) {
 		t.Error("section missing GNU timeout argv separator")
 	}
-	if !strings.Contains(section, "perl -e 'alarm shift; exec @ARGV' --") {
-		t.Error("section missing perl alarm fallback for stock macOS")
+	if !strings.Contains(section, "perl -e 'use Errno qw(EINTR);") {
+		t.Error("section missing supervised perl fallback for stock macOS")
 	}
 	if !strings.Contains(section, "_bd_timeout_backend=perl") {
 		t.Error("section missing scoped perl backend marker")
