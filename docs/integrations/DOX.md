@@ -14,7 +14,7 @@ Root DOX.md and the parent chain remain binding.
 
 ## Work Guidance
 
-Explain actual configuration paths and effects; preserve global versus project setup distinctions.
+Explain actual configuration paths and effects; preserve global versus project setup distinctions. Claude/Gemini/Mux user-level files apply only in Beads repositories. Gemini removal preserves saved memories and outside separator whitespace; Mux distinguishes global/home aliases from workspace hooks.
 
 Codex lifecycle guidance distinguishes immediate source=compact recovery from the retained next-prompt fallback; hook trust, local stdout production and actual native context admission remain separate. Missing diagnostics alone cannot establish omitted dispatch. Read-failure categories use typed errors and an internal child status protocol, never stderr text or timing heuristics; commit build labels do not establish exact binary identity.
 

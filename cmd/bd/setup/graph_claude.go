@@ -103,7 +103,7 @@ func graphClaudeStopMode(env claudeEnv, check, remove, preflight bool) error {
 				return err
 			}
 		}
-		if hasBeadsPlugin(env) {
+		if hasBeadsPlugin(env, false) {
 			return graphClaudePluginRefusal(env)
 		}
 		for _, existing := range []string{path, globalSettingsPath(env.homeDir), legacyProjectSettingsPath(env.projectDir)} {
@@ -144,7 +144,7 @@ func graphClaudeStopMode(env claudeEnv, check, remove, preflight bool) error {
 			_, _ = fmt.Fprintf(env.stdout, "Graph Claude Stop hook is absent from %s; instructions preserved.\n", path)
 			return nil
 		}
-		removeHookCommand(hooks, "Stop", claudeStopHookCommand)
+		removeHookCommand(env.stdout, hooks, "Stop", claudeStopHookCommand)
 	} else {
 		if installed {
 			_, _ = fmt.Fprintf(env.stdout, "Graph Claude Stop hook configured in %s; guidance loaded by %s.\n", path, importPath)

@@ -321,3 +321,9 @@ Keep `main` available for upstream synchronization and scope fork work to
 interfaces for persistence, and [engdocs/TESTING.md](engdocs/TESTING.md) for
 verification. Follow the DOX hierarchy before edits. Preserve the bundled D3,
 TypeScript and Tree-sitter licenses/notices; `bd code --licenses` exposes parser attribution.
+
+## User-level client setup
+
+Adapted @julianknutsen's Beads PRs #7696/#7740/#7741 (Claude), #7739 (Gemini) and #7749 (Mux). Global instruction sections use stable repository-conditional wording and omit project scaffolding. Claude distinguishes user/project/local plugin scope; Gemini keeps legacy saved memories outside its managed section; Mux resolves home and global-directory aliases consistently.
+
+The fork retains its conservative authority profile, outside whitespace, shared Copilot section guards and separate Graph Preview Stop setup. Contributor regressions retain their scope; Gemini/Mux whitespace expectations follow the fork's existing byte-preservation contract. Installation updates the CLI without running setup against real client settings or changing Codex hooks/trust. The engine, schemas and project formats are unchanged.

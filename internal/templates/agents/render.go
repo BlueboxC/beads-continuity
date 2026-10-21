@@ -54,12 +54,21 @@ type RenderOpts struct {
 	// NoPush indicates the rig is declared local-only (no-push: true in config).
 	// When true, "bd dolt push" is omitted regardless of HasRemote.
 	NoPush bool
+	// UserLevel scopes shared instructions to repositories using Beads.
+	UserLevel bool
 }
 
 // DefaultRenderOpts returns opts that assume a remote is configured,
 // preserving backward-compatible behavior for callers that don't pass opts.
 func DefaultRenderOpts() RenderOpts {
 	return RenderOpts{HasRemote: true}
+}
+
+// UserLevelRenderOpts returns the fixed opts for a user-level instructions
+// file. No one repository's beads config applies to it, so it assumes a
+// remote, as DefaultRenderOpts does.
+func UserLevelRenderOpts() RenderOpts {
+	return RenderOpts{HasRemote: true, UserLevel: true}
 }
 
 // RenderSection returns the beads integration section for the given profile,
@@ -222,8 +231,34 @@ func templateBodyWithOpts(profile Profile, opts RenderOpts) string {
 		body = stripDoltPushReferences(body)
 	}
 
+	if opts.UserLevel {
+		body = userLevelWording.Replace(body)
+	}
+
 	return body
 }
+
+// userLevelScope opens a user-level section: the agent loads that file in
+// every repository, including ones that do not use beads.
+const userLevelScope = "This Beads block applies only in beads repositories: repositories that use **bd (beads)** for issue tracking, with a `.beads/` directory. Ignore it in any other repository."
+
+// userLevelWording rewords the lines of both profiles' bodies that state the
+// current project uses bd, or that set a task-tracking rule with no condition,
+// so they apply only in beads repositories (RenderOpts.UserLevel).
+var userLevelWording = strings.NewReplacer(
+	"This project uses **bd (beads)** for issue tracking. Run `bd prime`",
+	userLevelScope+" In a beads repository, run `bd prime`",
+	"- Use `bd` for ALL task tracking",
+	"- In a beads repository, use `bd` for ALL task tracking",
+	"- Use `bd remember` for durable project facts",
+	"- In a beads repository, use `bd remember` for durable project facts",
+	"- Use `bd remember` for persistent knowledge",
+	"- In a beads repository, use `bd remember` for persistent knowledge",
+	"**IMPORTANT**: This project uses **bd (beads)** for ALL issue tracking.",
+	userLevelScope+"\n\n**IMPORTANT**: In a beads repository, use **bd (beads)** for ALL issue tracking.",
+	"- ✅ Use bd for ALL task tracking",
+	"- ✅ In a beads repository, use bd for ALL task tracking",
+)
 
 func normalizeEmbeddedMarkdown(content string) string {
 	return strings.TrimRight(strings.ReplaceAll(content, "\r\n", "\n"), "\n")
