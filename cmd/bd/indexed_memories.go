@@ -20,25 +20,29 @@ func readIndexedMemories(ctx context.Context, memories memoryops.Memories) (memo
 	var index codeindex.Index
 	err := snapshot.ReadSnapshot(ctx, func(reader memoryops.MemoryReader) error {
 		var err error
-		plane, err = reader.List(ctx, memoryops.ListRequest{ExcludeKeyPrefix: codeindex.Prefix})
-		if err != nil {
-			return err
-		}
-		var current map[string]string
-		index, current, err = codeindex.ReadCurrent(ctx, reader)
-		if err != nil {
-			return err
-		}
-		if plane.Memories == nil {
-			plane.Memories = make(map[string]string)
-		}
-		for key, value := range current {
-			plane.Memories[key] = value
-		}
-		return nil
+		plane, index, err = readIndexedSnapshot(ctx, reader)
+		return err
 	})
 	if err != nil {
 		return memoryops.ListResult{}, codeindex.Index{}, err
+	}
+	return plane, index, nil
+}
+
+func readIndexedSnapshot(ctx context.Context, reader memoryops.MemoryReader) (memoryops.ListResult, codeindex.Index, error) {
+	plane, err := reader.List(ctx, memoryops.ListRequest{ExcludeKeyPrefix: codeindex.Prefix})
+	if err != nil {
+		return memoryops.ListResult{}, codeindex.Index{}, err
+	}
+	index, current, err := codeindex.ReadCurrent(ctx, reader)
+	if err != nil {
+		return memoryops.ListResult{}, codeindex.Index{}, err
+	}
+	if plane.Memories == nil {
+		plane.Memories = make(map[string]string)
+	}
+	for key, value := range current {
+		plane.Memories[key] = value
 	}
 	return plane, index, nil
 }

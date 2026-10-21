@@ -32,6 +32,9 @@ Root DOX.md and the parent chain remain binding.
 - Heartbeater refreshes only an existing live claim; missing-lease re-arm uses a lock/status/holder fence, remints row_lock and records mutation hooks once. Refused orphan cleanup may commit without announcing success. Ordinary refresh adds no event, version, hook or history commit. Retained versions remain Graph Preview-only.
 - RunInTransaction callbacks remain at-most-once. Explicit replay requires the confirmed rolled-back conflict marker; uncertain commit outcomes never replay. Retry backoff remains within the existing deadline.
 
+- Embedded merge settlement stages newly merged companion tables before its resolution commit, retaining unrelated pre-existing dirty tables. Abort and explicit strategy guards remain unchanged.
+- Optional ProjectSnapshotter lends only memory, issue and dependency reads from one callback-scoped transaction. Failed reads withhold the complete projection; unsupported adapters retain their existing acquisition path.
+
 ## Work Guidance
 
 Memory namespace selectors preserve exact prefix semantics across adapters. All three adapters select namespaces in SQL before transferring values; the unit-of-work adapter uses ConfigUseCase/repository within its existing read transaction. Case-insensitive memory search remains in Go.

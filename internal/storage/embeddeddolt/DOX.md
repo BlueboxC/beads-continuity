@@ -24,6 +24,8 @@ Root DOX.md and the parent chain remain binding.
 
 - Metadata-less planning adoption lists only populated, non-symlink database markers; ambiguous sets refuse and selected existing databases are never replaced by a new default.
 
+- ReadProjectSnapshot shares one engine acquisition and readonly transaction across current-generation memories, tasks and dependencies. Borrowed readers expire with the callback; cancellation, nil callbacks and callback errors fail without changing logical roots.
+
 ## Work Guidance
 
 Respect embedded writer and transaction constraints; use disposable stores for tests. SnapshotMemories uses one existing read transaction and lends only Recall/List within its synchronous callback. Do not call outer store operations or retain the reader beyond the callback. Nil callbacks, cancellation and read/callback errors fail without publishing partial results or writing records. Memories.Apply validates keys before opening a transaction, checks every expected value before mutation and atomically writes/deletes through the existing SQL helpers. Equal values skip writes; return counts only after successful commit. No engine-specific lock, schema change or retry layer.

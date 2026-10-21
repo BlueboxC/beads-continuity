@@ -15,6 +15,7 @@ import (
 	"github.com/steveyegge/beads/internal/codeindex"
 	"github.com/steveyegge/beads/internal/graphview"
 	"github.com/steveyegge/beads/internal/knowledge"
+	"github.com/steveyegge/beads/internal/storage"
 	"github.com/steveyegge/beads/internal/storage/graphstore"
 	"github.com/steveyegge/beads/internal/types"
 	"github.com/steveyegge/beads/internal/workapi"
@@ -32,6 +33,12 @@ func runProjectGraph(cmd *cobra.Command, args []string) error {
 	if usesProxiedServer() {
 		return errors.New("--project currently requires a direct workspace connection")
 	}
+	maxRows, source, err := resolveMaxRows(cmd)
+	if err != nil {
+		return err
+	}
+	unlimited := 0
+	request := issueops.ListRequest{Status: "all", AllFlag: true, IncludeAllTypes: true, Limit: &unlimited, MaxRows: maxRows, MaxRowsSource: source}
 	memories, reader, err := openKnowledge()
 	if err != nil {
 		return err
@@ -40,18 +47,23 @@ func runProjectGraph(cmd *cobra.Command, args []string) error {
 	var snapshot graphstore.Snapshot
 	var plane memoryops.ListResult
 	var index codeindex.Index
+	var issues []*types.Issue
+	var deps []*types.Dependency
 	if !graphPreviewActive {
-		plane, index, err = readIndexedMemories(rootCtx, memories)
-	}
-	if graphPreviewActive {
+		result, readErr := readNativeProject(rootCtx, memories, request)
+		if readErr != nil {
+			return readErr
+		}
+		plane, index, issues, deps = result.plane, result.index, result.issues, result.deps
+	} else {
 		err = withGraphStoreOutput(func(ctx context.Context, st *graphstore.Store) (any, string, error) {
 			var readErr error
 			plane, snapshot, readErr = st.ReadContinuity(ctx)
 			return nil, "", readErr
 		}, func(any, string) error { return nil })
-	}
-	if err != nil {
-		return err
+		if err != nil {
+			return err
+		}
 	}
 	state := reader.Refresh(knowledge.Decode(plane.Memories))
 	if graphPreviewActive {
@@ -69,17 +81,6 @@ func runProjectGraph(cmd *cobra.Command, args []string) error {
 		defer func() { _ = codeReader.Close() }()
 		index = codeReader.Refresh(index)
 	}
-	maxRows, source, err := resolveMaxRows(cmd)
-	if err != nil {
-		return err
-	}
-	unlimited := 0
-	filter, err := workapi.BuildListFilter(issueops.ListRequest{Status: "all", AllFlag: true, IncludeAllTypes: true, Limit: &unlimited, MaxRows: maxRows, MaxRowsSource: source}, workapi.ListConfig{})
-	if err != nil {
-		return err
-	}
-	var issues []*types.Issue
-	var deps []*types.Dependency
 	if graphPreviewActive {
 		for _, entry := range snapshot.Records {
 			if record, ok := entry.(graphstore.IssueRecord); ok {
@@ -97,25 +98,7 @@ func runProjectGraph(cmd *cobra.Command, args []string) error {
 		if maxRows > 0 && len(issues) > maxRows {
 			return fmt.Errorf("project task selection exceeds --max-rows (%d)", maxRows)
 		}
-	} else {
-		issues, err = store.SearchIssues(rootCtx, "", filter)
-		if err != nil {
-			if capErr := handleMaxRowsError(err); capErr != nil {
-				return capErr
-			}
-			return err
-		}
-		ids := make([]string, len(issues))
-		for i, issue := range issues {
-			ids[i] = issue.ID
-		}
-		records, err := store.GetDependencyRecordsForIssues(rootCtx, ids)
-		if err != nil {
-			return fmt.Errorf("reading project dependencies: %w", err)
-		}
-		for _, id := range ids {
-			deps = append(deps, records[id]...)
-		}
+
 	}
 	page := buildProjectGraph(workspace, state, index, issues, deps)
 	if graphPreviewActive {
@@ -357,4 +340,63 @@ func mergePreviewGraph(page *graphview.Page, snapshot graphstore.Snapshot) {
 		a, b := page.Links[i], page.Links[j]
 		return a.Source+a.Target+a.Type < b.Source+b.Target+b.Type
 	})
+}
+
+type projectRead struct {
+	plane  memoryops.ListResult
+	index  codeindex.Index
+	issues []*types.Issue
+	deps   []*types.Dependency
+}
+
+func readProjectTasks(ctx context.Context, reader storage.ProjectTaskReader, request issueops.ListRequest) ([]*types.Issue, []*types.Dependency, error) {
+	filter, err := workapi.BuildListFilter(request, workapi.ListConfig{})
+	if err != nil {
+		return nil, nil, err
+	}
+	issues, err := reader.SearchIssues(ctx, "", filter)
+	if err != nil {
+		if capErr := handleMaxRowsError(err); capErr != nil {
+			return nil, nil, capErr
+		}
+		return nil, nil, err
+	}
+	ids := make([]string, len(issues))
+	for i, issue := range issues {
+		ids[i] = issue.ID
+	}
+	records, err := reader.GetDependencyRecordsForIssues(ctx, ids)
+	if err != nil {
+		return nil, nil, fmt.Errorf("reading project dependencies: %w", err)
+	}
+	var deps []*types.Dependency
+	for _, id := range ids {
+		deps = append(deps, records[id]...)
+	}
+	return issues, deps, nil
+}
+
+func readNativeProject(ctx context.Context, memories memoryops.Memories, request issueops.ListRequest) (projectRead, error) {
+	var result projectRead
+	var err error
+	if snapshot, ok := storage.UnwrapStore(store).(storage.ProjectSnapshotter); ok {
+		err = snapshot.ReadProjectSnapshot(ctx, func(reader storage.ProjectReader) error {
+			var err error
+			result.plane, result.index, err = readIndexedSnapshot(ctx, reader)
+			if err != nil {
+				return err
+			}
+			result.issues, result.deps, err = readProjectTasks(ctx, reader, request)
+			return err
+		})
+	} else {
+		result.plane, result.index, err = readIndexedMemories(ctx, memories)
+		if err == nil {
+			result.issues, result.deps, err = readProjectTasks(ctx, store, request)
+		}
+	}
+	if err != nil {
+		return projectRead{}, err
+	}
+	return result, nil
 }
