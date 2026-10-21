@@ -184,6 +184,11 @@ func runCodexActivity(ctx context.Context, event string, stdin io.Reader, stdout
 		return reply("Beads activity event mismatch; capture withheld.")
 	}
 	input.Event = event
+	// Native capture keeps all settings/idempotency/write/commit reads in one
+	// existing engine lifetime; Graph Preview retains its own transaction route.
+	if handled, message := captureNativeActivity(ctx, input); handled {
+		return reply(message)
+	}
 	root, m, closeStore, err := openActivity(ctx, false)
 	if err != nil {
 		return reply("Beads activity workspace unavailable; no capture or initialization performed.")
@@ -226,4 +231,44 @@ func runCodexActivity(ctx context.Context, event string, stdin io.Reader, stdout
 		return reply("Beads activity durability was not confirmed; inspect bd activity status.")
 	}
 	return reply("")
+}
+
+func captureNativeActivity(ctx context.Context, input activity.Input) (bool, string) {
+	dir := beads.FindBeadsDir()
+	cfg, err := configfile.Load(dir)
+	if err != nil || cfg == nil || cfg.GetBackend() != configfile.BackendDolt || cfg.IsDoltServerMode() || cfg.IsDoltProxiedServerMode() {
+		return false, ""
+	}
+	mode, err := cfg.GetGraphMode()
+	if err != nil || mode == "link" {
+		return false, ""
+	}
+	if dbPath != "" || databaseFlag != "" || globalFlag {
+		return true, "Beads activity workspace overrides refused; capture withheld."
+	}
+	physicalRoot, rootErr := filepath.EvalSymlinks(filepath.Dir(dir))
+	physicalCWD, cwdErr := filepath.EvalSymlinks(input.CWD)
+	if rootErr != nil || cwdErr != nil {
+		return true, "Beads activity workspace identity unavailable; capture withheld."
+	}
+	input.CWD = physicalCWD
+	record, err := activity.Build(input, physicalRoot, time.Now())
+	if err != nil {
+		return true, "Beads activity metadata is incomplete or outside this workspace; capture withheld."
+	}
+	err = withExistingActivityMemories(ctx, dir, cfg.GetDoltDatabase(), func(m memoryops.Memories) (bool, error) {
+		settings, err := m.Recall(ctx, memoryops.RecallRequest{Key: activity.SettingsKey})
+		if err != nil {
+			return false, err
+		}
+		var cfg activity.Settings
+		if !settings.Found || json.Unmarshal([]byte(settings.Value), &cfg) != nil || cfg.Version != 1 || !cfg.Enabled {
+			return false, nil
+		}
+		return activity.Save(ctx, m, record)
+	})
+	if err != nil {
+		return true, "Beads activity durability was not confirmed; inspect bd activity status."
+	}
+	return true, ""
 }

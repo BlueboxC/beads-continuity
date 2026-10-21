@@ -5,6 +5,8 @@ package main
 import (
 	"context"
 	"fmt"
+	"github.com/steveyegge/beads/internal/eventsjournal"
+	"github.com/steveyegge/beads/memoryops"
 	"os"
 	"path/filepath"
 	"strings"
@@ -328,4 +330,8 @@ func openNonMutatingStoreFromConfig(ctx context.Context, beadsDir string, previe
 	// hard) and must not write migrations into the target's history
 	// (bd-6dnrw.32, GH#3231).
 	return embeddeddolt.OpenReadOnly(ctx, beadsDir, database, "main")
+}
+
+func withExistingActivityMemories(ctx context.Context, dir, database string, fn func(memoryops.Memories) (bool, error)) error {
+	return embeddeddolt.WithExistingMemories(ctx, dir, database, "main", embeddeddolt.MemorySessionOptions{Write: true, EventsJournalEnabled: eventsjournal.EnabledFor(dir), CommitMessage: "bd activity: observed Codex metadata"}, fn)
 }

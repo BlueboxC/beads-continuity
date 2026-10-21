@@ -213,7 +213,7 @@ func OpenForPreviewCommand(ctx context.Context, beadsDir, database, branch strin
 	return openReadOnly(ctx, beadsDir, database, branch, false)
 }
 
-func openReadOnly(ctx context.Context, beadsDir, database, branch string, checkBehind bool) (*EmbeddedDoltStore, error) {
+func existingStore(beadsDir, database, branch string) (*EmbeddedDoltStore, error) {
 	if database == "" {
 		return nil, fmt.Errorf("embeddeddolt: database name must not be empty (caller should default to %q)", "beads")
 	}
@@ -236,6 +236,16 @@ func openReadOnly(ctx context.Context, beadsDir, database, branch string, checkB
 		branch:   branch,
 		readOnly: true,
 	}
+
+	return s, nil
+}
+
+func openReadOnly(ctx context.Context, beadsDir, database, branch string, checkBehind bool) (*EmbeddedDoltStore, error) {
+	s, err := existingStore(beadsDir, database, branch)
+	if err != nil {
+		return nil, err
+	}
+	dataDir := s.dataDir
 
 	db, cleanup, err := OpenSQL(ctx, dataDir, database, branch)
 	if err != nil {

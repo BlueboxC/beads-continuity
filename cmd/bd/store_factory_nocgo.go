@@ -5,6 +5,7 @@ package main
 import (
 	"context"
 	"fmt"
+	"github.com/steveyegge/beads/memoryops"
 
 	"github.com/steveyegge/beads/internal/configfile"
 	"github.com/steveyegge/beads/internal/storage"
@@ -145,3 +146,7 @@ Three options:
        curl -fsSL https://raw.githubusercontent.com/steveyegge/beads/main/scripts/install.sh | bash
 
 See docs/getting-started/installation.md for the full comparison.`
+
+func withExistingActivityMemories(context.Context, string, string, func(memoryops.Memories) (bool, error)) error {
+	return fmt.Errorf("activity requires embedded cgo support")
+}
