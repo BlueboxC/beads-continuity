@@ -99,7 +99,7 @@ updated Go 1.26 devcontainer. The fork has no Bazel setup to transplant.
 The embedded engine keeps `driver/v2 v2.4.1`, starting from coffeegoddd's
 [upstream proposal #7254](https://github.com/gastownhall/beads/pull/7254).
 It pins Dolt v2.5.1 plus the retained storage corrections, catalog and SQL fixes at
-[BlueboxC/dolt `e5a6f33b39c1`](https://github.com/BlueboxC/dolt/commit/e5a6f33b39c16c914ad046a5f44b2095c12cc57d),
+[BlueboxC/dolt `519a6f6efce1`](https://github.com/BlueboxC/dolt/commit/519a6f6efce1e028554e7530f491508721073d14),
 with the [SQL analyzer correction](https://github.com/BlueboxC/go-mysql-server/commit/e43b463224d6f3830540d0af03b1165c381ff280) on base `239e0ad6b2f9`. The engine remains a Go dependency;
 Beads does not implement engine-specific SQL workarounds.
 
@@ -114,6 +114,11 @@ and prepared modes. They do not establish general MySQL/JSON-path compatibility.
 Native 2.4.2 backup round trips and isolated retained-data/hash/history checks are
 required for this exact tuple. Subquery unnesting also retains ordinary negated
 filters used by Graph Preview label, lifecycle and ready-work queries.
+
+SQL remote removal now saves repository state before publishing session-map
+changes, adapting elianddb's final #12153 correction. Provider/read/save failures
+retain the live remote and matching tracking entries. This preserves unrelated
+remotes and does not make concurrent or partial repository-file writes atomic.
 
 The engine supports recursive clean virtual merge bases (#12050) and matching
 ancestor primary-key projection (#12012), with normal/prepared regression scripts.
