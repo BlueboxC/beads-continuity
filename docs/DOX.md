@@ -26,6 +26,8 @@ workflows/gates.md also owns optional GitLab gate setup, glab host selection, st
 
 Remote-server troubleshooting names the actual remote host/authoritative port and stale local port file; it does not suggest starting another local database for an unreachable remote endpoint.
 
+Formula guidance distinguishes entry/exit gates and preserves task-plus-companion dependencies. Timer and gh checks start at pour time; manual resolution is not authenticated approval.
+
 ## Verification
 
 Use the affected existing checks selected in engdocs/TESTING.md; verify indexed child contracts.

@@ -27,7 +27,11 @@ import (
 
 func openMigrationPlanningStore(ctx context.Context, planningBeadsDir string, projectStore storage.DoltStorage, actor string) (storage.DoltStorage, error) {
 	if err := refuseUninitializablePlanningRepo(planningBeadsDir); err != nil {
-		return nil, err
+		var refusal *planningRepoRefusal
+		if errors.As(err, &refusal) {
+			return nil, err
+		}
+		return nil, &planningRepoRefusal{msg: fmt.Sprintf("planning repo %s: %v", filepath.Dir(planningBeadsDir), err), cause: err}
 	}
 	initialized, err := initializePlanningRepo(ctx, planningBeadsDir, projectStore)
 	if err != nil {
@@ -515,7 +519,12 @@ func unnamedPlanningDatabase(database string) string {
 	return database
 }
 
-type planningRepoRefusal struct{ msg string }
+type planningRepoRefusal struct {
+	msg   string
+	cause error
+}
+
+func (r *planningRepoRefusal) Unwrap() error { return r.cause }
 
 func (r *planningRepoRefusal) Error() string { return r.msg }
 func refusePlanningRepo(format string, args ...any) error {

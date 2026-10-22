@@ -593,3 +593,45 @@ func planningLogCountAndDirtyTables(t *testing.T, beadsDir, database string) (co
 // a planning repo whose metadata.json names a database that has not been
 // bootstrapped yet (a clone, say) is refused before anything moves, and is not
 // given a database: a migration is not the place to create one.
+
+func TestEmbeddedMigratePersonalAmbiguousTargetRefusal(t *testing.T) {
+	if os.Getenv("BEADS_TEST_EMBEDDED_DOLT") != "1" {
+		t.Skip("embedded integration opt-in")
+	}
+	bd := buildEmbeddedBD(t)
+	dir, _, _ := bdInit(t, bd, "--prefix", "source")
+	planning := setupContributorRouting(t, bd, dir)
+	issue := bdCreate(t, bd, dir, "retain source before ambiguous destination", "--actor", "migration-test", "--repo", dir)
+	beadsDir := filepath.Join(planning, ".beads")
+	other, err := embeddeddolt.Open(t.Context(), beadsDir, "other", "main")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := other.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Remove(filepath.Join(beadsDir, "metadata.json")); err != nil {
+		t.Fatal(err)
+	}
+	cmd := exec.Command(bd, "migrate-personal", "--yes", "--actor", "migration-test")
+	cmd.Dir, cmd.Env = dir, bdEnv(dir)
+	raw, err := cmd.CombinedOutput()
+	out := string(raw)
+	if err == nil {
+		t.Fatalf("ambiguous target admitted: %s", out)
+	}
+	for _, want := range []string{"Error: planning repo " + planning, "several databases"} {
+		if !strings.Contains(out, want) {
+			t.Fatalf("missing %q: %s", want, out)
+		}
+	}
+	if strings.Contains(out, "failed to open planning store") || strings.Contains(out, "Usage:") {
+		t.Fatalf("unclean preflight refusal: %s", out)
+	}
+	if !bdShowSucceeds(t, bd, dir, issue.ID) {
+		t.Fatal("source lost on preflight refusal")
+	}
+	if _, err := os.Stat(filepath.Join(beadsDir, "metadata.json")); !os.IsNotExist(err) {
+		t.Fatalf("selector changed: %v", err)
+	}
+}

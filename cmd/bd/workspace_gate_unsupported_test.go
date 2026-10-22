@@ -12,6 +12,9 @@ import (
 )
 
 func TestCommandUnsupportedGateRefuses(t *testing.T) {
+	oldJSON := jsonOutput
+	jsonOutput = false
+	t.Cleanup(func() { jsonOutput = oldJSON })
 	resetGateTestEnv(t)
 	t.Cleanup(releaseWorkspaceGates)
 	old := acquireCommandGateSet
