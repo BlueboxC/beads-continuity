@@ -20,6 +20,7 @@ import (
 	"github.com/steveyegge/beads/internal/routing"
 	"github.com/steveyegge/beads/internal/storage"
 	"github.com/steveyegge/beads/internal/storage/dolt"
+	"github.com/steveyegge/beads/internal/storage/embeddeddolt"
 	"github.com/steveyegge/beads/internal/timeparsing"
 	"github.com/steveyegge/beads/internal/types"
 	"github.com/steveyegge/beads/internal/ui"
@@ -389,6 +390,11 @@ var createCmd = &cobra.Command{
 		}
 
 		if dryRun && parentID == "" {
+			if !remotecache.IsRemoteURL(repoPath) {
+				if err := checkRepoTargetInitializable(routing.ExpandPath(repoPath), !isAmbiguousRepoTarget(cmd.Flags().Changed("repo"), repoOverride)); err != nil {
+					return HandleError("target preview: %v", err)
+				}
+			}
 			return renderDryRun()
 		}
 
@@ -1053,6 +1059,9 @@ func isAmbiguousRepoTarget(repoFlagChanged bool, repoOverride string) bool {
 func ensureBeadsDirForPath(ctx context.Context, targetPath string, sourceStore storage.DoltStorage, allowCreate bool) error {
 	beadsDir := filepath.Join(targetPath, ".beads")
 	metadataPath := filepath.Join(beadsDir, "metadata.json")
+	if _, err := configfile.LoadNativeForDiscovery(beadsDir); err != nil {
+		return err
+	}
 
 	// Check if beads directory already exists with a Dolt database.
 	// metadata.json is the canonical marker for an initialized beads dir.
@@ -1064,6 +1073,14 @@ func ensureBeadsDirForPath(ctx context.Context, targetPath string, sourceStore s
 		return fmt.Errorf("no beads workspace found at %s and --repo's value is a relative/bare path, so it won't be auto-created here (this is likely not the target you intended). Pass an absolute or \"~/\"-prefixed --repo path to an existing workspace instead", targetPath)
 	}
 
+	if err := refuseUninitializableTarget(beadsDir); err != nil {
+		return err
+	}
+	if databases := embeddeddolt.Databases(beadsDir); len(databases) == 1 {
+		return adoptTargetDatabase(ctx, beadsDir, databases[0], sourceStore, func(target storage.DoltStorage) error {
+			return refuseUncommittedTargetChanges(ctx, target, beadsDir, databases[0])
+		})
+	}
 	// Create .beads directory
 	if err := os.MkdirAll(beadsDir, 0750); err != nil {
 		return fmt.Errorf("cannot create .beads directory: %w", err)

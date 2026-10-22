@@ -24,6 +24,8 @@ Observability guidance distinguishes default process metadata from operator-supp
 Fork behavior and onboarding: core-concepts/fork-continuity.md. Detailed commands: core-concepts/knowledge.md and core-concepts/code-index.md. Generated CLI pages and upstream installation channels describe the upstream release. DOX contracts stay outside Mintlify navigation.
 workflows/gates.md also owns optional GitLab gate setup, glab host selection, strict outcomes, exact checkout discovery and fixture-only qualification limits.
 
+Remote-server troubleshooting names the actual remote host/authoritative port and stale local port file; it does not suggest starting another local database for an unreachable remote endpoint.
+
 ## Verification
 
 Use the affected existing checks selected in engdocs/TESTING.md; verify indexed child contracts.

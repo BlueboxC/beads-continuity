@@ -20,6 +20,8 @@ Codex lifecycle guidance distinguishes immediate source=compact recovery from th
 
 Copilot guidance distinguishes the owned manifest from the shared marked instructions, exact legacy migration and refusal of ambiguous markers/links.
 
+Claude plugin guidance follows per-ID setting precedence, separates personal and shared hooks, and records file-based managed-policy limits. Mux removal preserves symlink/global roots and diagnoses unused nested legacy hooks.
+
 ## Verification
 
 Use the affected existing checks selected in engdocs/TESTING.md; verify indexed child contracts.

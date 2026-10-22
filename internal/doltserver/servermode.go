@@ -101,12 +101,8 @@ func ResolveServerMode(beadsDir string) ServerMode {
 
 	// Explicit runtime ports name an externally managed endpoint. This changes
 	// lifecycle ownership, not the embedded/proxy storage selector.
-	if !strings.EqualFold(hostCfg.DoltMode, configfile.DoltModeProxiedServer) {
-		for _, name := range []string{"BEADS_DOLT_SERVER_PORT", "BEADS_DOLT_PORT"} {
-			if port, err := strconv.Atoi(os.Getenv(name)); err == nil && port > 0 && !ManagesLiveServerOnPort(beadsDir, port) {
-				return ServerModeExternal
-			}
-		}
+	if runtimePortImpliesExternal(hostCfg, beadsDir) {
+		return ServerModeExternal
 	}
 
 	// 3. Explicit embedded mode in metadata.json
@@ -151,6 +147,20 @@ type ExternalPortDeclaration struct {
 	// chose a different port than the metadata.json dolt_server_port that
 	// makes the workspace external.
 	NamesEndpoint bool
+	// PortFile is bd's port file when it chose the dialed port, Setting
+	// names another one, DeclaredPort, and removing the file moves the dial
+	// off that port (no config.yaml dolt.port or listener.port names it too).
+	// The file records the port an earlier open reached and outranks
+	// dolt_server_port, and `bd dolt set port` leaves it alone, so it is what
+	// still points bd at the old port.
+	PortFile     string
+	DeclaredPort int
+	// Sole reports, when neither NamesEndpoint nor PortFile is set, whether
+	// nothing else declares the server externally managed (ResolveServerMode
+	// checks 1, 2b and 2c: BEADS_DOLT_SERVER_MODE=1, a remote host, or a port
+	// env var naming another port), so removing Setting lets bd manage the
+	// server.
+	Sole bool
 }
 
 // ExternalPortSetting finds the setting that declares beadsDir's Dolt server
@@ -170,9 +180,13 @@ type ExternalPortDeclaration struct {
 // defaults. A port file with no pid file beside it records only the port an
 // earlier open reached (the store writes one after a successful local open),
 // and it outranks listener.port, config.yaml and dolt_server_port for the
-// dial, so its port is matched against the settings like any other. A port of
-// 0 matches any named value. The env vars are parsed as the store and check
-// 2c parse them, untrimmed, so a value neither of them reads is never named.
+// dial, so its port is matched against the settings like any other; when
+// dolt_server_port names another port, the declaration carries the file and
+// that port, since the file is what still points bd at the old one, unless a
+// config.yaml dolt.port or listener.port names the file's port too, so that
+// removing the file would not move the dial. A port of 0 matches any named
+// value. The env vars are parsed as the store and check 2c parse them,
+// untrimmed, so a value neither of them reads is never named.
 func ExternalPortSetting(beadsDir string, source PortSource, port int) ExternalPortDeclaration {
 	switch source {
 	case PortSourceUnset, PortSourceSharedServerDefault, PortSourceExternalHostDefault:
@@ -198,10 +212,39 @@ func ExternalPortSetting(beadsDir string, source PortSource, port int) ExternalP
 	if err != nil || cfg == nil || cfg.DoltServerPort <= 0 {
 		return ExternalPortDeclaration{}
 	}
-	return ExternalPortDeclaration{
+	decl := ExternalPortDeclaration{
 		Setting:       "dolt_server_port in " + metadataPath,
 		NamesEndpoint: port == 0 || cfg.DoltServerPort == port,
 	}
+	switch {
+	case decl.NamesEndpoint:
+	case source == PortSourcePortFile && portBehindPortFile(beadsDir, cfg.DoltServerPort) != port:
+		decl.PortFile, decl.DeclaredPort = portPath(beadsDir), cfg.DoltServerPort
+	default:
+		// Checks 1, 2b and 2c of resolveServerMode; keep in step with it.
+		decl.Sole = os.Getenv("BEADS_DOLT_SERVER_MODE") != "1" &&
+			!cfg.HostImpliesServerMode() && !runtimePortImpliesExternal(cfg, beadsDir)
+	}
+	return decl
+}
+
+// portBehindPortFile is the port the dial falls back to once beadsDir's port
+// file is gone: the first source after the file in portSources that resolves
+// one. metadataPort stands in for metadata.json's dolt_server_port, whose
+// source prints a deprecation warning when it resolves.
+func portBehindPortFile(beadsDir string, metadataPort int) int {
+	for _, src := range portSources {
+		switch src.source {
+		case PortSourceEnv, PortSourcePortFile:
+			continue
+		case PortSourceMetadataJSON:
+			return metadataPort
+		}
+		if p, ok := src.resolve(beadsDir); ok {
+			return p
+		}
+	}
+	return metadataPort
 }
 
 // Advice is the advice for an unreachable Dolt server at endpoint that d
@@ -209,18 +252,27 @@ func ExternalPortSetting(beadsDir string, source PortSource, port int) ExternalP
 // not start a server, in the words `bd init --external` uses (#7674), and
 // does not suggest `bd dolt start`: that command would start a server of bd's
 // own over .beads/dolt on the same port, a different database that hides the
-// real one and takes the port the real server needs.
+// real one and takes the port the real server needs. When d carries bd's port
+// file it names that file, and it says removing dolt_server_port lets bd
+// manage the server only when d is Sole.
 func (d ExternalPortDeclaration) Advice(endpoint string) string {
 	switch {
 	case d.Setting == "":
 		return ""
 	case d.NamesEndpoint:
 		return ExternallyManagedAdvice(d.Setting, endpoint)
-	default:
-		return fmt.Sprintf("%s declares this workspace's Dolt server externally managed, so bd did not start one at %s.\n"+
-			"Start that server, or point bd at the right endpoint. Removing dolt_server_port lets bd manage the server.",
-			d.Setting, endpoint)
 	}
+	advice := fmt.Sprintf("%s declares this workspace's Dolt server externally managed, so bd did not start one at %s.\n",
+		d.Setting, endpoint)
+	if d.PortFile != "" {
+		return advice + fmt.Sprintf("bd took that port from %s, which records the port an earlier command reached "+
+			"and outranks dolt_server_port (%d). Start that server, or remove that file.", d.PortFile, d.DeclaredPort)
+	}
+	advice += "Start that server, or point bd at the right endpoint."
+	if d.Sole {
+		advice += " Removing dolt_server_port lets bd manage the server."
+	}
+	return advice
 }
 
 // ExternallyManagedAdvice is the advice for a Dolt server at endpoint that bd
@@ -232,13 +284,34 @@ func ExternallyManagedAdvice(setting, endpoint string) string {
 }
 
 // UnreachableEndpointAdvice is the advice for a TCP dial of host:port, the
-// port resolved from source, that found no server: the externally managed
-// advice when a setting declares the workspace's server so (see
-// ExternalPortSetting), or "" when the caller's own advice stands. A host off
-// this machine also gets "", so the caller's own advice stands for it too.
+// port resolved from source, that found no server, or "" when the caller's own
+// advice stands. A host off this machine gets the remote-host advice
+// (GH#3518): bd starts no server there, and `bd dolt start` refuses a remote
+// host. A host on this machine gets the externally managed advice when a
+// setting declares the workspace's server so (see ExternalPortSetting).
 func UnreachableEndpointAdvice(beadsDir, host string, port int, source PortSource) string {
 	if !configfile.IsLocalHostString(host) {
-		return ""
+		return remoteServerAdvice(host, port)
 	}
 	return ExternalPortSetting(beadsDir, source, port).Advice(net.JoinHostPort(host, strconv.Itoa(port)))
+}
+
+// remoteServerAdvice is the advice for a Dolt server at host:port on another
+// machine that bd could not reach, in the words the store uses for one.
+func remoteServerAdvice(host string, port int) string {
+	return fmt.Sprintf("Verify the external server is running and reachable from this host:\n"+
+		"  nc -zv %s %d  # or curl %s:%d for an HTTP-style check", host, port, host, port)
+}
+
+// Keep endpoint advice aligned with lifecycle ownership, including owned live ports.
+func runtimePortImpliesExternal(cfg *configfile.Config, beadsDir string) bool {
+	if strings.EqualFold(cfg.DoltMode, configfile.DoltModeProxiedServer) {
+		return false
+	}
+	for _, name := range []string{"BEADS_DOLT_SERVER_PORT", "BEADS_DOLT_PORT"} {
+		if port, err := strconv.Atoi(os.Getenv(name)); err == nil && port > 0 && !ManagesLiveServerOnPort(beadsDir, port) {
+			return true
+		}
+	}
+	return false
 }

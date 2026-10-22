@@ -15,7 +15,8 @@ var errRefuseSymlinkWrite = errors.New("refusing to write through symlink")
 // This prevents race conditions when multiple processes write to the same file.
 // If path is a symlink, the write is refused; callers that deliberately want
 // write-through behavior should use atomicWriteFileFollowingSymlink.
-// An optional permissions argument sets the file mode (default 0644).
+// An explicit permission argument wins. Otherwise retain an existing target's
+// permission bits; a new file gets 0644.
 //
 //nolint:unparam // perm is intentionally variadic for callers that need non-default permissions
 func atomicWriteFile(path string, data []byte, perm ...os.FileMode) error {
@@ -31,14 +32,18 @@ func atomicWriteFile(path string, data []byte, perm ...os.FileMode) error {
 // atomicWriteFileFollowingSymlink writes atomically to the resolved target.
 // Keep this helper named at call sites so symlink write-through is explicit.
 func atomicWriteFileFollowingSymlink(path string, data []byte, perm ...os.FileMode) error {
-	mode := os.FileMode(0644)
-	if len(perm) > 0 {
-		mode = perm[0]
-	}
-
 	targetPath, err := utils.ResolveForWrite(path)
 	if err != nil {
 		return fmt.Errorf("resolve path: %w", err)
+	}
+
+	mode := os.FileMode(0644)
+	if len(perm) > 0 {
+		mode = perm[0]
+	} else if info, err := os.Stat(targetPath); err == nil {
+		mode = info.Mode().Perm()
+	} else if !os.IsNotExist(err) {
+		return fmt.Errorf("inspect path: %w", err)
 	}
 
 	dir := filepath.Dir(targetPath)

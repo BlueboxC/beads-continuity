@@ -29,6 +29,8 @@ Root DOX.md and the parent chain remain binding.
 
 - A TCP open without any resolved port reports the missing endpoint separately from a failed connection; socket and explicit-port paths retain existing diagnostics. Do not suggest a fresh database as reconnection. An unreachable named externally managed port identifies its declaring setting and never recommends starting a different local server; preserve owned/shared-server advice and the underlying dial error.
 
+- Dependency readers/counts retain each far end once across durable and optional wisp planes. Durable edge type wins, while dual-resident issue bodies follow existing wisp hydration. Only a typed missing optional wisp table reads as empty; propagate required-table and other read errors. Server iteration shares one read transaction across its joins.
+
 ## Work Guidance
 
 Metadata field conversion delegates to shared issueops parsing; YAML numeric types, enum fallback and adapter-specific warning/error modes remain unchanged.

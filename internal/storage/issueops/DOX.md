@@ -27,6 +27,8 @@ Root DOX.md and the parent chain remain binding.
 
 - Multi-edge creates read parent ancestry once inside their transaction, after all accepted parent edges. Preserve both dependency planes, hierarchy/cycle refusals, cancellation and upsert-only behavior; ordinary single-edge checks keep their targeted query. This removes repeated ancestry SQL, not all per-edge persistence or cycle checks.
 
+- Dependency readers/counts retain each far end once across durable and optional wisp planes. Durable edge type wins, while dual-resident issue bodies follow existing wisp hydration. Only a typed missing optional wisp table reads as empty; propagate required-table and other read errors. Server iteration shares one read transaction across its joins.
+
 ## Work Guidance
 
 Preserve issue semantics across supported storage adapters and shared conformance tests.

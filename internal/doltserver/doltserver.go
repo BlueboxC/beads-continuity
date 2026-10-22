@@ -939,18 +939,6 @@ func DefaultConfig(beadsDir string) *Config {
 			}
 		}
 		if !configfile.IsLocalHostString(fc.GetDoltServerHost()) {
-			// The legacy BEADS_DOLT_PORT override is not in
-			// portSources but the storage layer honors it ahead of
-			// persisted sources; resolve it the same way here so
-			// credentials/probes and the eventual connection agree
-			// on the port. BEADS_DOLT_SERVER_PORT (PortSourceEnv)
-			// still wins over the legacy spelling.
-			if cfg.PortSource != PortSourceEnv {
-				if p, err := strconv.Atoi(strings.TrimSpace(os.Getenv("BEADS_DOLT_PORT"))); err == nil && p > 0 {
-					cfg.Port = p
-					cfg.PortSource = PortSourceEnv
-				}
-			}
 			// The gitignored port file is bd's bookkeeping for a
 			// bd-owned LOCAL server; pairing it with a remote host
 			// dials the remote machine on a stale local ephemeral
@@ -972,6 +960,7 @@ func DefaultConfig(beadsDir string) *Config {
 					}
 				}
 			}
+			applyLegacyPortEnv(cfg)
 			// With no configured port, dial the documented default
 			// 3307, not :0 — there is no local Start() to allocate
 			// an ephemeral port for a remote server.
@@ -2157,10 +2146,16 @@ func IsPreV56DoltDir(doltDir string) bool {
 // DialConfig matches the actual legacy-port precedence used by the store.
 func DialConfig(beadsDir string) *Config {
 	cfg := DefaultConfig(beadsDir)
-	if os.Getenv("BEADS_DOLT_SERVER_PORT") == "" && !cfg.PortSource.IsAuthoritative() {
-		if p, err := strconv.Atoi(os.Getenv("BEADS_DOLT_PORT")); err == nil && p > 0 {
-			cfg.Port, cfg.PortSource = p, PortSourceEnv
-		}
-	}
+	applyLegacyPortEnv(cfg)
 	return cfg
+}
+
+// Legacy port spelling fills only an unclaimed endpoint and retains strict parsing.
+func applyLegacyPortEnv(cfg *Config) {
+	if os.Getenv("BEADS_DOLT_SERVER_PORT") != "" || cfg.PortSource.IsAuthoritative() {
+		return
+	}
+	if p, err := strconv.Atoi(os.Getenv("BEADS_DOLT_PORT")); err == nil && p > 0 {
+		cfg.Port, cfg.PortSource = p, PortSourceEnv
+	}
 }

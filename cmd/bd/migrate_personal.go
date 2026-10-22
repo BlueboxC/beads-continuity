@@ -103,6 +103,10 @@ func refuseUninitializablePlanningRepo(planningBeadsDir string) error {
 	if _, err := os.Stat(filepath.Join(planningBeadsDir, "metadata.json")); err == nil {
 		return nil
 	}
+	if err := refuseUninitializableTarget(planningBeadsDir); err != nil {
+		return err
+	}
+
 	if err := guardLegacyUpgradeWorkspace(planningBeadsDir); err != nil {
 		return err
 	}
@@ -133,30 +137,9 @@ func initializePlanningRepo(ctx context.Context, planningBeadsDir string, projec
 }
 
 func adoptPlanningDatabase(ctx context.Context, planningBeadsDir, database string, projectStore storage.DoltStorage) error {
-	planningStore, err := newDoltStore(ctx, &dolt.Config{BeadsDir: planningBeadsDir, Database: database})
-	if err != nil {
-		return fmt.Errorf("failed to open planning database %q: %w", database, err)
-	}
-	var projectID string
-	err = refuseUncommittedPlanningChanges(ctx, planningStore, filepath.Dir(planningBeadsDir))
-	if err == nil {
-		projectID, err = planningDatabaseSettings(ctx, planningStore, projectStore)
-	}
-	if closeErr := planningStore.Close(); err == nil {
-		err = closeErr
-	}
-	if err != nil {
-		return err
-	}
-	cfg := configfile.DefaultConfig()
-	cfg.Backend = configfile.BackendDolt
-	cfg.DoltDatabase = database
-	cfg.DoltMode = configfile.DoltModeEmbedded
-	cfg.ProjectID = projectID
-	if err := cfg.Save(planningBeadsDir); err != nil {
-		return fmt.Errorf("failed to write metadata.json: %w", err)
-	}
-	return nil
+	return adoptTargetDatabase(ctx, planningBeadsDir, database, projectStore, func(target storage.DoltStorage) error {
+		return refuseUncommittedPlanningChanges(ctx, target, filepath.Dir(planningBeadsDir))
+	})
 }
 
 func planningDatabaseSettings(ctx context.Context, planningStore, projectStore storage.DoltStorage) (string, error) {
@@ -164,7 +147,7 @@ func planningDatabaseSettings(ctx context.Context, planningStore, projectStore s
 	if err != nil {
 		return "", fmt.Errorf("failed to read the planning database's issue_prefix: %w", err)
 	}
-	if prefix == "" {
+	if prefix == "" && projectStore != nil {
 		if projectPrefix, err := projectStore.GetConfig(ctx, "issue_prefix"); err == nil && projectPrefix != "" {
 			if err := planningStore.SetConfig(ctx, "issue_prefix", projectPrefix); err != nil {
 				return "", fmt.Errorf("failed to set prefix in planning store: %w", err)

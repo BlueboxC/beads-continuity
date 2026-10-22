@@ -32,6 +32,7 @@ Root DOX.md and the parent chain remain binding.
 - Query lexing decodes UTF-8 while retaining byte offsets and whole-rune backup. Quoted strings preserve consumed bytes, including invalid UTF-8 and unknown escaped bytes; invalid bytes outside quotes are rejected. Numbers and durations use ASCII digits; identifiers allow combining marks after their first character. Literal NUL is rejected, including inside quotes, and is distinct from EOF.
 
 - Metadata-only fallback port discovery reads legacy configuration without migrating it. Diagnostic dialing honors the actual legacy-port precedence. Named runtime ports declare an external lifecycle unless the exact endpoint has a live workspace-owned server; explicit external/shared/remote declarations remain authoritative. This does not change the embedded/proxy storage selector.
+- Native target and artifact discovery reads metadata without migration and refuses graph markers, non-native modes and unreadable metadata. Target YAML settings honor the local layer only beside a project config; null/commented-out settings fall through while malformed or unreadable values refuse.
 
 - Strict readonly shared workspace gates open files read-only; absent ordinary gates yield empty handles without creation. Existing-only proxy/Graph Preview gates still refuse absent files. Existing gates exclude maintenance, empty handles release safely, and exclusive callers retain creation.
 
@@ -44,6 +45,8 @@ Root DOX.md and the parent chain remain binding.
 - Shared user-level agent templates apply only in initialized Beads repositories and retain the fork conservative authority profile. Project templates keep their existing wording.
 
 - Successful tracker pulls record the hash of the imported representation with the assigned local ID, after the issue write. Dry runs and failed writes do not advance this push baseline. Cache and issue writes remain separate, rather than crash-atomic.
+
+- Remote Dolt endpoints discard local bookkeeping ports, preserve authoritative configured ports over the legacy environment spelling, and use strict legacy parsing. Advice names remote hosts and the specific stale port file; only the sole external declaration suggests returning to managed mode.
 
 ## Work Guidance
 

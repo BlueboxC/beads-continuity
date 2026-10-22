@@ -161,6 +161,8 @@ github.com/AzureAD/microsoft-authentication-library-for-go v1.6.0 h1:XRzhVemXdgv
 github.com/AzureAD/microsoft-authentication-library-for-go v1.6.0/go.mod h1:HKpQxkWaGLJ+D/5H8QRpyQXA1eKjxkFlOMwck5+33Jk=
 github.com/BlueboxC/dolt/go v0.0.0-20261022082354-109f7b19f66a h1:OJOLc1gJprpM8CJaL7hXVkkDm8VvOoFUVXfE0R65eC4=
 github.com/BlueboxC/dolt/go v0.0.0-20261022082354-109f7b19f66a/go.mod h1:cvC/B3YeH/R66C7EUAqqZkTteCTe5/HAD1D4IXYV1Rk=
+github.com/BlueboxC/dolt/go v0.0.0-20261022100001-cdcab16c659e h1:yaoyB1Np9fS5ZpBedSK64o5lmmzg1v5Ajw4ZdNdsS0o=
+github.com/BlueboxC/dolt/go v0.0.0-20261022100001-cdcab16c659e/go.mod h1:cvC/B3YeH/R66C7EUAqqZkTteCTe5/HAD1D4IXYV1Rk=
 github.com/BlueboxC/go-mysql-server v0.0.0-20261022082133-6071a7f383ba h1:YrsSH89QhVLcLCJuqqc2qvP285pokN/mQF2nUvG3Xwg=
 github.com/BlueboxC/go-mysql-server v0.0.0-20261022082133-6071a7f383ba/go.mod h1:HRYEDIMEmcFhEjdrRnEwCiWFbdTMUxyjEI9Swn2Pmvc=
 github.com/BurntSushi/toml v0.3.1/go.mod h1:xHWCNGjB5oqiDr8zfno3MHue2Ht5sIBksp03qcyfWMU=

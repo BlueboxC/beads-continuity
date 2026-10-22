@@ -349,3 +349,15 @@ Native `prime` reads the non-code memory plane and the existing code-summary man
 ## Full-Text filter qualification
 
 Ordinary equality and IS NULL predicates on a Full-Text column reproduced analyzer errors with the official Dolt 2.5.1 engine/analyzer pair and the previous fork tuple. The pinned analyzer now costs a Full-Text lookup only for a MATCH bound to that index. Other AND predicates remain residual, ordinary indexes cannot consume MATCH, and incomplete OR lookups fall back. Four keyed/keyless fixtures with optional same-column ordinary indexes exercise twenty predicates in normal and prepared mode in both the analyzer and native Dolt engines. Existing view, merge, Full-Text rebuild, NULL and duplicate-preservation controls remain. This does not imply a general MySQL-compatibility claim.
+
+### Prioritized upstream adaptations (2026-10-22)
+
+The fork carries the verified behavior from Beads #7763 (existing file permission preservation), #7771 (metadata-less native target adoption), #7766 (passive doctor scanning), #7776/#7777 and #3445 (optional wisp planes and distinct dependencies), #7774 (Claude plugin precedence), #7762 (Mux link preservation) and #7767 (remote endpoint resolution). Contributor attribution and reviewed heads are recorded in the corresponding upstream comments. These are adapted changes rather than a blanket merge of the newer upstream tree.
+
+Shared native discovery refuses Graph/future formats and corrupt nested metadata without migrations. Routed adoption reuses personal-migration prefix and dirty-state checks before metadata publication. Dependency counts use SQL from #7776; server streaming uses the single-read-transaction joins from #7777. Keep native Graph knowledge, retained Issue history, code indexes, supervised learning, separate DOX guidance and operator lifecycle customizations. Graph Claude setup retains its conservative provider refusal and separate Stop reminder, while ordinary setup follows effective plugin precedence. No hook/trust configuration is changed by installing the binary.
+
+Qualification includes focused red/green regressions, native embedded plane-state matrices, full setup/doctor packages, the required complete Go and lint lanes, the updated Dolt tuple and isolated backup/history readbacks. Remote service tests distinguish synthetic listeners from a live external deployment; upstream issue closure remains a maintainer decision.
+
+Credit: @julianknutsen (#7762/#7763/#7766/#7767/#7771/#7774); #7776/#7777 provide overlapping dependency-reader proposals, combined without duplicating their implementations. Dolt engine is pinned to BlueboxC/dolt `cdcab16c659e11048a481356b52e28b15824695f`; the existing analyzer and driver remain pinned separately.
+
+Reviewed proposal heads: #7763 `bae4b94ae47c` (@julianknutsen), #7771 `71ed342c5c14` (@julianknutsen), #7766 `20266f6db11f` (@julianknutsen), #7774 `8e4cdc032448` (@julianknutsen), #7762 `142b334281e0` (@julianknutsen), #7767 `02323e128482` (@julianknutsen), #7776 `51c79cf1ccb5` (@gascity-eddie[bot]), #7777 `ce45fb53c6de` (@gascity-eddie[bot]).

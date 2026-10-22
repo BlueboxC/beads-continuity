@@ -13,10 +13,14 @@ Client configuration, skills, hooks and managed instruction sections.
 Root DOX.md and the parent chain remain binding.
 
 - Shared recipe paths manage only one complete marked integration section. Copilot instructions preserve outside bytes and existing permissions on install/update/remove; migrate only exact legacy templates. Refuse duplicate, nested, incomplete or inline markers and symlink/non-regular shared files; check distinguishes user-only content from installation. The plugin manifest remains owned by Beads.
+- Shared atomic writes preserve the resolved target's permission bits unless the caller explicitly supplies a mode. New files retain the 0644 default; target-inspection failures refuse before publication. Keep ordinary symlink refusal and deliberate write-through distinct.
 
 - Global Claude/Gemini/Mux instructions use fixed repository-conditional wording without project scaffolding. Claude plugin detection follows the requested user/project/local scope. Home and client-directory aliases resolve consistently for check/remove; global Claude/Gemini setup does not rewrite project instructions. Gemini places its managed section ahead of legacy saved memories, preserving caught entries and all outside whitespace. Project/Codex/Graph Preview guidance retains its existing authority and paths.
 
 - Explicit graph Claude setup manages one project-local Stop reminder with bounded transcript markers and graph-profile guidance. Preserve unrelated instructions/settings. No global Codex configuration or trust changes are part of Graph Preview installation.
+
+- Classic Claude plugin enablement resolves each plugin ID through managed, root-local, directory-local, project and user settings in precedence order. Preserve teammates’ shared hooks when a personal override disables the plugin; global installation uses only global providers. Graph setup retains its conservative refusal of any declared provider and its separate Stop reminder.
+- Mux removal preserves symlinked .mux roots, the global root and directories where no owned hook was removed. Report unused legacy ~/.mux/.mux hooks without adopting or deleting them.
 
 ## Work Guidance
 

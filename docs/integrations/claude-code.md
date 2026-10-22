@@ -25,7 +25,7 @@ bd setup claude --stealth  # Stealth mode: flush only, no git operations
 bd setup claude --remove   # Remove the hook and the CLAUDE.md section
 ```
 
-If the [beads plugin](/integrations/claude-code-plugin) is enabled, `bd setup claude` skips writing hooks - the plugin provides its own, and duplicates would run `bd prime` twice per session. `--global` skips them only when the plugin is enabled in your user settings (`~/.claude/settings.json`): a plugin enabled in a project's `.claude/settings.json` or `.claude/settings.local.json` runs in that project only.
+If the [beads plugin](/integrations/claude-code-plugin) provides hooks, setup avoids adding duplicate `bd prime` hooks. Each plugin ID follows file-based managed settings, repository-root local settings, directory-local settings, project settings, then user settings; a narrower `false` overrides a lower `true`. `--global` considers managed and user providers only. A personal override does not remove teammates’ shared hooks. File-based policy detection cannot observe server-managed or MDM policy. Explicit Graph setup retains its separate conservative provider checks and Stop reminder.
 
 ### Manual Setup
 

@@ -103,7 +103,7 @@ func graphClaudeStopMode(env claudeEnv, check, remove, preflight bool) error {
 				return err
 			}
 		}
-		if hasBeadsPlugin(env, false) {
+		if graphClaudeHasAnyPlugin(env) {
 			return graphClaudePluginRefusal(env)
 		}
 		for _, existing := range []string{path, globalSettingsPath(env.homeDir), legacyProjectSettingsPath(env.projectDir)} {
@@ -173,7 +173,7 @@ func graphClaudeStopMode(env claudeEnv, check, remove, preflight bool) error {
 	return nil
 }
 
-// Graph setup retains existing private file modes; ordinary setup is unchanged.
+// Graph setup also refuses non-regular settings before the shared atomic write.
 func graphClaudeWritePreservingMode(path string, data []byte) error {
 	mode := os.FileMode(0644)
 	if info, err := os.Lstat(path); err == nil {
@@ -214,13 +214,21 @@ func graphClaudeSettings(env claudeEnv, path string) (map[string]interface{}, bo
 	return settings, true, nil
 }
 
-// graphClaudePluginRefusal names every settings file that enables the Beads
-// plugin. hasBeadsPlugin reports the plugin when ANY of these files enables
-// it, so a false entry in one file does not override another file's true
-// entry: advice to disable it "for this project" alone would be a dead end.
+// Graph setup conservatively refuses any declared Beads plugin provider;
+// classic setup separately follows effective per-plugin precedence.
+func graphClaudeHasAnyPlugin(env claudeEnv) bool {
+	for _, path := range claudePluginSettingsPaths(env, false) {
+		if checkBeadsPluginInFile(env.readFile, path) {
+			return true
+		}
+	}
+	return false
+}
+
+// graphClaudePluginRefusal names the providers that must be removed for graph setup.
 func graphClaudePluginRefusal(env claudeEnv) error {
 	var enabling []string
-	for _, candidate := range []string{projectSettingsPath(env.projectDir), globalSettingsPath(env.homeDir), legacyProjectSettingsPath(env.projectDir)} {
+	for _, candidate := range append([]string{projectSettingsPath(env.projectDir), globalSettingsPath(env.homeDir), legacyProjectSettingsPath(env.projectDir)}, append(claudeManagedSettingsPaths(env.managedDir), rootLocalSettingsPath(env))...) {
 		if checkBeadsPluginInFile(env.readFile, candidate) {
 			enabling = append(enabling, candidate)
 		}

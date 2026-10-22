@@ -119,6 +119,7 @@ Root DOX.md and the parent chain remain binding.
 - Native Codex activity validates settings, retry identity and event persistence within one existing memory transaction/engine acquisition. Preserve project enablement, original events, normal hook trust, budgets and refusal paths; Graph Preview retains its existing route. This reduces contention without disabling capture or adding a queue/service.
 
 ## Work Guidance
+- Routed create adopts a sole metadata-less native database, retaining its prefix and project identity. Refuse ambiguous databases, dirty working sets under committing policy, non-embedded target settings and graph formats before writing selectors. Personal migration shares the guarded adoption; dry-run checks target admission without initialization.
 
 - Metadata JSON inputs are bounded at 4 MiB for inline and `@file` forms, independently of the 1 MiB graph body/property inputs. Refuse oversize or invalid input before mutation; preserve revision guards and retained versions. Graph status advertises the metadata input budget. Complete graph acquisition retains its separate 16 MiB bound.
 

@@ -263,18 +263,9 @@ when the configured server is down.
 the server as externally managed and intentionally disables auto-start —
 spawning a different server would create a shadow database.
 
-**Fix:**
+**Fix:** Start the configured external server with its actual data directory and authoritative host/port, or correct that endpoint in the workspace configuration. `bd dolt start` does not manage a remote or explicitly external server. Remote diagnostics name the host to check.
 
-```bash
-# Start your configured Dolt server
-bd dolt start
-
-# Or start manually with the correct data directory
-dolt sql-server --host 127.0.0.1 --port 3307 --data-dir /path/to/your/dolt/data
-```
-
-If you want auto-start behavior, remove `dolt_server_port` from
-`.beads/metadata.json`.
+If a stale `.beads/dolt-server.port` still selects an old local endpoint, the error identifies that file and the configured fallback port. Remove only the stale file after confirming its ownership. Removing `dolt_server_port` permits managed startup only when no other setting declares an external server.
 
 ### Port conflicts with multiple projects
 

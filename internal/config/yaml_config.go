@@ -383,11 +383,34 @@ func WorkspaceYamlValue(beadsDir, key string) (string, bool) {
 // without conflating a malformed or unreadable file with an absent key. A
 // missing file or key returns present=false and no error; all other I/O and
 // YAML shape errors are returned to the caller.
-func WorkspaceYamlValueStrict(beadsDir, key string) (value string, present bool, err error) {
+func WorkspaceYamlValueStrict(beadsDir, key string) (string, bool, error) {
 	if beadsDir == "" {
 		return "", false, nil
 	}
-	data, err := os.ReadFile(filepath.Join(beadsDir, "config.yaml")) //nolint:gosec // beadsDir is caller-resolved workspace state
+	return workspaceYamlSettingAtPath(filepath.Join(beadsDir, "config.yaml"), key, false)
+}
+
+// WorkspaceYamlSettingWithLocal matches local-over-project settings, treating
+// commented-out/null values as unset while preserving real read/shape errors.
+func WorkspaceYamlSettingWithLocal(beadsDir, key string) (string, bool, error) {
+	if beadsDir == "" {
+		return "", false, nil
+	}
+	names := []string{"config.local.yaml", "config.yaml"}
+	if _, err := os.Stat(filepath.Join(beadsDir, "config.yaml")); err != nil {
+		names = names[1:]
+	}
+	for _, name := range names {
+		value, present, err := workspaceYamlSettingAtPath(filepath.Join(beadsDir, name), key, true)
+		if err != nil || present {
+			return value, present, err
+		}
+	}
+	return "", false, nil
+}
+
+func workspaceYamlSettingAtPath(path, key string, nullIsUnset bool) (string, bool, error) {
+	data, err := os.ReadFile(path) //nolint:gosec // beadsDir is caller-resolved workspace state
 	if os.IsNotExist(err) {
 		return "", false, nil
 	}
@@ -401,7 +424,7 @@ func WorkspaceYamlValueStrict(beadsDir, key string) (value string, present bool,
 	if root == nil {
 		return "", false, nil
 	}
-	if raw, ok := root[key]; ok {
+	if raw, ok := root[key]; ok && (raw != nil || !nullIsUnset) {
 		value, err := strictYamlScalarString(raw)
 		if err != nil {
 			return "", true, err
@@ -416,7 +439,7 @@ func WorkspaceYamlValueStrict(beadsDir, key string) (value string, present bool,
 			return "", true, fmt.Errorf("workspace config key %q has a non-map parent", key)
 		}
 		node, ok = m[part]
-		if !ok {
+		if !ok || (node == nil && nullIsUnset) {
 			return "", false, nil
 		}
 		if i == len(parts)-1 {
