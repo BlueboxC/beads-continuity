@@ -118,6 +118,12 @@ Root DOX.md and the parent chain remain binding.
 
 - Native Codex activity validates settings, retry identity and event persistence within one existing memory transaction/engine acquisition. Preserve project enablement, original events, normal hook trust, budgets and refusal paths; Graph Preview retains its existing route. This reduces contention without disabling capture or adding a queue/service.
 
+- A formula step declared `type=gate` with a Gate block is preparation for its companion exit gate: the task blocks the companion, and downstream references wait for both. Ordinary Gate blocks remain entry gates. Preserve typed await fields and human-resolution policy; do not rewrite stored formulas or edges implicitly.
+
+- Personal migration refusals identify the target and remedy without a usage dump. Dirty unnamed databases require their selector before commit; indeterminate commits retain both copies and name their issue IDs. Keep native-only routing and original destination authority.
+
+- Commands reject typed unsupported-lock errors before their generic shared-gate fallback. Readonly/proxy admission and maintenance remain conservative; preserve unrelated resolver-error behavior.
+
 ## Work Guidance
 - Routed create adopts a sole metadata-less native database, retaining its prefix and project identity. Refuse ambiguous databases, dirty working sets under committing policy, non-embedded target settings and graph formats before writing selectors. Personal migration shares the guarded adoption; dry-run checks target admission without initialization.
 

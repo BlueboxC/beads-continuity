@@ -55,10 +55,10 @@ func settlePlanningWorkingSet(ctx context.Context, planningStore storage.DoltSto
 			return fmt.Errorf("failed to commit the planning repo's initialization: %w", err)
 		}
 	}
-	return refuseUncommittedPlanningChanges(ctx, planningStore, planningRepo)
+	return refuseUncommittedPlanningChanges(ctx, planningStore, planningRepo, "")
 }
 
-func refuseUncommittedPlanningChanges(ctx context.Context, planningStore storage.DoltStorage, planningRepo string) error {
+func refuseUncommittedPlanningChanges(ctx context.Context, planningStore storage.DoltStorage, planningRepo, unnamedDatabase string) error {
 	commits, err := commitsPlanningWrites(planningStore)
 	if err != nil || !commits {
 		return err
@@ -75,7 +75,11 @@ func refuseUncommittedPlanningChanges(ctx context.Context, planningStore storage
 		return nil
 	}
 	slices.Sort(tables)
-	return fmt.Errorf("planning repo %s has uncommitted changes (%s), which migrate-personal's commit would publish; commit them there with `bd dolt commit`, then rerun; nothing was moved", planningRepo, strings.Join(slices.Compact(tables), ", "))
+	remedy := "commit them there with `bd dolt commit`, then rerun"
+	if unnamedDatabase != "" {
+		remedy = fmt.Sprintf("bd run there opens the database %[1]q only once a metadata.json names it, so give it a .beads/metadata.json whose dolt_database is %[1]q, commit them there with `bd dolt commit`, then rerun", unnamedDatabase)
+	}
+	return refusePlanningRepo("planning repo %s has uncommitted changes (%s), which migrate-personal's commit would publish; %s; nothing was moved", planningRepo, strings.Join(slices.Compact(tables), ", "), remedy)
 }
 
 func refuseUninitializablePlanningRepo(planningBeadsDir string) error {
@@ -111,7 +115,7 @@ func refuseUninitializablePlanningRepo(planningBeadsDir string) error {
 		return err
 	}
 	if databases := embeddeddolt.Databases(planningBeadsDir); len(databases) > 1 {
-		return fmt.Errorf("planning repo %s has no metadata.json and holds several databases (%s); give it a metadata.json whose dolt_database names the one to use, then rerun", filepath.Dir(planningBeadsDir), strings.Join(databases, ", "))
+		return refusePlanningRepo("planning repo %s has no metadata.json and holds several databases (%s); give it a metadata.json whose dolt_database names the one to use, then rerun", filepath.Dir(planningBeadsDir), strings.Join(databases, ", "))
 	}
 	return nil
 }
@@ -120,10 +124,10 @@ func redirectedPlanningRepoError(planningBeadsDir, target, stubDatabase string) 
 	planningRepo, targetRepo := filepath.Dir(planningBeadsDir), filepath.Dir(target)
 	if stubDatabase != "" {
 		if targetDatabase, err := migrationTargetDatabase(target, true); err != nil || targetDatabase != stubDatabase {
-			return fmt.Errorf("planning repo %s redirects to %s, where bd uses the database %q that the planning repo names; routing.contributor cannot select that database (set to %s, it selects that repository's own)", planningRepo, targetRepo, stubDatabase, targetRepo)
+			return refusePlanningRepo("planning repo %s redirects to %s, where bd uses the database %q that the planning repo names; routing.contributor cannot select that database (set to %s, it selects that repository's own); set routing.contributor to a separate planning repository (e.g. ~/.beads-planning)", planningRepo, targetRepo, stubDatabase, targetRepo)
 		}
 	}
-	return fmt.Errorf("planning repo %s redirects to %s; set routing.contributor to that repository instead", planningRepo, targetRepo)
+	return refusePlanningRepo("planning repo %s redirects to %s; set routing.contributor to that repository instead", planningRepo, targetRepo)
 }
 
 func initializePlanningRepo(ctx context.Context, planningBeadsDir string, projectStore storage.DoltStorage) (bool, error) {
@@ -138,7 +142,7 @@ func initializePlanningRepo(ctx context.Context, planningBeadsDir string, projec
 
 func adoptPlanningDatabase(ctx context.Context, planningBeadsDir, database string, projectStore storage.DoltStorage) error {
 	return adoptTargetDatabase(ctx, planningBeadsDir, database, projectStore, func(target storage.DoltStorage) error {
-		return refuseUncommittedPlanningChanges(ctx, target, filepath.Dir(planningBeadsDir))
+		return refuseUncommittedPlanningChanges(ctx, target, filepath.Dir(planningBeadsDir), unnamedPlanningDatabase(database))
 	})
 }
 
@@ -168,17 +172,32 @@ func refuseSelfPlanningRepo(planningPath, planningBeadsDir, projectBeadsDir stri
 	if projectBeadsDir == "" {
 		return nil
 	}
-	planning := utils.CanonicalizePath(beads.FollowRedirect(planningBeadsDir))
+	redirect := beads.ResolveRedirect(planningBeadsDir)
+	planning := utils.CanonicalizePath(redirect.TargetDir)
 	project := utils.CanonicalizePath(beads.FollowRedirect(projectBeadsDir))
-	same := planning == project
-	if !same {
-		planningCfg, perr := configfile.LoadForDiscovery(planning)
-		projectCfg, qerr := configfile.LoadForDiscovery(project)
-		same = perr == nil && qerr == nil && planningCfg != nil && projectCfg != nil &&
-			planningCfg.ProjectID != "" && planningCfg.ProjectID == projectCfg.ProjectID
-	}
-	if same {
+	// LoadForDiscovery, not Load: Load migrates a legacy config.json to
+	// metadata.json, and this check runs before the confirmation prompt and
+	// before any format admission, so it must not rewrite either workspace.
+	projectCfg, qerr := configfile.LoadForDiscovery(project)
+	if planning == project {
+		// The database the project's store opened: BEADS_DOLT_SERVER_DATABASE,
+		// which preserveRedirectSourceDatabase sets for a launch through a
+		// redirect, outranks the shared metadata.json (GetDoltDatabase).
+		projectDatabase := configfile.DefaultConfig().GetDoltDatabase()
+		if qerr == nil && projectCfg != nil {
+			projectDatabase = projectCfg.GetDoltDatabase()
+		}
+		if redirect.WasRedirected && redirect.SourceDatabase != "" && redirect.SourceDatabase != projectDatabase {
+			// Refused here, before the confirmation prompt, rather than by
+			// refuseUninitializablePlanningRepo after it.
+			return redirectedPlanningRepoError(planningBeadsDir, redirect.TargetDir, redirect.SourceDatabase)
+		}
 		return fmt.Errorf("planning repo %s is this project's own workspace; set routing.contributor to a separate planning repository (e.g. ~/.beads-planning)", planningPath)
+	}
+	planningCfg, perr := configfile.LoadForDiscovery(planning)
+	if perr == nil && qerr == nil && planningCfg != nil && projectCfg != nil &&
+		planningCfg.ProjectID != "" && planningCfg.ProjectID == projectCfg.ProjectID {
+		return fmt.Errorf("planning repo %s has this project's project_id (%s), so it is a clone of this project's workspace, not a separate planning repository; set routing.contributor to a separate planning repository (e.g. ~/.beads-planning)", planningPath, planningCfg.ProjectID)
 	}
 	return nil
 }
@@ -200,8 +219,10 @@ The command:
 EXAMPLES:
   bd migrate-personal        # Interactive: show list and prompt
   bd migrate-personal -y     # Non-interactive: skip confirmation`,
-	GroupID: "setup",
-	RunE:    runMigratePersonal,
+	GroupID:       "setup",
+	SilenceUsage:  true,
+	SilenceErrors: true,
+	RunE:          runMigratePersonal,
 }
 
 var migratePersonalYes bool
@@ -269,7 +290,7 @@ func runMigratePersonal(cmd *cobra.Command, args []string) error {
 
 	planningStore, err := openMigrationPlanningStore(ctx, planningBeadsDir, store, identity)
 	if err != nil {
-		return fmt.Errorf("failed to open planning store at %s: %w", planningPath, err)
+		return planningOpenError(planningPath, err)
 	}
 	defer func() { _ = planningStore.Close() }()
 
@@ -375,7 +396,7 @@ func copyIssuesToPlanning(ctx context.Context, src, dst storage.DoltStorage, per
 	err := commitPlanningWrites(ctx, dst, formatDoltAutoCommitMessage("migrate-personal", actor, created))
 	switch {
 	case errors.Is(err, storage.ErrCommitIndeterminate):
-		return nil, fmt.Errorf("committing the copy in the planning repo may have failed: %w; the copy is left there and nothing was deleted from the project DB, so run `bd dolt commit` in the planning repo, then resolve the duplicate manually", err)
+		return nil, fmt.Errorf("committing the copy in the planning repo may have failed: %w; the copy of %s is left there and nothing was deleted from the project DB, so run `bd dolt commit` in the planning repo, then resolve the duplicates manually", err, strings.Join(created, ", "))
 	case err != nil:
 		return rollback(fmt.Errorf("failed to commit the copy in the planning repo: %w", err))
 	}
@@ -485,4 +506,25 @@ func openMigrationTargetStore(ctx context.Context, beadsDir, database string, _ 
 		return nil, fmt.Errorf("planning database %q is missing in %s; run bd bootstrap there first", database, beadsDir)
 	}
 	return newDoltStore(ctx, &dolt.Config{BeadsDir: beadsDir, Database: database})
+}
+
+func unnamedPlanningDatabase(database string) string {
+	if database == configfile.DefaultDoltDatabase {
+		return ""
+	}
+	return database
+}
+
+type planningRepoRefusal struct{ msg string }
+
+func (r *planningRepoRefusal) Error() string { return r.msg }
+func refusePlanningRepo(format string, args ...any) error {
+	return &planningRepoRefusal{msg: fmt.Sprintf(format, args...)}
+}
+func planningOpenError(planningPath string, err error) error {
+	var refusal *planningRepoRefusal
+	if errors.As(err, &refusal) {
+		return refusal
+	}
+	return fmt.Errorf("failed to open planning store at %s: %w", planningPath, err)
 }

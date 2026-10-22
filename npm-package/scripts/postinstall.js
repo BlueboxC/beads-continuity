@@ -72,7 +72,8 @@ function downloadFile(url, dest) {
             reject(closeErr);
             return;
           }
-          fs.unlink(dest, () => {});
+          // Reopening truncates the old file. An asynchronous unlink here
+          // can instead remove the new download after its descriptor opens.
           downloadFile(redirectUrl, dest).then(resolve).catch(reject);
         });
         return;

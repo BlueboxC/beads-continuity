@@ -12,6 +12,7 @@ import (
 	"github.com/spf13/cobra"
 	"github.com/steveyegge/beads/internal/configfile"
 	"github.com/steveyegge/beads/internal/doltserver"
+	"github.com/steveyegge/beads/internal/lockfile"
 	"github.com/steveyegge/beads/internal/workspacegate"
 )
 
@@ -29,7 +30,7 @@ import (
 // Posture (deliberate, from the adversarial design review):
 //
 //   - SHARED failures that are NOT contention (resolver error, gate file
-//     unbuildable, unsupported filesystem) warn once to stderr and continue
+//     unbuildable) warn once to stderr and continue
 //     UNGATED. The gate is cooperative; a normal `bd list` must never brick
 //     an existing deployment because its network mount cannot flock. Note
 //     the honest reading of fail-open: it means "not DETECTABLY contended",
@@ -37,6 +38,7 @@ import (
 //     beside a cross-user shared root lands here and proceeds ungated even
 //     though that user may be mid-maintenance (workspacegate documents
 //     cross-user shared roots as unsupported).
+//   - Unsupported advisory locks refuse in every mode; no ungated fallback.
 //   - ErrBusy on SHARED means an exclusive maintenance operation is live on
 //     this workspace: abort with an actionable error naming the holder
 //     (the gate's busy detail carries pid/reason/host from the advisory
@@ -223,8 +225,11 @@ func acquireCommandWorkspaceGates(ctx context.Context, cmd *cobra.Command, beads
 		mode = workspacegate.Exclusive
 		opts = exclusiveGateOptions(cmd.CommandPath())
 	}
-	h, err := workspacegate.AcquireAll(ctx, mode, opts, gates...)
+	h, err := acquireCommandGateSet(ctx, mode, opts, gates...)
 	if err != nil {
+		if errors.Is(err, lockfile.ErrUnsupported) {
+			return HandleErrorRespectJSON("workspace gate cannot protect this filesystem; use a filesystem with working advisory locks: %v", err)
+		}
 		if errors.Is(err, workspacegate.ErrBusy) {
 			// Contention is never fail-open, in either mode — but the two
 			// modes are blocked by OPPOSITE kinds of holders, so the
@@ -332,3 +337,5 @@ func acquireInitMutationGate(ctx context.Context, beadsDir, physicalRoot string,
 	}
 	return h, nil
 }
+
+var acquireCommandGateSet = workspacegate.AcquireAll

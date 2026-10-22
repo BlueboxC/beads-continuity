@@ -42,11 +42,14 @@ func CheckMultiRepoTypes(repoPath string) DoctorCheck {
 
 	// Discover types from each child repo
 	for _, repoPathStr := range multiRepo.Additional {
-		childTypes := discoverChildTypes(repoPathStr)
+		childTypes, refused := discoverChildTypes(repoPathStr)
 		if len(childTypes) > 0 {
 			details = append(details, fmt.Sprintf("  %s: %s", repoPathStr, strings.Join(childTypes, ", ")))
 		} else {
 			details = append(details, fmt.Sprintf("  %s: (no custom types)", repoPathStr))
+		}
+		if refused != nil {
+			details = append(details, fmt.Sprintf("    database not read, so only config.yaml types are listed: %v", refused))
 		}
 	}
 
@@ -76,32 +79,26 @@ func CheckMultiRepoTypes(repoPath string) DoctorCheck {
 	}
 }
 
-// discoverChildTypes reads custom types from a child repo's config or database.
-// Returns nil if no custom types are found (not an error - child may not have any).
-func discoverChildTypes(repoPath string) []string {
-	// Expand tilde
+// discoverChildTypes retains the YAML fallback and reports a refused database read.
+func discoverChildTypes(repoPath string) ([]string, error) {
 	if strings.HasPrefix(repoPath, "~") {
 		if home, err := os.UserHomeDir(); err == nil {
 			repoPath = filepath.Join(home, repoPath[1:])
 		}
 	}
-
 	beadsDir := ResolveBeadsDirForRepo(repoPath)
-
-	// First try reading from database config table
-	types, err := readTypesFromDB(beadsDir)
-	if err == nil && len(types) > 0 {
-		return types
+	childTypes, refused := readTypesFromDB(beadsDir)
+	if refused == nil && len(childTypes) > 0 {
+		return childTypes, nil
 	}
-
-	// Fall back to reading from config.yaml
-	types, err = readTypesFromYAML(beadsDir)
+	if os.IsNotExist(refused) {
+		refused = nil
+	}
+	childTypes, err := readTypesFromYAML(beadsDir)
 	if err == nil {
-		return types
+		return childTypes, refused
 	}
-
-	// No custom types found
-	return nil
+	return nil, refused
 }
 
 // nativeTypeDiscoveryConfig classifies additional repositories without migrating
@@ -110,6 +107,9 @@ func nativeTypeDiscoveryConfig(beadsDir string) (*configfile.Config, error) {
 	cfg, err := configfile.LoadForDiscovery(beadsDir)
 	if err != nil || cfg == nil {
 		return cfg, err
+	}
+	if !configfile.IsSupportedBackend(cfg.Backend) {
+		return nil, fmt.Errorf("unrecognized backend %q", cfg.Backend)
 	}
 	mode, err := cfg.GetGraphMode()
 	if err != nil {
@@ -128,7 +128,7 @@ func nativeTypeDiscoveryConfig(beadsDir string) (*configfile.Config, error) {
 func readTypesFromDB(beadsDir string) ([]string, error) {
 	cfg, err := nativeTypeDiscoveryConfig(beadsDir)
 	if err != nil || cfg == nil {
-		return nil, fmt.Errorf("no config")
+		return nil, err
 	}
 	if cfg.GetBackend() != configfile.BackendDolt {
 		return nil, fmt.Errorf("not dolt backend")
@@ -215,7 +215,7 @@ func findUnknownTypesInHydratedIssues(repoPath string, multiRepo *config.MultiRe
 
 	// Add child types
 	for _, repoPathStr := range multiRepo.Additional {
-		childTypes := discoverChildTypes(repoPathStr)
+		childTypes, _ := discoverChildTypes(repoPathStr)
 		for _, t := range childTypes {
 			knownTypes[t] = true
 		}

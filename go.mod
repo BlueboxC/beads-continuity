@@ -293,6 +293,6 @@ retract (
 
 replace github.com/dolthub/file-locks => github.com/shrisha/file-locks v0.1.2-0.20261015205944-1006a916595c
 
-replace github.com/dolthub/dolt/go => github.com/BlueboxC/dolt/go v0.0.0-20261022100001-cdcab16c659e
+replace github.com/dolthub/dolt/go => github.com/BlueboxC/dolt/go v0.0.0-20261022114057-8e88cc404930
 
 replace github.com/dolthub/go-mysql-server => github.com/BlueboxC/go-mysql-server v0.0.0-20261022082133-6071a7f383ba

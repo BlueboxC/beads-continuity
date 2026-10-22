@@ -418,11 +418,12 @@ func (g Gate) Acquire(ctx context.Context, mode Mode, opts Options) (*Handle, er
 		return nil, fmt.Errorf("workspacegate: open gate %s: %w", g.path, err)
 	}
 
-	try := lockfile.FlockSharedNonBlock
+	try := flockSharedNB
 	if mode == Exclusive {
-		try = lockfile.FlockExclusiveNonBlock
+		try = flockExclusiveNB
 	}
 
+	probed := readOnly || opts.ExistingOnly
 	notified := false
 	for {
 		err := try(f)
@@ -435,7 +436,14 @@ func (g Gate) Acquire(ctx context.Context, mode Mode, opts Options) (*Handle, er
 		}
 		if !errors.Is(err, lockfile.ErrLockBusy) && !lockfile.IsLocked(err) {
 			_ = f.Close()
-			return nil, fmt.Errorf("workspacegate: lock %s: %w", g.path, err)
+			return nil, g.lockErr(err)
+		}
+		if !probed {
+			probed = true
+			if err := lockfile.ProbeBusy(g.path, try); err != nil {
+				_ = f.Close()
+				return nil, g.lockErr(err)
+			}
 		}
 		if !notified {
 			notified = true
@@ -630,4 +638,18 @@ func (g Gate) ExclusiveHolder() (held bool, info *Info, err error) {
 		return false, nil, fmt.Errorf("workspacegate: probe %s: %w", g.path, lerr)
 	}
 	return true, g.readInfo(), nil
+}
+
+// These seams preserve the OS lock as the only authority; unsupported gates refuse.
+var (
+	flockSharedNB    = lockfile.FlockSharedNonBlock
+	flockExclusiveNB = lockfile.FlockExclusiveNonBlock
+)
+
+func (g Gate) lockErr(err error) error {
+	var unsupported *lockfile.UnsupportedError
+	if errors.As(err, &unsupported) && unsupported.Path == "" {
+		err = &lockfile.UnsupportedError{Op: unsupported.Op, Path: g.path, Err: unsupported.Err}
+	}
+	return fmt.Errorf("workspacegate: lock %s: %w", g.path, err)
 }

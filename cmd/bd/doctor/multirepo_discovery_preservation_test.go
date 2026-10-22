@@ -45,7 +45,7 @@ func TestDiscoverChildTypesPreservesAdditionalMetadata(t *testing.T) {
 						t.Fatal(err)
 					}
 				}
-				if got := discoverChildTypes(repo); !reflect.DeepEqual(got, []string{"local-type"}) {
+				if got, _ := discoverChildTypes(repo); !reflect.DeepEqual(got, []string{"local-type"}) {
 					t.Fatalf("types = %v; want YAML fallback", got)
 				}
 				entries, err := os.ReadDir(dir)
