@@ -124,6 +124,8 @@ Root DOX.md and the parent chain remain binding.
 
 - Commands reject typed unsupported-lock errors before their generic shared-gate fallback. Readonly/proxy admission and maintenance remain conservative; preserve unrelated resolver-error behavior.
 
+- Native `vc status` reads staged/unstaged table changes through the storage Status role and exposes both in text/JSON. Failed working-set reads withhold success output; this read never stages, commits or changes the documented LWW conflict policy. Graph/proxy admission stays unchanged.
+
 ## Work Guidance
 - Routed create adopts a sole metadata-less native database, retaining its prefix and project identity. Refuse ambiguous databases, dirty working sets under committing policy, non-embedded target settings and graph formats before writing selectors. Personal migration shares the guarded adoption; dry-run checks target admission without initialization.
 

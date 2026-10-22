@@ -283,19 +283,56 @@ Examples:
 			currentCommit = "(unknown)"
 		}
 
+		status, err := store.Status(ctx)
+		if err != nil {
+			return HandleErrorRespectJSON("failed to read working set: %v", err)
+		}
+		if status == nil {
+			return HandleErrorRespectJSON("failed to read working set: no status returned")
+		}
 		if jsonOutput {
 			return outputJSON(map[string]interface{}{
-				"branch": currentBranch,
-				"commit": currentCommit,
+				"branch":   currentBranch,
+				"commit":   currentCommit,
+				"staged":   vcStatusEntries(status.Staged),
+				"unstaged": vcStatusEntries(status.Unstaged),
 			})
 		}
 
 		fmt.Printf("\n%s Version Control Status\n\n", ui.RenderAccent("📊"))
 		fmt.Printf("  Branch: %s\n", ui.StatusInProgressStyle.Render(currentBranch))
-		fmt.Printf("  Commit: %s\n", ui.RenderMuted(currentCommit[:8]))
+		fmt.Printf("  Commit: %s\n", ui.RenderMuted(currentCommit[:min(8, len(currentCommit))]))
+		for _, group := range []struct {
+			name    string
+			entries []storage.StatusEntry
+		}{{"Staged", status.Staged}, {"Unstaged", status.Unstaged}} {
+			if len(group.entries) == 0 {
+				continue
+			}
+			fmt.Printf("\n  %s changes:\n", group.name)
+			for _, entry := range group.entries {
+				fmt.Printf("    %s: %s\n", ui.SanitizeForTerminal(entry.Status), ui.SanitizeForTerminal(entry.Table))
+			}
+		}
+		if len(status.Staged)+len(status.Unstaged) == 0 {
+			fmt.Println("\n  Working set clean")
+		}
 		fmt.Println()
 		return nil
 	},
+}
+
+type vcStatusEntry struct {
+	Table  string `json:"table"`
+	Status string `json:"status"`
+}
+
+func vcStatusEntries(entries []storage.StatusEntry) []vcStatusEntry {
+	out := make([]vcStatusEntry, len(entries))
+	for i, entry := range entries {
+		out[i] = vcStatusEntry{Table: entry.Table, Status: entry.Status}
+	}
+	return out
 }
 
 func init() {

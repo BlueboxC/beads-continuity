@@ -171,8 +171,8 @@ github.com/AzureAD/microsoft-authentication-library-for-go v0.4.0/go.mod h1:Vt9s
 github.com/AzureAD/microsoft-authentication-library-for-go v1.0.0/go.mod h1:kgDmCTgBzIEPFElEF+FK0SdjAor06dRq2Go927dnQ6o=
 github.com/AzureAD/microsoft-authentication-library-for-go v1.6.0 h1:XRzhVemXdgvJqCH0sFfrBUTnUJSBrBf7++ypk+twtRs=
 github.com/AzureAD/microsoft-authentication-library-for-go v1.6.0/go.mod h1:HKpQxkWaGLJ+D/5H8QRpyQXA1eKjxkFlOMwck5+33Jk=
-github.com/BlueboxC/dolt/go v0.0.0-20261022174050-def96d78bcdf h1:nc0gFxfw/UcI7GIXc3Z/3rKU8rpedNm689zJW8WtVAc=
-github.com/BlueboxC/dolt/go v0.0.0-20261022174050-def96d78bcdf/go.mod h1:cvC/B3YeH/R66C7EUAqqZkTteCTe5/HAD1D4IXYV1Rk=
+github.com/BlueboxC/dolt/go v0.0.0-20261022230602-d28505a80a74 h1:+Nq3DDFNc86Zpj39m87M7ZPmo1R5SriyPTJKeJ8gmUQ=
+github.com/BlueboxC/dolt/go v0.0.0-20261022230602-d28505a80a74/go.mod h1:cvC/B3YeH/R66C7EUAqqZkTteCTe5/HAD1D4IXYV1Rk=
 github.com/BlueboxC/go-mysql-server v0.0.0-20261022082133-6071a7f383ba h1:YrsSH89QhVLcLCJuqqc2qvP285pokN/mQF2nUvG3Xwg=
 github.com/BlueboxC/go-mysql-server v0.0.0-20261022082133-6071a7f383ba/go.mod h1:HRYEDIMEmcFhEjdrRnEwCiWFbdTMUxyjEI9Swn2Pmvc=
 github.com/BurntSushi/toml v0.3.1/go.mod h1:xHWCNGjB5oqiDr8zfno3MHue2Ht5sIBksp03qcyfWMU=

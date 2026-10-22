@@ -99,7 +99,7 @@ updated Go 1.26 devcontainer. The fork has no Bazel setup to transplant.
 The embedded engine keeps `driver/v2 v2.4.1`, starting from coffeegoddd's
 [upstream proposal #7254](https://github.com/gastownhall/beads/pull/7254).
 It pins Dolt v2.5.1 plus the retained storage corrections, catalog and SQL fixes at
-[BlueboxC/dolt `def96d78bcdf`](https://github.com/BlueboxC/dolt/commit/def96d78bcdfb54ff176940a9678c469ea397eed),
+[BlueboxC/dolt `d28505a80a74`](https://github.com/BlueboxC/dolt/commit/d28505a80a74390147245836b5f1ff14fec40224),
 with the [SQL analyzer correction](https://github.com/BlueboxC/go-mysql-server/commit/6071a7f383bafdeb4276f4de8b9c5205fcbda26c) on base `239e0ad6b2f9`. The engine remains a Go dependency;
 Beads does not implement engine-specific SQL workarounds.
 
@@ -358,7 +358,7 @@ Shared native discovery refuses Graph/future formats and corrupt nested metadata
 
 Qualification includes focused red/green regressions, native embedded plane-state matrices, full setup/doctor packages, the required complete Go and lint lanes, the updated Dolt tuple and isolated backup/history readbacks. Remote service tests distinguish synthetic listeners from a live external deployment; upstream issue closure remains a maintainer decision.
 
-Credit: @julianknutsen (#7762/#7763/#7766/#7767/#7771/#7774); #7776/#7777 provide overlapping dependency-reader proposals, combined without duplicating their implementations. Dolt engine is pinned to BlueboxC/dolt `cdcab16c659e11048a481356b52e28b15824695f`; the existing analyzer and driver remain pinned separately.
+Credit: @julianknutsen (#7762/#7763/#7766/#7767/#7771/#7774); #7776/#7777 provide overlapping dependency-reader proposals, combined without duplicating their implementations. That batch used BlueboxC/dolt `cdcab16c659e11048a481356b52e28b15824695f`; the current engine pin is listed above, with the analyzer and driver pinned separately.
 
 Reviewed proposal heads: #7763 `bae4b94ae47c` (@julianknutsen), #7771 `71ed342c5c14` (@julianknutsen), #7766 `20266f6db11f` (@julianknutsen), #7774 `8e4cdc032448` (@julianknutsen), #7762 `142b334281e0` (@julianknutsen), #7767 `02323e128482` (@julianknutsen), #7776 `51c79cf1ccb5` (@gascity-eddie[bot]), #7777 `ce45fb53c6de` (@gascity-eddie[bot]).
 
@@ -376,3 +376,26 @@ Reviewed proposal heads: #7763 `bae4b94ae47c` (@julianknutsen), #7771 `71ed342c5
 - Adapt Dolt PR #12176 by reltuk: file-backed journal reads and callbacks run outside the journal lock, with 16 bounded workers rather than a complete copied batch. Close drains registered readers and callbacks; a read after closure fails explicitly. Contributor regressions and cancellation/retention controls are retained. The embedded driver and SQL-analyzer revisions are unchanged.
 - Follow up #7684: collateral YAML validation shares exact interned path components before/after instead of formatting each ancestor path for each leaf. Keep the depth guard, alias identities, dotted/nested keys, document boundaries and refusal of collateral changes. The bounded allocation regression measures a workload, not a fixed process-RAM guarantee.
 - Adapt PR #7779 by victoraranda: eight MCP discovery/query tools advertise advisory readOnlyHint metadata. Writers and mixed context/admin tools remain unannotated. Retain contributor scenarios using the locked SDK's protocol field, and document the addition in the package changelog. Commands, timeouts, dependencies and CLI/hooks installation mode remain unchanged.
+
+
+### Working-set visibility (#7783)
+
+Native `bd vc status` now displays staged and unstaged table changes through the
+existing storage role, retaining branch/commit JSON fields and adding both lists.
+A failed read does not report a clean working set. Existing LWW supersession
+notices remain; a later claim can still win a contested close group under the
+documented merge policy. This fixes the hidden-change report, not a new
+close-wins merge policy or Graph Preview synchronization. Based on andrest's
+report in gastownhall/beads #7783.
+
+
+### Qualified engine follow-up (October 23, 2026)
+
+The pinned dependency includes Dolt #12177 (content-stable archive dictionaries
+and on-demand compression dictionaries), #12186 (keyless conflict hashes use
+the source version's schema), #12178 (non-unique commit-parent lookup), #12179
+(small journals grow buffers and indexes on demand) and the log component of
+macneale4's PR #12182 (exclude all common bases). Existing virtual-base diffs,
+Full-Text, NULL, history and backup contracts remain. Driver 2.4.1, the matched
+SQL analyzer, project formats and external CLI/server policy stay unchanged.
+The engine fork documents the regression scope and limits for each correction.
