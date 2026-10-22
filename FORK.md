@@ -100,7 +100,7 @@ The embedded engine keeps `driver/v2 v2.4.1`, starting from coffeegoddd's
 [upstream proposal #7254](https://github.com/gastownhall/beads/pull/7254).
 It pins Dolt v2.5.1 plus the retained storage corrections, catalog and SQL fixes at
 [BlueboxC/dolt `519a6f6efce1`](https://github.com/BlueboxC/dolt/commit/519a6f6efce1e028554e7530f491508721073d14),
-with the [SQL analyzer correction](https://github.com/BlueboxC/go-mysql-server/commit/e43b463224d6f3830540d0af03b1165c381ff280) on base `239e0ad6b2f9`. The engine remains a Go dependency;
+with the [SQL analyzer correction](https://github.com/BlueboxC/go-mysql-server/commit/6071a7f383bafdeb4276f4de8b9c5205fcbda26c) on base `239e0ad6b2f9`. The engine remains a Go dependency;
 Beads does not implement engine-specific SQL workarounds.
 
 This tuple adds the bounded catalog fix for Dolt #12122, mixed-case CHECK merge
@@ -341,3 +341,11 @@ The fork retains its conservative authority profile, outside whitespace, shared 
 - The embedded Dolt pin additionally carries [#12165](https://github.com/dolthub/dolt/issues/12165), [#12166](https://github.com/dolthub/dolt/issues/12166) and [#12169](https://github.com/dolthub/dolt/issues/12169): absent keyless conflict rows no longer reach secondary key builders, added nullable columns merge against the existing ancestor row, and Full-Text rebuilds use the existing Prolly primary map. Retain genuine conflict controls, exact root comparisons and native backup qualification. Full-Text rebuilding remains complete rather than incremental; no schema, driver or standalone-server policy changes.
 
 Native activity capture also uses one existing current-schema memory transaction for enablement, retry checking, saving and version publication. This removes repeated embedded engine opens per hook while retaining record identities, redaction, hook configuration and refusal behavior. It adds no queue, database, migration or service.
+
+## Context acquisition without retained AST transfers
+
+Native `prime` reads the non-code memory plane and the existing code-summary manifest in one readonly memory snapshot. Retained code generations stay stored and human memories, reviewed knowledge, observed activity, source checks, output limits and required-read failure withholding are preserved. Missing manifests and adapters without snapshot support retain the legacy read. The summary remains advisory; full index validation belongs to code queries. Activity diagnostics select the literal activity namespace before transferring values. No hook trust, timeout, schema, pruning or project execution changes are implied.
+
+## Full-Text filter qualification
+
+Ordinary equality and IS NULL predicates on a Full-Text column reproduced analyzer errors with the official Dolt 2.5.1 engine/analyzer pair and the previous fork tuple. The pinned analyzer now costs a Full-Text lookup only for a MATCH bound to that index. Other AND predicates remain residual, ordinary indexes cannot consume MATCH, and incomplete OR lookups fall back. Four keyed/keyless fixtures with optional same-column ordinary indexes exercise twenty predicates in normal and prepared mode in both the analyzer and native Dolt engines. Existing view, merge, Full-Text rebuild, NULL and duplicate-preservation controls remain. This does not imply a general MySQL-compatibility claim.

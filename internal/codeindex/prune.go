@@ -25,7 +25,7 @@ func PlanPrune(plane map[string]string) (PrunePlan, error) {
 		return plan, errors.New("prune requires a complete readable current index")
 	}
 	var entry manifest
-	if err := unpack(plane[manifestKey], &entry); err != nil {
+	if err := unpack(plane[ManifestKey], &entry); err != nil {
 		return plan, err
 	}
 	retained := make(map[string]bool)
@@ -49,7 +49,7 @@ func PlanPrune(plane map[string]string) (PrunePlan, error) {
 			retained[Prefix+"blob/"+part] = true
 		}
 	}
-	plan.CurrentBytes = len(plane[manifestKey])
+	plan.CurrentBytes = len(plane[ManifestKey])
 	for key, value := range plane {
 		if !strings.HasPrefix(key, Prefix+"blob/") {
 			continue
@@ -84,7 +84,7 @@ func ApplyPrune(ctx context.Context, memories memoryops.Memories, plane map[stri
 	if len(plan.ObsoleteKeys) == 0 {
 		return plan, nil
 	}
-	expected := map[string]string{manifestKey: plane[manifestKey]}
+	expected := map[string]string{ManifestKey: plane[ManifestKey]}
 	for _, key := range plan.ObsoleteKeys {
 		expected[key] = plane[key]
 	}

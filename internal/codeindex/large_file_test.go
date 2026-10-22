@@ -43,11 +43,11 @@ func TestLargeFileIndexPersistsThroughSmallRows(t *testing.T) {
 	if err != nil || !reflect.DeepEqual(loaded.Files, selected.Files) {
 		t.Fatalf("selected roundtrip differs: %v", err)
 	}
-	before := store.plane[manifestKey]
+	before := store.plane[ManifestKey]
 	changed := largeFileFixture()
 	changed.Files[0].Symbols[0].Name = "changed"
 	store.failManifest = true
-	if _, err := Save(ctx, store, store.plane, changed); err == nil || store.plane[manifestKey] != before {
+	if _, err := Save(ctx, store, store.plane, changed); err == nil || store.plane[ManifestKey] != before {
 		t.Fatal("interrupted publication replaced previous manifest")
 	}
 	plan, err := PlanPrune(store.plane)

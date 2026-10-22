@@ -43,7 +43,7 @@ func TestSelectedIndexReadsBoundedRoutingAndOnlyLinkedSource(t *testing.T) {
 	defer func() { _ = reader.Close() }()
 	// Missing unrelated blobs and 100k retained generations cannot affect this cut.
 	for key := range store.plane {
-		if key == manifestKey {
+		if key == ManifestKey {
 			continue
 		}
 		var file File
@@ -81,7 +81,7 @@ func TestSelectedIndexRejectsCorruptRoutingAndSelectedProvenance(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			store := selectedFixture(t, 2)
 			var entry manifest
-			_ = unpack(store.plane[manifestKey], &entry)
+			_ = unpack(store.plane[ManifestKey], &entry)
 			var refs []reference
 			_ = unpack(store.plane[Prefix+"blob/"+entry.Parts[0]], &refs)
 			switch name {
@@ -99,7 +99,7 @@ func TestSelectedIndexRejectsCorruptRoutingAndSelectedProvenance(t *testing.T) {
 				key := digest([]byte(encoded))
 				store.plane[Prefix+"blob/"+key] = encoded
 				entry.Parts = []string{key}
-				store.plane[manifestKey], _ = pack(entry)
+				store.plane[ManifestKey], _ = pack(entry)
 			case "language", "parser":
 				var file File
 				_ = unpack(store.plane[Prefix+"blob/"+refs[0].Blob], &file)
@@ -116,7 +116,7 @@ func TestSelectedIndexRejectsCorruptRoutingAndSelectedProvenance(t *testing.T) {
 				key = digest([]byte(encoded))
 				store.plane[Prefix+"blob/"+key] = encoded
 				entry.Parts = []string{key}
-				store.plane[manifestKey], _ = pack(entry)
+				store.plane[ManifestKey], _ = pack(entry)
 			}
 			index, err := LoadSelected(context.Background(), store, []string{"src/f0000.go"})
 			if name == "parser" {

@@ -58,7 +58,7 @@ func init() {
 				return err
 			}
 			defer func() { _ = closeStore(false) }()
-			plane, err := m.List(rootCtx, memoryops.ListRequest{Search: activity.Prefix})
+			plane, err := m.List(rootCtx, memoryops.ListRequest{KeyPrefix: activity.Prefix})
 			if err != nil {
 				return err
 			}

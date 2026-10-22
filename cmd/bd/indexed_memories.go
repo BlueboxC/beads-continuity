@@ -46,3 +46,38 @@ func readIndexedSnapshot(ctx context.Context, reader memoryops.MemoryReader) (me
 	}
 	return plane, index, nil
 }
+
+// Prime needs the index summary, not the current AST or retained generations.
+func readPrimeMemories(ctx context.Context, memories memoryops.Memories) (memoryops.ListResult, error) {
+	snapshot, ok := memories.(memoryops.SnapshotMemories)
+	if !ok {
+		return memories.List(ctx, memoryops.ListRequest{})
+	}
+	var plane memoryops.ListResult
+	err := snapshot.ReadSnapshot(ctx, func(reader memoryops.MemoryReader) error {
+		var err error
+		plane, err = reader.List(ctx, memoryops.ListRequest{ExcludeKeyPrefix: codeindex.Prefix})
+		if err != nil {
+			return err
+		}
+		summary, err := reader.Recall(ctx, memoryops.RecallRequest{Key: codeindex.ManifestKey})
+		if err != nil {
+			return err
+		}
+		if !summary.Found {
+			plane, err = reader.List(ctx, memoryops.ListRequest{})
+			return err
+		}
+		if summary.Found {
+			if plane.Memories == nil {
+				plane.Memories = make(map[string]string)
+			}
+			plane.Memories[codeindex.ManifestKey] = summary.Value
+		}
+		return nil
+	})
+	if err != nil {
+		return memoryops.ListResult{}, err
+	}
+	return plane, nil
+}

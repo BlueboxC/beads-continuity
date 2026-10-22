@@ -135,7 +135,7 @@ func TestPrunePlanRetainsManifestReferencedBlobsAndRefusesCorruption(t *testing.
 		t.Fatal("plan selected live or human data")
 	}
 	for key := range s.plane {
-		if key != manifestKey && IsKey(key) {
+		if key != ManifestKey && IsKey(key) {
 			delete(s.plane, key)
 			break
 		}

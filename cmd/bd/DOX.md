@@ -126,6 +126,8 @@ Keep existing CLI primitives and machine-readable output stable. Follow AGENTS.m
 
 Integration credentials, including notion.token, route only to local YAML/environment in single and batch configuration. Notion authentication uses that source even without an open database; its data-source/view metadata remains database-backed.
 
+Native prime selects non-code memories and the fixed code manifest from one readonly snapshot, preserving rendered context, stored history and required-read failure withholding. Missing manifests and basic adapters retain the legacy read. Activity list/status select only the literal activity-key namespace. Hook budgets, trust and project selection remain unchanged.
+
 Memory diagnostics expose literal key-prefix inclusion/exclusion without changing default enumeration. Knowledge reads exclude derived code namespaces; symbol-link validation reads only selected indexed files and applicable provenance, retaining the proposal/review guards.
 
 ## Verification

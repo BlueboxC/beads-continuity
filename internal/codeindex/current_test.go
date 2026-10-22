@@ -64,7 +64,7 @@ func TestCurrentIndexFailureWithholdsGeneration(t *testing.T) {
 	}
 	store := selectedFixture(t, 1)
 	var entry manifest
-	_ = unpack(store.plane[manifestKey], &entry)
+	_ = unpack(store.plane[ManifestKey], &entry)
 	delete(store.plane, Prefix+"blob/"+entry.Parts[0])
 	index, plane, err = ReadCurrent(t.Context(), store)
 	if err == nil || index.Version != 0 || plane != nil {

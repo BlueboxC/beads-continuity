@@ -30,8 +30,9 @@ import (
 )
 
 const (
-	Prefix        = "@knowledge/code/"
-	manifestKey   = Prefix + "manifest"
+	Prefix = "@knowledge/code/"
+	// ManifestKey selects the summary without reading retained code blobs.
+	ManifestKey   = Prefix + "manifest"
 	MaxFiles      = 4096
 	MaxInputBytes = 32 * 1024 * 1024
 	maxJSONBytes  = 8 * 1024 * 1024
@@ -240,7 +241,7 @@ func LoadSelected(ctx context.Context, memories memoryops.Memories, paths []stri
 }
 
 func loadIndex(read func(string) (string, bool, error), selected map[string]bool) (Index, error) {
-	value, exists, err := read(manifestKey)
+	value, exists, err := read(ManifestKey)
 	if err != nil {
 		return Index{}, err
 	}
@@ -353,9 +354,9 @@ func Save(ctx context.Context, memories memoryops.Memories, plane map[string]str
 		// A pruning writer must never race a reused blob against manifest publication.
 		// The storage capability checks the prior generation and writes every required
 		// row together, skipping equal values within that same transaction.
-		blobs[manifestKey] = encoded
+		blobs[ManifestKey] = encoded
 		_, err := atomic.Apply(ctx, memoryops.BatchRequest{
-			Expected: map[string]string{manifestKey: plane[manifestKey]}, Remember: blobs,
+			Expected: map[string]string{ManifestKey: plane[ManifestKey]}, Remember: blobs,
 		})
 		return stored + len(encoded), err
 	}
@@ -372,8 +373,8 @@ func Save(ctx context.Context, memories memoryops.Memories, plane map[string]str
 			return 0, err
 		}
 	}
-	if plane[manifestKey] != encoded {
-		if _, err := memories.Remember(ctx, memoryops.RememberRequest{Key: manifestKey, Content: encoded}); err != nil {
+	if plane[ManifestKey] != encoded {
+		if _, err := memories.Remember(ctx, memoryops.RememberRequest{Key: ManifestKey, Content: encoded}); err != nil {
 			return 0, err
 		}
 	}
@@ -915,7 +916,7 @@ func (r *Reader) refresh(index Index, discovery bool) Index {
 }
 
 func Summary(plane map[string]string) string {
-	value, exists := plane[manifestKey]
+	value, exists := plane[ManifestKey]
 	if !exists {
 		return ""
 	}

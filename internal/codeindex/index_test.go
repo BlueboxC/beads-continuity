@@ -80,7 +80,7 @@ type publicationStore struct {
 }
 
 func (s *publicationStore) Remember(_ context.Context, req memoryops.RememberRequest) (memoryops.RememberResult, error) {
-	if req.Key == manifestKey && s.failManifest {
+	if req.Key == ManifestKey && s.failManifest {
 		return memoryops.RememberResult{}, errors.New("publication failed")
 	}
 	_, found := s.plane[req.Key]
@@ -191,10 +191,10 @@ func TestConfinedDiscoverySyntaxErrorsAndUncertainBindings(t *testing.T) {
 }
 
 func TestIndexCorruptionIsVisibleAndNotOrdinaryContext(t *testing.T) {
-	if _, err := Load(map[string]string{manifestKey: "not-an-index"}); err == nil {
+	if _, err := Load(map[string]string{ManifestKey: "not-an-index"}); err == nil {
 		t.Fatal("corrupt index accepted")
 	}
-	if got := Summary(map[string]string{manifestKey: "not-an-index"}); !strings.Contains(got, "unavailable") {
+	if got := Summary(map[string]string{ManifestKey: "not-an-index"}); !strings.Contains(got, "unavailable") {
 		t.Fatal("corrupt index omitted")
 	}
 	if _, err := pack(strings.Repeat("x", maxJSONBytes+1)); err == nil {
@@ -227,7 +227,7 @@ func TestLargeCatalogMigratesAndPersistsWithoutRenewingHumanRecords(t *testing.T
 	if _, err := Save(context.Background(), store, store.plane, legacy); err != nil {
 		t.Fatal(err)
 	}
-	before := store.plane[manifestKey]
+	before := store.plane[ManifestKey]
 	if got, err := Load(store.plane); err != nil || got.Version != 1 || len(got.Files) != 1 {
 		t.Fatalf("legacy read: %+v %v", got.Stats, err)
 	}
@@ -235,7 +235,7 @@ func TestLargeCatalogMigratesAndPersistsWithoutRenewingHumanRecords(t *testing.T
 	if _, err := Save(context.Background(), store, store.plane, index); err == nil {
 		t.Fatal("failed publication accepted")
 	}
-	if store.plane[manifestKey] != before {
+	if store.plane[ManifestKey] != before {
 		t.Fatal("failed migration replaced legacy manifest")
 	}
 	store.failManifest = false
@@ -247,7 +247,7 @@ func TestLargeCatalogMigratesAndPersistsWithoutRenewingHumanRecords(t *testing.T
 		t.Fatalf("large catalog persistence: %+v %v", loaded.Stats, err)
 	}
 	var published manifest
-	if err := unpack(store.plane[manifestKey], &published); err != nil {
+	if err := unpack(store.plane[ManifestKey], &published); err != nil {
 		t.Fatal(err)
 	}
 	if len(published.Parts) < 2 || len(published.References) != 0 {

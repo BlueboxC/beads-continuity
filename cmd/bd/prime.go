@@ -19,7 +19,6 @@ import (
 	internalbeads "github.com/steveyegge/beads/internal/beads"
 	"github.com/steveyegge/beads/internal/config"
 	"github.com/steveyegge/beads/internal/metrics"
-	"github.com/steveyegge/beads/memoryops"
 )
 
 var (
@@ -523,7 +522,7 @@ func formatMemoriesForPrime(compact bool) string {
 	if err != nil {
 		return formatPrimeMemoryUnavailable(compact, newPrimeMemoryFailure("memory_accessor", err))
 	}
-	result, err := memories.List(context.Background(), memoryops.ListRequest{})
+	result, err := readPrimeMemories(context.Background(), memories)
 	if err != nil {
 		return formatPrimeMemoryUnavailable(compact, newPrimeMemoryFailure("memory_list", err))
 	}
