@@ -16,8 +16,8 @@ import (
 	"github.com/steveyegge/beads/memoryops"
 )
 
-const MaxProposals = 512
-const MaxReviews = 1024
+const MaxProposals = 2048
+const MaxReviews = 4096
 const proposalPrefix = Prefix + "proposal/"
 const reviewPrefix = Prefix + "review/"
 

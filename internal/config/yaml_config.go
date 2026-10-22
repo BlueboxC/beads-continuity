@@ -9,7 +9,6 @@ import (
 	"os/exec"
 	"path/filepath"
 	"regexp"
-	"slices"
 	"strconv"
 	"strings"
 
@@ -1218,35 +1217,53 @@ func collateralUnsetRefusal(before, after, key string) error {
 	if wasErr != nil && len(is) >= len(was) {
 		is, isErr = is[:len(was)], nil
 	}
-	wasLeaves, ok := yamlLeaves(was)
+	paths := make(map[yamlPathKey]*yamlPath)
+	wasLeaves, ok := yamlLeaves(was, paths)
 	if !ok {
 		return fmt.Errorf("cannot unset %q: this file nests more than %d levels deep, too deep for bd to check what else commenting out the key would change; remove the key by hand", key, maxYamlLeafDepth)
 	}
-	isLeaves, ok := yamlLeaves(is)
-	if ok && isErr == nil && onlyKeyLeavesRemoved(wasLeaves, isLeaves, key) {
+	isLeaves, ok := yamlLeaves(is, paths)
+	if ok && isErr == nil && onlyKeyLeavesRemoved(wasLeaves, isLeaves, key, paths) {
 		return nil
 	}
 	return fmt.Errorf("cannot unset %q: commenting out the lines that match it would change more of this file than the key itself; remove the key by hand", key)
 }
 
-type yamlLeaf struct {
-	doc   int
-	path  []string
-	value string
+type yamlPathKey struct {
+	parent *yamlPath
+	part   string
 }
 
-func (l yamlLeaf) id() string {
-	return fmt.Sprintf("%d %q %q", l.doc, l.path, l.value)
+type yamlPath struct {
+	parent *yamlPath
+}
+
+// Both documents share exact path identities without expanding ancestor keys
+// into every leaf. The map compares components directly, without hash digests.
+func yamlChildPath(paths map[yamlPathKey]*yamlPath, parent *yamlPath, part string) *yamlPath {
+	key := yamlPathKey{parent: parent, part: part}
+	if path, ok := paths[key]; ok {
+		return path
+	}
+	path := &yamlPath{parent: parent}
+	paths[key] = path
+	return path
+}
+
+type yamlLeaf struct {
+	doc   int
+	path  *yamlPath
+	value string
 }
 
 const maxYamlLeafDepth = 64
 
-func yamlLeaves(docs []*yaml.Node) (leaves []yamlLeaf, ok bool) {
+func yamlLeaves(docs []*yaml.Node, paths map[yamlPathKey]*yamlPath) (leaves []yamlLeaf, ok bool) {
 	for doc, root := range docs {
 		if yamlNestsDeeper(root, maxYamlLeafDepth) {
 			return nil, false
 		}
-		leaves = appendYamlLeaves(leaves, doc, nil, root)
+		leaves = appendYamlLeaves(leaves, doc, nil, root, paths)
 	}
 	return leaves, true
 }
@@ -1279,19 +1296,19 @@ func yamlDocuments(content string) ([]*yaml.Node, error) {
 	}
 }
 
-func appendYamlLeaves(leaves []yamlLeaf, doc int, path []string, n *yaml.Node) []yamlLeaf {
+func appendYamlLeaves(leaves []yamlLeaf, doc int, path *yamlPath, n *yaml.Node, paths map[yamlPathKey]*yamlPath) []yamlLeaf {
 	switch n.Kind {
 	case yaml.DocumentNode:
 		for _, child := range n.Content {
-			leaves = appendYamlLeaves(leaves, doc, path, child)
+			leaves = appendYamlLeaves(leaves, doc, path, child, paths)
 		}
 	case yaml.MappingNode:
 		for i := 0; i+1 < len(n.Content); i += 2 {
-			leaves = appendYamlLeaves(leaves, doc, append(path[:len(path):len(path)], n.Content[i].Value), n.Content[i+1])
+			leaves = appendYamlLeaves(leaves, doc, yamlChildPath(paths, path, n.Content[i].Value), n.Content[i+1], paths)
 		}
 	case yaml.SequenceNode:
 		for i, item := range n.Content {
-			leaves = appendYamlLeaves(leaves, doc, append(path[:len(path):len(path)], strconv.Itoa(i)), item)
+			leaves = appendYamlLeaves(leaves, doc, yamlChildPath(paths, path, strconv.Itoa(i)), item, paths)
 		}
 	case yaml.AliasNode:
 		leaves = append(leaves, yamlLeaf{doc: doc, path: path, value: fmt.Sprintf("*%s@%d:%d", n.Value, n.Alias.Line, n.Alias.Column)})
@@ -1303,23 +1320,34 @@ func appendYamlLeaves(leaves []yamlLeaf, doc int, path []string, n *yaml.Node) [
 	return leaves
 }
 
-func onlyKeyLeavesRemoved(was, is []yamlLeaf, key string) bool {
-	left := make(map[string]int, len(was))
+func onlyKeyLeavesRemoved(was, is []yamlLeaf, key string, paths map[yamlPathKey]*yamlPath) bool {
+	left := make(map[yamlLeaf]int, len(was))
 	for _, leaf := range was {
-		left[leaf.id()]++
+		left[leaf]++
 	}
 	for _, leaf := range is {
-		id := leaf.id()
-		if left[id] == 0 {
+		if left[leaf] == 0 {
 			return false
 		}
-		left[id]--
+		left[leaf]--
 	}
-	segments := strings.Split(key, ".")
+	flat := yamlChildPath(paths, nil, key)
+	var nested *yamlPath
+	for _, part := range strings.Split(key, ".") {
+		nested = yamlChildPath(paths, nested, part)
+	}
 	for _, leaf := range was {
-		p := leaf.path
-		ofKey := (len(p) > 0 && p[0] == key) || (len(p) >= len(segments) && slices.Equal(p[:len(segments)], segments))
-		if left[leaf.id()] > 0 && !ofKey {
+		if left[leaf] == 0 {
+			continue
+		}
+		ofKey := false
+		for path := leaf.path; path != nil; path = path.parent {
+			if path == flat || path == nested {
+				ofKey = true
+				break
+			}
+		}
+		if !ofKey {
 			return false
 		}
 	}

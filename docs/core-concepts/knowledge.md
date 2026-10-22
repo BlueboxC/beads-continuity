@@ -132,7 +132,7 @@ hooks never refresh their hashes. Create a new inspected candidate with
 accepted assertions require explicit record review. A filesystem change after
 acceptance is reported on the next read and does not renew evidence.
 
-At most 512 proposals and 1024 reviews are retained per workspace, with 32 KiB
+At most 2048 proposals and 4096 reviews are retained per workspace, with 32 KiB
 per stored envelope. Selected source, Record and context limits still apply.
 Archive explicitly when full; there is no automatic retention or deletion.
 `bd prime`/hooks report proposal counts separately without injecting proposed
@@ -194,7 +194,7 @@ requires the existing explicit bind/auth choices. Offline exports keep working
 without networking. Stored paths and evidence remain private local information.
 
 This fork holds at most 256 documents, 256 selected paths or directories and
-512 assertions per project. Catalog size does not expand the bounded context
+2048 assertions per project. Catalog size does not expand the bounded context
 injected by prime or hooks. Files
 must be UTF-8 text up to 16 MiB; record JSON is capped at 24 KiB with at most 16
 bound sources and relations. Select narrow document roots in large projects.
@@ -211,9 +211,10 @@ are unchanged, including the memory plane's convergent-on-pull merge policy.
 
 A knowledge refresh reads each shared source once, reusing its hash and DOX
 ancestry only during that query. The next query reads sources again. This
-reduces repeated catalog reads without renewing evidence. Older fork clients
-retain their smaller limits; a binary rollback preserves stored entries but
-cannot fully display more than 64 assertions or validate sources over 1 MiB.
+reduces repeated catalog reads without renewing evidence. Clients predating this expansion retain their smaller assertion, proposal and
+review limits. They cannot recover the complete knowledge plane once it exceeds
+those limits; retain a compatible reader after growth. Stored entries and Dolt
+history remain unchanged. Earlier clients may also have smaller source limits.
 
 
 ## Learning from observed session history

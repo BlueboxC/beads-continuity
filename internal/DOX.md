@@ -36,7 +36,7 @@ Root DOX.md and the parent chain remain binding.
 
 - Strict readonly shared workspace gates open files read-only; absent ordinary gates yield empty handles without creation. Existing-only proxy/Graph Preview gates still refuse absent files. Existing gates exclude maintenance, empty handles release safely, and exclusive callers retain creation.
 
-- YAML unset validates the proposed edit before writing: refuse multiline, orphaned or collateral changes; absent keys are exact no-ops. Preserve EOF, private user-file permissions and whole-document indentation. Public unset APIs retain error-only results.
+- YAML unset validates the proposed edit before writing: refuse multiline, orphaned or collateral changes; absent keys are exact no-ops. Preserve EOF, private user-file permissions and whole-document indentation. Public unset APIs retain error-only results. Collateral validation interns exact path components across the before/after trees rather than expanding ancestor strings per leaf; retain the 64-level limit and alias identity.
 
 - Embedded dependency corrections retain explicit main-module pins for both Dolt and its SQL analyzer. View alias identity must survive normal/prepared predicates; preserve existing diff/savepoint behavior and qualify the complete tuple before installation.
 

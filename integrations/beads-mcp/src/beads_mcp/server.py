@@ -134,6 +134,9 @@ IMPORTANT: Call context(workspace_root='...') to set your workspace before any w
 """,
 )
 
+# Advisory MCP metadata; context/admin can write and remain unannotated.
+READ_ONLY = {"readOnlyHint": True}
+
 
 def cleanup() -> None:
     """Clean up resources on exit.
@@ -366,6 +369,7 @@ _TOOL_CATALOG = {
     description=(
         "List available beads tools (names and brief descriptions only). Use get_tool_info() for full details."
     ),
+    annotations=READ_ONLY,
 )
 async def discover_tools() -> dict[str, Any]:
     """Discover available beads tools without loading full schemas.
@@ -385,6 +389,7 @@ async def discover_tools() -> dict[str, Any]:
 @mcp.tool(
     name="get_tool_info",
     description="Get detailed information about a specific beads tool including parameters.",
+    annotations=READ_ONLY,
 )
 async def get_tool_info(tool_name: str) -> dict[str, Any]:
     """Get detailed info for a specific tool.
@@ -874,6 +879,7 @@ def _truncate_description(issue: Issue, max_length: int) -> Issue:
         "Find tasks that have no blockers and are ready to be worked on. "
         "Returns minimal format for context efficiency."
     ),
+    annotations=READ_ONLY,
 )
 @with_workspace
 async def ready_work(
@@ -956,6 +962,7 @@ async def ready_work(
     description=(
         "List all issues with optional filters. When status='blocked', returns BlockedIssue with blocked_by info."
     ),
+    annotations=READ_ONLY,
 )
 @with_workspace
 async def list_issues(
@@ -1039,6 +1046,7 @@ async def list_issues(
 @mcp.tool(
     name="show",
     description="Show detailed information about a specific issue including dependencies and dependents.",
+    annotations=READ_ONLY,
 )
 @with_workspace
 async def show_issue(
@@ -1304,6 +1312,7 @@ async def comment(
 @mcp.tool(
     name="comments",
     description="List all comments on an issue (show reports comment_count but not the comment bodies).",
+    annotations=READ_ONLY,
 )
 @with_workspace
 async def comments(
@@ -1335,6 +1344,7 @@ async def note(
 @mcp.tool(
     name="stats",
     description="Get statistics: total issues, open, in_progress, closed, blocked, ready, and average lead time.",
+    annotations=READ_ONLY,
 )
 @with_workspace
 async def stats(workspace_root: str | None = None) -> Stats:
@@ -1345,6 +1355,7 @@ async def stats(workspace_root: str | None = None) -> Stats:
 @mcp.tool(
     name="blocked",
     description="Get blocked issues showing what dependencies are blocking them from being worked on.",
+    annotations=READ_ONLY,
 )
 @with_workspace
 async def blocked(

@@ -99,7 +99,7 @@ updated Go 1.26 devcontainer. The fork has no Bazel setup to transplant.
 The embedded engine keeps `driver/v2 v2.4.1`, starting from coffeegoddd's
 [upstream proposal #7254](https://github.com/gastownhall/beads/pull/7254).
 It pins Dolt v2.5.1 plus the retained storage corrections, catalog and SQL fixes at
-[BlueboxC/dolt `519a6f6efce1`](https://github.com/BlueboxC/dolt/commit/519a6f6efce1e028554e7530f491508721073d14),
+[BlueboxC/dolt `def96d78bcdf`](https://github.com/BlueboxC/dolt/commit/def96d78bcdfb54ff176940a9678c469ea397eed),
 with the [SQL analyzer correction](https://github.com/BlueboxC/go-mysql-server/commit/6071a7f383bafdeb4276f4de8b9c5205fcbda26c) on base `239e0ad6b2f9`. The engine remains a Go dependency;
 Beads does not implement engine-specific SQL workarounds.
 
@@ -370,3 +370,9 @@ Reviewed proposal heads: #7763 `bae4b94ae47c` (@julianknutsen), #7771 `71ed342c5
 - Adapt Julian Knutsen's [PR #7770](https://github.com/gastownhall/beads/pull/7770), head f696d24c1df126c725c3fedd4e173dfeb13c2adb. Personal migration refusals omit usage dumps, distinguish shared-root rigs from self-migration and identify clones. Dirty unnamed databases receive a selector-first commit remedy; uncertain commits retain both copies and report their issue IDs. Reuse the fork's native-only destination admission and adoption helper.
 - Adapt the lock classification and private-probe portions of [PR #7778](https://github.com/gastownhall/beads/pull/7778), head ece3e1009d5c22857f146b2f6313371ddb007885, from gascity-eddie[bot]. Unsupported locking is distinct from actual contention. This fork continues to refuse both shared and exclusive operations when a required lock is unavailable; readonly and existing-only gates never create probe files. No queued-writer policy or ungated fallback is imported.
 - The engine pin additionally carries angelamayxie's [Dolt PR #12171](https://github.com/dolthub/dolt/pull/12171) NULL-safe mask into keyless secondary readers. The existing #12160 KV mapper fix remains; actual reader-map tests qualify this complementary boundary. Driver, analyzer, schema, hooks/trust, project activation and standalone CLI/server policy are unchanged.
+
+## Journal, YAML allocation and MCP query metadata
+
+- Adapt Dolt PR #12176 by reltuk: file-backed journal reads and callbacks run outside the journal lock, with 16 bounded workers rather than a complete copied batch. Close drains registered readers and callbacks; a read after closure fails explicitly. Contributor regressions and cancellation/retention controls are retained. The embedded driver and SQL-analyzer revisions are unchanged.
+- Follow up #7684: collateral YAML validation shares exact interned path components before/after instead of formatting each ancestor path for each leaf. Keep the depth guard, alias identities, dotted/nested keys, document boundaries and refusal of collateral changes. The bounded allocation regression measures a workload, not a fixed process-RAM guarantee.
+- Adapt PR #7779 by victoraranda: eight MCP discovery/query tools advertise advisory readOnlyHint metadata. Writers and mixed context/admin tools remain unannotated. Retain contributor scenarios using the locked SDK's protocol field, and document the addition in the package changelog. Commands, timeouts, dependencies and CLI/hooks installation mode remain unchanged.

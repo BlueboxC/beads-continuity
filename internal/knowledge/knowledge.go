@@ -24,7 +24,7 @@ import (
 const (
 	Prefix       = "@knowledge/"
 	MaxSources   = 256
-	MaxRecords   = 512
+	MaxRecords   = 2048
 	MaxFileBytes = 16 * 1024 * 1024
 )
 

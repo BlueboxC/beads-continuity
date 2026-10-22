@@ -18,6 +18,8 @@ Root DOX.md and the parent chain remain binding.
 - Comment/note IDs and bodies are literal positional arguments after `--`; configured CLI options precede that boundary. Issue creation binds title content through `--title`, preserving option-shaped text, configured actor and other fields.
 - Published runtime requirements include PyJWT >=2.15.0; the dev group requires urllib3 >=2.8.0. Preserve these security minima and the locked dependency graph.
 
+- The eight query/discovery tools advertise advisory MCP readOnlyHint metadata. Mixed context/admin actions and writers remain unannotated. This metadata does not enforce CLI readonly mode or change workspace initialization.
+
 ## Work Guidance
 
 Use the existing package tests and dependency declarations. Installation into Codex uses the CLI skill and native hooks unless MCP is explicitly requested.

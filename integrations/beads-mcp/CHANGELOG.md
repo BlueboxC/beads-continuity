@@ -8,6 +8,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- Advisory MCP `readOnlyHint` annotations on the eight read-only tools (PR #7779).
 - New `comment`, `comments`, and `note` MCP tools, wrapping the existing
   `bd comment` / `bd comments` / `bd note` CLI commands. Previously the MCP
   server exposed no way to add or read comments, so MCP-only agents could only
