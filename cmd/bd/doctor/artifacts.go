@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/steveyegge/beads/cmd/bd/doctor/fix"
 	"github.com/steveyegge/beads/internal/configfile"
 )
 
@@ -268,11 +269,10 @@ func hasRedirectFile(beadsDir string) bool {
 }
 
 // scanSQLiteArtifacts checks for leftover SQLite database files.
-// Only flags SQLite files as artifacts if Dolt is the active backend in cfg,
-// beadsDir's metadata (nil when it has none). If SQLite is still the active
-// backend, beads.db is the live database.
+// Reporting and cleanup share positive Dolt selection; other or ambiguous
+// workspaces retain their SQLite files.
 func scanSQLiteArtifacts(beadsDir string, cfg *configfile.Config, report *ArtifactReport) {
-	if cfg.GetBackend() != configfile.BackendDolt {
+	if !fix.SelectsDolt(beadsDir, cfg) {
 		return
 	}
 

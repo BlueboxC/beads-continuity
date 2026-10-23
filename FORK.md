@@ -99,7 +99,7 @@ updated Go 1.26 devcontainer. The fork has no Bazel setup to transplant.
 The embedded engine keeps `driver/v2 v2.4.1`, starting from coffeegoddd's
 [upstream proposal #7254](https://github.com/gastownhall/beads/pull/7254).
 It pins Dolt v2.6.0 plus the retained storage corrections, catalog and SQL fixes at
-[BlueboxC/dolt `f9a07856a2c2`](https://github.com/BlueboxC/dolt/commit/f9a07856a2c2dcd3880cb3ebfa7558dab84ce878),
+[BlueboxC/dolt `f729dbf7377a`](https://github.com/BlueboxC/dolt/commit/f729dbf7377a5d1614faa60ab8d58d74503ff490),
 with the [SQL analyzer correction](https://github.com/BlueboxC/go-mysql-server/commit/5d41f2e0332a5d22726f6869b373740f3da55b68) on base `38a1fb50b434`. The engine remains a Go dependency;
 Beads does not implement engine-specific SQL workarounds.
 
@@ -419,3 +419,35 @@ Adapt the actual-count portion of csauer02-personal-user’s [PR #7790](https://
 ### SQL and journal follow-up (October 23, 2026)
 
 The pinned tuple carries GMS #4056’s JOIN predicate preservation, #4047’s distinct GREATEST/LEAST comparison/result types, Dolt #12191’s execution-time AS OF binding, and PR #12194’s release of grown idle journal buffers. Preserve exact decimals, the shared COALESCE helper, selected-revision and NULL errors, fixed journal limits and reader/Close coordination. Repeated large flushes allocate again to reduce idle heap; no general RSS or throughput guarantee is inferred. Driver, schema, project formats, hooks and personalized capacities stay unchanged. Contributor attribution and precise regression limits remain in the dependency forks.
+
+## Conservative Classic Artifacts cleanup
+
+Adapt julianknutsen's [PR #7797](https://github.com/gastownhall/beads/pull/7797), retaining its nested-backend scan/cleanup regressions. Both paths now share positive Dolt selection: an explicit Dolt backend or an existing Dolt repository. Unlike negating the historical-SQLite classifier, ambiguous metadata-less layouts remain untouched even with extra files or symlinks. Existing Graph Preview/future-format guards and migration-free discovery remain. No storage engine, schema, project selection or automatic cleanup policy changes.
+
+## Refusal before legacy metadata migration
+
+Adapt julianknutsen's [PR #7798](https://github.com/gastownhall/beads/pull/7798) to the fork's three public SDK opens and three Dolt constructors. Non-migrating native discovery rejects unsupported formats/backends before legacy config.json migration or gate creation; the loaded selector is rechecked afterward. Remedies name the actual metadata file and failed OpenFromConfig returns an untyped nil. Keep OpenBestAvailable's registered-extension dispatch, Graph Preview's explicit route, and supported legacy migration. Contributor table scenarios retain bytes, modes, unknown fields and the surrounding directory tree.
+
+### Portable remedy values (#7799)
+
+Adapt julianknutsen's [PR #7799](https://github.com/gastownhall/beads/pull/7799): quote portable mirror-removal/addition arguments and use placeholders plus reversible escaped names for values with incompatible shell or terminal interpretation. The fork's routed-target admission already refuses remote targets without emitting a host command; retain that boundary and escape its displayed path. Preserve the contributor's shell/value tables. Windows behavior is table-checked here; no Windows runtime is claimed.
+
+### Preserve setup-directory ownership (#7806)
+
+Adapt julianknutsen's [PR #7806](https://github.com/gastownhall/beads/pull/7806): integration removal uses the existing Lstat-based real-directory guard through a shared helper and attempts cleanup only after removing an owned file. Keep linked roots, unrelated files, empty directories this run did not empty and existing shared-client hooks. Contributor recipe and client regression scenarios are retained. Windows junction behavior needs native Windows qualification.
+
+### Bootstrap endpoint consistency (#7804)
+
+Adapt julianknutsen's [PR #7804](https://github.com/gastownhall/beads/pull/7804): probe, clone, finalization and warmup use the target workspace's configuration and the same host/socket/port/credentials. Reuse the store's init-port resolution. Restore the previous process configuration after each scoped read; concurrent configuration readers remain unsupported. The fork expresses a missing established-project database through its existing blocked-none plan and rechecks before initialization. Preserve explicit init overrides, shared-server ownership, native/Graph routes and credentials precedence. Contributor endpoint, user-layer and enclosing-workspace scenarios are retained with these API adaptations.
+
+### IPv6 endpoint consistency (#7803)
+
+Adapt julianknutsen's [PR #7803](https://github.com/gastownhall/beads/pull/7803) across the fork's existing server, proxy, credential and diagnostic paths. Shared address construction accepts bare or bracketed IPv6; TLS server names stay bare. IPv6 loopback never starts/stops the IPv4-only managed server, adopts its data directory or persists its port file. Preserve explicit init settings, sockets, TLS and IPv4/hostname behavior. New upstream HTTP-client APIs absent from this fork are not introduced; contributor address, TLS, credential and lifecycle cases are adapted to existing interfaces.
+
+### Consistent Claude detection (#7802)
+
+Adapt julianknutsen's [PR #7802](https://github.com/gastownhall/beads/pull/7802): doctor and setup tips reuse setup's exact plugin identity, per-ID settings precedence and loaded hook paths. Explicit path inspection resolves that repository without replacing the current Git cache. Preserve managed/local/project/user layers, personal disablement and shared-hook ownership. This changes detection only; it neither installs Claude nor changes Codex hook definitions or trust. Contributor detection and path-aware cache regression scenarios are retained.
+
+### UTC virtual-base evaluation
+
+The embedded engine additionally adapts macneale4’s [Dolt PR #12198](https://github.com/dolthub/dolt/pull/12198): virtual time defaults evaluate in UTC and restore the caller session setting. The driver/analyzer pins and schema stay unchanged. Retain the fork's conflicting-base refusal, virtual-object retention and matched data/binary recovery.

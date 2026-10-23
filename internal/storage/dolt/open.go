@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
 
@@ -95,13 +96,26 @@ func requireDoltBackend(fileCfg *configfile.Config, beadsDir string) error {
 		return fmt.Errorf("configured storage backend %q is no longer supported and cannot be opened as Dolt: %s", fileCfg.Backend, configfile.RemovedBackendDetailAt(fileCfg.Backend, beadsDir, fileCfg))
 	}
 	if !configfile.IsSupportedBackend(fileCfg.Backend) {
-		return fmt.Errorf("configured storage backend %q in metadata.json is not recognized and cannot be opened as Dolt; %s", fileCfg.Backend, configfile.BackendNotOpenedGuarantee)
+		return fmt.Errorf("configured storage backend %q in %s is not recognized and cannot be opened as Dolt; %s", fileCfg.Backend, filepath.Base(configfile.MetadataFilePath(beadsDir)), configfile.BackendNotOpenedGuarantee)
 	}
 	backend := fileCfg.GetBackend()
 	if backend != configfile.BackendDolt {
 		return fmt.Errorf("configured storage backend %q cannot be opened as Dolt", backend)
 	}
 	return nil
+}
+
+// RequireDiscoveredDoltBackend refuses before metadata migration or gate creation.
+// The constructor rechecks the loaded config after this read-only admission.
+func RequireDiscoveredDoltBackend(beadsDir string) error {
+	cfg, err := configfile.LoadNativeForDiscovery(beadsDir)
+	if err != nil {
+		return err
+	}
+	if cfg == nil {
+		return nil
+	}
+	return requireDoltBackend(cfg, beadsDir)
 }
 
 // NewFromConfig creates a DoltStore based on the metadata.json configuration.
@@ -115,6 +129,9 @@ func NewFromConfig(ctx context.Context, beadsDir string) (*DoltStore, error) {
 // `bd doctor` that should behave the same way as normal top-level CLI commands
 // while still honoring externally managed server mode.
 func NewFromConfigWithCLIOptions(ctx context.Context, beadsDir string, cfg *Config) (*DoltStore, error) {
+	if err := RequireDiscoveredDoltBackend(beadsDir); err != nil {
+		return nil, err
+	}
 	fileCfg, err := configfile.Load(beadsDir)
 	if err != nil {
 		return nil, fmt.Errorf("loading config: %w", err)
@@ -145,6 +162,9 @@ func NewFromConfigWithCLIOptions(ctx context.Context, beadsDir string, cfg *Conf
 // NewFromConfigWithOptions creates a DoltStore with options from metadata.json.
 // Options in cfg override those from the config file. Pass nil for default options.
 func NewFromConfigWithOptions(ctx context.Context, beadsDir string, cfg *Config) (*DoltStore, error) {
+	if err := RequireDiscoveredDoltBackend(beadsDir); err != nil {
+		return nil, err
+	}
 	fileCfg, err := configfile.Load(beadsDir)
 	if err != nil {
 		return nil, fmt.Errorf("loading config: %w", err)

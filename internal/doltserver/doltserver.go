@@ -931,14 +931,17 @@ func DefaultConfig(beadsDir string) *Config {
 
 	// Host-inferred external config (GH#3545): the server lives on
 	// another machine.
-	if cfg.Mode == ServerModeExternal {
+	if !sharedMode && (cfg.Mode == ServerModeExternal || cfg.PortSource == PortSourcePortFile) {
 		fc := &configfile.Config{}
 		if _, err := os.Stat(configfile.ConfigPath(beadsDir)); err == nil {
 			if loaded, loadErr := configfile.Load(beadsDir); loadErr == nil && loaded != nil {
 				fc = loaded
 			}
 		}
-		if !configfile.IsLocalHostString(fc.GetDoltServerHost()) {
+		host := fc.GetDoltServerHost()
+		ipv6 := configfile.IsIPv6LoopbackHost(host)
+		external := cfg.Mode == ServerModeExternal && (!configfile.IsLocalHostString(host) || ipv6)
+		if external || ipv6 {
 			// The gitignored port file is bd's bookkeeping for a
 			// bd-owned LOCAL server; pairing it with a remote host
 			// dials the remote machine on a stale local ephemeral
@@ -960,10 +963,12 @@ func DefaultConfig(beadsDir string) *Config {
 					}
 				}
 			}
+		}
+		if external {
 			applyLegacyPortEnv(cfg)
 			// With no configured port, dial the documented default
 			// 3307, not :0 — there is no local Start() to allocate
-			// an ephemeral port for a remote server.
+			// an ephemeral port for a server bd does not run.
 			if cfg.Port == 0 {
 				cfg.Port = configfile.DefaultDoltServerPort
 				cfg.PortSource = PortSourceExternalHostDefault
@@ -1095,12 +1100,11 @@ func EnsureRunningDetailed(beadsDir string) (port int, startedByUs bool, err err
 		if host, ok := externalNonLocalhostHost(beadsDir); ok {
 			// Configured for a non-localhost external server:
 			// "bd dolt start" is not the right advice (GH#3518).
-			return 0, false, &externallyManagedError{fmt.Sprintf("Dolt server at %s:%d is unreachable, and bd will not "+
+			return 0, false, &externallyManagedError{fmt.Sprintf("Dolt server at %s is unreachable, and bd will not "+
 				"start a local server because an external one is configured.\n\n"+
-				"Verify the external server is running and reachable from this host:\n"+
-				"  nc -zv %s %d  # or curl %s:%d for an HTTP-style check\n"+
+				"%s\n"+
 				"  bd dolt status   # detailed external-server check",
-				host, cfg.Port, host, cfg.Port, host, cfg.Port)}
+				doltutil.ServerAddr(host, cfg.Port), remoteServerAdvice(host, cfg.Port))}
 		}
 		// A named port declares the server external: "bd dolt start" would
 		// start bd's own server on it instead of the one that belongs there.
@@ -1123,12 +1127,12 @@ func EnsureRunningDetailed(beadsDir string) (port int, startedByUs bool, err err
 	if IsAutoStartDisabled() {
 		cfg := DefaultConfig(beadsDir)
 		if host, ok := externalNonLocalhostHost(beadsDir); ok {
-			return 0, false, fmt.Errorf("Configured Dolt server at %s:%d is unreachable, and auto-start "+
+			return 0, false, fmt.Errorf("Configured Dolt server at %s is unreachable, and auto-start "+
 				"is disabled (dolt.auto-start: false in config.yaml or BEADS_DOLT_AUTO_START=0).\n\n"+
 				"This is an external server; bd will not start it. Verify it is running:\n"+
-				"  nc -zv %s %d  # or curl %s:%d for an HTTP-style check\n"+
+				"  %s\n"+
 				"  bd dolt status   # detailed external-server check",
-				host, cfg.Port, host, cfg.Port, host, cfg.Port)
+				doltutil.ServerAddr(host, cfg.Port), ReachabilityCheck(host, cfg.Port))
 		}
 		return 0, false, fmt.Errorf("Dolt server unreachable (port %d) and auto-start is disabled "+
 			"(dolt.auto-start: false in config.yaml or BEADS_DOLT_AUTO_START=0).\n\n"+

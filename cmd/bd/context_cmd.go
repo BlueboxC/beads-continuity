@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"github.com/steveyegge/beads/internal/storage/doltutil"
 
 	"github.com/spf13/cobra"
 	"github.com/steveyegge/beads/internal/beads"
@@ -189,7 +190,7 @@ func printContextText(info ContextInfo) {
 		fmt.Printf("  database:     %s\n", info.Database)
 	}
 	if info.ServerHost != "" {
-		fmt.Printf("  server:       %s:%d\n", info.ServerHost, info.ServerPort)
+		fmt.Printf("  server:       %s\n", doltutil.ServerAddr(info.ServerHost, info.ServerPort))
 	}
 	if info.ProxiedDir != "" {
 		fmt.Printf("  proxied dir:  %s\n", info.ProxiedDir)

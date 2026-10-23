@@ -12,7 +12,7 @@ import (
 // ClassicArtifacts removes beads classic artifacts found by scanning the path.
 // Only removes artifacts that are safe to delete:
 // - JSONL export artifacts (not issues.jsonl itself)
-// - SQLite WAL/SHM files and backup databases
+// - SQLite WAL/SHM files and backup databases in positively identified Dolt workspaces
 // - Extra files in redirect-only .beads directories
 //
 // It never migrates a .beads directory's metadata, and leaves a .beads
@@ -92,7 +92,7 @@ func cleanBeadsDirArtifacts(beadsDir string) (removed, skipped, errCount int) {
 	}
 
 	// 2. Clean SQLite artifacts
-	r, s, e := cleanSQLiteArtifacts(beadsDir)
+	r, s, e := cleanSQLiteArtifacts(beadsDir, cfg)
 	removed += r
 	skipped += s
 	errCount += e
@@ -209,8 +209,22 @@ func cleanJSONLArtifacts(beadsDir string) (removed, skipped, errCount int) {
 	return
 }
 
-// cleanSQLiteArtifacts removes leftover SQLite database files.
-func cleanSQLiteArtifacts(beadsDir string) (removed, skipped, errCount int) {
+// SelectsDolt requires an explicit Dolt backend or an existing Dolt repository.
+// An empty or unrecognized selector is not proof that SQLite files are obsolete.
+// Scanning and cleanup use this same predicate for every nested workspace.
+func SelectsDolt(beadsDir string, cfg *configfile.Config) bool {
+	if cfg.GetBackend() != configfile.BackendDolt || (cfg != nil && !configfile.IsSupportedBackend(cfg.Backend)) {
+		return false
+	}
+	return (cfg != nil && cfg.Backend == configfile.BackendDolt) || configfile.ExistingDoltDataDir(beadsDir, cfg) != ""
+}
+
+// cleanSQLiteArtifacts removes only files in a positively identified Dolt workspace.
+func cleanSQLiteArtifacts(beadsDir string, cfg *configfile.Config) (removed, skipped, errCount int) {
+	if !SelectsDolt(beadsDir, cfg) {
+		return
+	}
+
 	entries, err := os.ReadDir(beadsDir)
 	if err != nil {
 		return
@@ -222,7 +236,7 @@ func cleanSQLiteArtifacts(beadsDir string) (removed, skipped, errCount int) {
 		}
 		name := entry.Name()
 
-		// WAL and SHM files are always safe to delete
+		// This workspace positively selects Dolt; retain beads.db for manual review.
 		if name == "beads.db-shm" || name == "beads.db-wal" {
 			path := filepath.Join(beadsDir, name)
 			if err := os.Remove(path); err != nil {

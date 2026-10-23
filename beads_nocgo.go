@@ -17,6 +17,13 @@ import (
 //
 // beadsDir is the path to the .beads directory.
 func OpenBestAvailable(ctx context.Context, beadsDir string) (Storage, error) {
+	discovered, err := configfile.LoadNativeForDiscovery(beadsDir)
+	if err != nil {
+		return nil, fmt.Errorf("loading storage metadata: %w", err)
+	}
+	if discovered != nil && !configfile.IsSupportedBackend(discovered.Backend) {
+		return nil, configuredBackendUnavailable(discovered.Backend, beadsDir, discovered)
+	}
 	cfg, err := configfile.Load(beadsDir)
 	if err != nil {
 		return nil, fmt.Errorf("loading storage metadata: %w", err)

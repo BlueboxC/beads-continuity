@@ -22,6 +22,9 @@ Root DOX.md and the parent chain remain binding.
 - Classic Claude plugin enablement resolves each plugin ID through managed, root-local, directory-local, project and user settings in precedence order. Preserve teammates’ shared hooks when a personal override disables the plugin; global installation uses only global providers. Graph setup retains its conservative refusal of any declared provider and its separate Stop reminder.
 - Mux removal preserves symlinked .mux roots, the global root and directories where no owned hook was removed. Report unused legacy ~/.mux/.mux hooks without adopting or deleting them.
 
+- Integration removal cleans up only real empty directories from which this run removed an owned file; preserve linked roots and unrelated/shared-client content.
+- Expose read-only session plugin/hook resolution to doctor and tips; explicit path inspection resolves its repository without replacing the current Git cache.
+
 ## Work Guidance
 
 Preserve unrelated user configuration and make repeat setup idempotent. Global and project paths must remain distinct.

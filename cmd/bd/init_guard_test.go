@@ -429,6 +429,18 @@ func TestInitGuardServerMessage_IncludesTargetIdentity(t *testing.T) {
 			t.Errorf("message must include target identity %q, got:\n%s", want, msg)
 		}
 	}
+
+	// An IPv6 host, configured bare or bracketed, is named as [host]:port, the
+	// address bd dials, not ::1:3309 or [[::1]]:3309.
+	for _, host := range []string{"::1", "[::1]"} {
+		for name, msg := range map[string]string{
+			"initGuardServerMessage": initGuardServerMessage("custom_db", host, 3309, "custom", "").Error(),
+		} {
+			if !strings.Contains(msg, "[::1]:3309") || strings.Contains(msg, "[[::1]]") || strings.Contains(msg, " ::1:3309") {
+				t.Errorf("%s(host %q) must name the server as [::1]:3309, got:\n%s", name, host, msg)
+			}
+		}
+	}
 }
 
 // GH#1111: Regression — safe recovery paths must be suggested before destructive ones.

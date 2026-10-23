@@ -10,6 +10,7 @@ import (
 	"strconv"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/steveyegge/beads/internal/config"
 	"github.com/steveyegge/beads/internal/configfile"
@@ -123,20 +124,106 @@ func TestRunDoltPerformanceDiagnosticsCentralConfigHost(t *testing.T) {
 	}
 }
 
+// TestRunDoltPerformanceDiagnosticsIPv6Host pins that bd doctor --perf
+// probes and connects to an IPv6 server host configured bare ("::1") or
+// bracketed ("[::1]"), the address the store dials, rather than reporting a
+// running server as not running. The listener speaks no MySQL, so the
+// diagnostics fail, but only after the connection reached it.
+func TestRunDoltPerformanceDiagnosticsIPv6Host(t *testing.T) {
+	for _, host := range []string{"::1", "[::1]"} {
+		t.Run(host, func(t *testing.T) {
+			port, accepted := testutil.IPv6LoopbackListener(t)
+			tmpDir := perfServerWorkspaceOn(t, host, port)
+
+			metrics, err := RunDoltPerformanceDiagnostics(tmpDir, false)
+			if metrics == nil || metrics.ServerStatus != "running" {
+				t.Fatalf("server status = %+v, want running; err = %v", metrics, err)
+			}
+			if err == nil || !strings.Contains(err.Error(), "server diagnostics failed") {
+				t.Errorf("err = %v, want the diagnostics' failure against a listener that speaks no MySQL", err)
+			}
+			for deadline := time.Now().Add(2 * time.Second); accepted() < 2 && time.Now().Before(deadline); {
+				time.Sleep(10 * time.Millisecond)
+			}
+			if n := accepted(); n < 2 {
+				t.Errorf("the server at [::1]:%d took %d connections, want the probe's and the diagnostics': %v", port, n, err)
+			}
+		})
+	}
+	// With nothing listening, the error names the address it probed, as the
+	// advice under it does: [::1]:port, never ::1:port. The advice checks the
+	// server there and never names `bd dolt start`: bd's own server listens
+	// on 127.0.0.1 only. For the same reason a port file that server left
+	// behind names no port at [::1], and the probe stays on the port
+	// metadata.json's dolt_server_port declares.
+	for _, host := range []string{"::1", "[::1]"} {
+		for _, portFile := range []bool{false, true} {
+			name := host + " not running"
+			if portFile {
+				name += ", beside a port file"
+			}
+			t.Run(name, func(t *testing.T) {
+				ln, err := net.Listen("tcp", "[::1]:0")
+				if err != nil {
+					t.Skipf("IPv6 loopback not available: %v", err)
+				}
+				other, err := net.Listen("tcp", "[::1]:0")
+				if err != nil {
+					t.Fatal(err)
+				}
+				port, stale := ln.Addr().(*net.TCPAddr).Port, other.Addr().(*net.TCPAddr).Port
+				_ = ln.Close()
+				_ = other.Close()
+				tmpDir := perfServerWorkspaceOn(t, host, port)
+				if portFile {
+					if err := os.WriteFile(filepath.Join(tmpDir, ".beads", "dolt-server.port"), []byte(strconv.Itoa(stale)), 0o600); err != nil {
+						t.Fatal(err)
+					}
+				}
+				addr := net.JoinHostPort("::1", strconv.Itoa(port))
+
+				_, err = RunDoltPerformanceDiagnostics(tmpDir, false)
+				if err == nil {
+					t.Fatalf("performance diagnostics succeeded with nothing listening at %s", addr)
+				}
+				for _, want := range []string{"not running on " + addr, fmt.Sprintf(`nc -zv ::1 %d  # or curl "%s"`, port, addr)} {
+					if !strings.Contains(err.Error(), want) {
+						t.Errorf("error does not contain %q:\n%v", want, err)
+					}
+				}
+				// bd's own server listens on 127.0.0.1 only: bd starts none
+				// at [::1], and its port is not the one to check there.
+				for _, banned := range []string{"bd dolt start", fmt.Sprintf("nc -zv ::1 %d ", stale)} {
+					if strings.Contains(err.Error(), banned) {
+						t.Errorf("error contains %q:\n%v", banned, err)
+					}
+				}
+			})
+		}
+	}
+}
+
 // perfServerWorkspace writes a server-mode metadata.json naming host, when it
 // is not empty, and a free port nothing listens on, with no Dolt server
 // variable set, and returns the project directory and the port.
 func perfServerWorkspace(t *testing.T, host string) (string, int) {
+	t.Helper()
+	port, err := testutil.FindFreePort()
+	if err != nil {
+		t.Fatalf("find free port: %v", err)
+	}
+	return perfServerWorkspaceOn(t, host, port), port
+}
+
+// perfServerWorkspaceOn is perfServerWorkspace naming port, and returns the
+// project directory.
+func perfServerWorkspaceOn(t *testing.T, host string, port int) string {
 	t.Helper()
 	for _, name := range []string{"BEADS_DOLT_SHARED_SERVER", "BEADS_DOLT_SERVER_MODE", "BEADS_DOLT_SERVER_PORT",
 		"BEADS_DOLT_PORT", "BEADS_DOLT_SERVER_HOST", "BEADS_DOLT_SERVER_SOCKET"} {
 		t.Setenv(name, "")
 	}
 	config.ResetForTesting()
-	port, err := testutil.FindFreePort()
-	if err != nil {
-		t.Fatalf("find free port: %v", err)
-	}
 	tmpDir := t.TempDir()
 	beadsDir := filepath.Join(tmpDir, ".beads")
 	if err := os.MkdirAll(beadsDir, 0o750); err != nil {
@@ -150,5 +237,5 @@ func perfServerWorkspace(t *testing.T, host string) (string, int) {
 	if err := cfg.Save(beadsDir); err != nil {
 		t.Fatalf("save config: %v", err)
 	}
-	return tmpDir, port
+	return tmpDir
 }

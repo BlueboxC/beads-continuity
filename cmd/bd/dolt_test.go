@@ -18,6 +18,7 @@ import (
 	"github.com/steveyegge/beads/internal/doltserver"
 	"github.com/steveyegge/beads/internal/hooks"
 	"github.com/steveyegge/beads/internal/storage"
+	"github.com/steveyegge/beads/internal/testutil"
 )
 
 func TestDoltShowConfigNotInRepo(t *testing.T) {
@@ -419,6 +420,17 @@ func TestTestServerConnection(t *testing.T) {
 		result := testServerConnection(cfg.DoltServerHost, cfg.DoltServerPort)
 		if result {
 			t.Error("expected connection to fail for unused port on IPv6")
+		}
+	})
+
+	// bd dolt test and bd dolt show dial what the store dials for an IPv6
+	// host configured bare or bracketed: the server at [::1]:port.
+	t.Run("IPv6 loopback bare or bracketed reaches the server", func(t *testing.T) {
+		port, _ := testutil.IPv6LoopbackListener(t)
+		for _, host := range []string{"::1", "[::1]"} {
+			if !testServerConnection(host, port) {
+				t.Errorf("testServerConnection(%q, %d) = false, want the server at [::1]:%d", host, port, port)
+			}
 		}
 	})
 }
@@ -1449,6 +1461,7 @@ func TestIsLocalHost(t *testing.T) {
 		{"uppercase Localhost", "Localhost", true},
 		{"IPv4 loopback", "127.0.0.1", true},
 		{"IPv6 loopback", "::1", true},
+		{"IPv6 loopback bracketed", "[::1]", true},
 		{"all-zeros bind", "0.0.0.0", true},
 		{"surrounding whitespace", "  127.0.0.1  ", true},
 		{"public IPv4", "20.150.139.92", false},
@@ -1690,6 +1703,29 @@ func TestShouldUseExternalDoltStatus(t *testing.T) {
 				DoltServerHost: "localhost",
 			},
 			autoStartDisabled: true,
+			want:              true,
+		},
+		{
+			// bd's own server listens on 127.0.0.1 only, so one at the IPv6
+			// loopback, in either spelling, is never bd-managed: even with
+			// auto-start on, status probes it rather than bd's PID file.
+			name: "server mode + bare IPv6 loopback + auto-start on routes to external",
+			cfg: &configfile.Config{
+				Backend:        "dolt",
+				DoltMode:       "server",
+				DoltServerHost: "::1",
+			},
+			autoStartDisabled: false,
+			want:              true,
+		},
+		{
+			name: "server mode + bracketed IPv6 loopback + auto-start on routes to external",
+			cfg: &configfile.Config{
+				Backend:        "dolt",
+				DoltMode:       "server",
+				DoltServerHost: "[::1]",
+			},
+			autoStartDisabled: false,
 			want:              true,
 		},
 	}

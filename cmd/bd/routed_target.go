@@ -40,7 +40,7 @@ func refuseUninitializableTarget(beadsDir string) error {
 		return err
 	}
 	if databases := embeddeddolt.Databases(beadsDir); len(databases) > 1 {
-		return fmt.Errorf("target %s has no metadata.json and holds several databases (%s); name the intended database in metadata.json before routing writes", filepath.Dir(beadsDir), strings.Join(databases, ", "))
+		return fmt.Errorf("target %s has no metadata.json and holds several databases (%s); name the intended database in metadata.json before routing writes", printedValue(filepath.Dir(beadsDir)), strings.Join(databases, ", "))
 	}
 	return nil
 }
@@ -92,5 +92,5 @@ func refuseUncommittedTargetChanges(ctx context.Context, target storage.DoltStor
 		return nil
 	}
 	slices.Sort(tables)
-	return fmt.Errorf("target %s database %q has uncommitted changes (%s); name this database in metadata.json and commit those changes explicitly before retrying; nothing was created", filepath.Dir(beadsDir), database, strings.Join(slices.Compact(tables), ", "))
+	return fmt.Errorf("target %s database %q has uncommitted changes (%s); name this database in metadata.json and commit those changes explicitly before retrying; nothing was created", printedValue(filepath.Dir(beadsDir)), database, strings.Join(slices.Compact(tables), ", "))
 }

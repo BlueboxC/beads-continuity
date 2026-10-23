@@ -26,6 +26,8 @@ Root owns fork policy, public API packages, license, build/version files, small 
 
 - Graph Preview is a separate explicit workspace format adapted from versioned-beads/beads. Preserve the ordinary v1.3.1 API, continuity planes and project data. New graph workspaces use the existing Dolt engine and the fork continuity adapter; never convert existing projects implicitly. Human knowledge binds canonical retained Memories through private key pointers; derived code/catalogs and observed activity remain separate projections in that same database.
 
+- Public metadata-driven opens refuse unsupported formats/backends through non-migrating discovery before creating coordination gates or migrating legacy config.json. Error remedies name the existing metadata file; failed opens return an untyped nil storage. Registered extension dispatch remains supported by OpenBestAvailable.
+
 ## Work Guidance
 
 - Prefer the simplest complete implementation and existing extension points. Avoid speculative configuration and dependencies.

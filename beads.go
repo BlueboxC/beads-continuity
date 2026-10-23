@@ -321,7 +321,11 @@ func Open(ctx context.Context, dbPath string) (Storage, error) {
 // name configuration.
 // beadsDir is the path to the .beads directory.
 func OpenFromConfig(ctx context.Context, beadsDir string) (Storage, error) {
-	return dolt.NewFromConfigWithOptions(ctx, beadsDir, &dolt.Config{CreateIfMissing: true})
+	store, err := dolt.NewFromConfigWithOptions(ctx, beadsDir, &dolt.Config{CreateIfMissing: true})
+	if err != nil {
+		return nil, err
+	}
+	return store, nil
 }
 
 // OpenGated is OpenFromConfig plus participation in the workspace
@@ -355,6 +359,9 @@ func OpenFromConfig(ctx context.Context, beadsDir string) (Storage, error) {
 // operation holds one exclusively; zero means fail fast. A busy gate is
 // reported as ErrGateBusy (match with errors.Is).
 func OpenGated(ctx context.Context, beadsDir string, wait time.Duration) (Storage, error) {
+	if err := dolt.RequireDiscoveredDoltBackend(beadsDir); err != nil {
+		return nil, err
+	}
 	wsGate, err := workspacegate.ForWorkspace(beadsDir)
 	if err != nil {
 		return nil, err

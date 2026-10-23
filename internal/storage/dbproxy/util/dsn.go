@@ -1,7 +1,7 @@
 package util
 
 import (
-	"fmt"
+	"github.com/steveyegge/beads/internal/storage/doltutil"
 	"time"
 
 	mysql "github.com/go-sql-driver/mysql"
@@ -28,17 +28,17 @@ func (d DoltServerDSN) String() string {
 		timeout = 5 * time.Second
 	}
 
-	net := "tcp"
-	addr := fmt.Sprintf("%s:%d", d.Host, d.Port)
+	network := "tcp"
+	addr := doltutil.ServerAddr(d.Host, d.Port)
 	if d.Socket != "" {
-		net = "unix"
+		network = "unix"
 		addr = d.Socket
 	}
 
 	cfg := mysql.Config{
 		User:                 d.User,
 		Passwd:               d.Password,
-		Net:                  net,
+		Net:                  network,
 		Addr:                 addr,
 		DBName:               d.Database,
 		ParseTime:            true,

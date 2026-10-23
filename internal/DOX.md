@@ -53,6 +53,11 @@ Root DOX.md and the parent chain remain binding.
 
 - Path-parameterized discovery stops a linked worktree walk at its repository boundary when its main-checkout fallback is usable. An unrelated parent store cannot win over that fallback; ordinary non-worktree walk-up remains unchanged.
 
+- Backend recovery messages name the existing metadata.json or legacy config.json without migration. Unsupported metadata-driven opens refuse before migrating selectors or creating gates.
+
+- Explicit Git-root discovery must not read or mutate the current-directory cache.
+- IPv6 loopback is local for classification but never owned by the IPv4-only managed server; preserve remote credentials and TLS server-name normalization.
+
 ## Work Guidance
 
 Tracker adapters share configuration resolution: local integration credentials never query Dolt, including Notion authentication; authenticated tracker endpoints use explicit local YAML/environment. If no local destination exists, a historical nonempty synced endpoint or store failure refuses connection instead of choosing a public default. Ordinary values keep storage-first/environment fallback including store errors. Credential classification also recognizes case and surrounding-space variants without normalizing ordinary stored keys.

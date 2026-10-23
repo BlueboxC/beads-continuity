@@ -130,6 +130,10 @@ Root DOX.md and the parent chain remain binding.
 
 - History compact reports its actual post-rewrite log count; failed readback omits the count and emits an advisory without relabeling a successful rewrite as failed. Dry-run estimates retain the initial commit. Existing embedded exclusivity and server/proxy refusal stay in force.
 
+- Printed remedies use portable quoted values or placeholders with reversible escaped names; displayed paths cannot emit terminal controls.
+- Probe, clone, finalization and warmup resolve the target workspace endpoint consistently. An established missing server database uses the blocked plan and refuses initialization.
+- Reuse setup’s exact Claude plugin and hook resolution in doctor/tips; detection never installs integrations.
+
 ## Work Guidance
 - Routed create adopts a sole metadata-less native database, retaining its prefix and project identity. Refuse ambiguous databases, dirty working sets under committing policy, non-embedded target settings and graph formats before writing selectors. Personal migration shares the guarded adoption; dry-run checks target admission without initialization.
 

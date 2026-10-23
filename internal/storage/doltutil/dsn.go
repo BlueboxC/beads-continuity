@@ -1,11 +1,18 @@
 package doltutil
 
 import (
-	"fmt"
+	"net"
+	"strconv"
 	"time"
 
 	mysql "github.com/go-sql-driver/mysql"
+	"github.com/steveyegge/beads/internal/configfile"
 )
+
+// ServerAddr joins a configured IPv4, hostname or bare/bracketed IPv6 host.
+func ServerAddr(host string, port int) string {
+	return net.JoinHostPort(configfile.UnbracketHost(host), strconv.Itoa(port))
+}
 
 // ServerDSN holds connection parameters for building a MySQL DSN to a Dolt server.
 // All DSNs built with this struct set parseTime=true and multiStatements=true.
@@ -28,17 +35,17 @@ func (d ServerDSN) String() string {
 		timeout = 5 * time.Second
 	}
 
-	net := "tcp"
-	addr := fmt.Sprintf("%s:%d", d.Host, d.Port)
+	network := "tcp"
+	addr := ServerAddr(d.Host, d.Port)
 	if d.Socket != "" {
-		net = "unix"
+		network = "unix"
 		addr = d.Socket
 	}
 
 	cfg := mysql.Config{
 		User:            d.User,
 		Passwd:          d.Password,
-		Net:             net,
+		Net:             network,
 		Addr:            addr,
 		DBName:          d.Database,
 		ParseTime:       true,

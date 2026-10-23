@@ -86,7 +86,7 @@ func checkDatabaseOnServer(host string, port int, user, password, dbName string,
 // database.  Instead we guide the user toward safe diagnostic commands.
 func initGuardServerMessage(dbName, host string, port int, prefix, syncRemote string) error {
 	var b strings.Builder
-	fmt.Fprintf(&b, "\n%s Database %q not found on server at %s:%d.\n", ui.RenderWarn("⚠"), dbName, host, port)
+	fmt.Fprintf(&b, "\n%s Database %q not found on server at %s.\n", ui.RenderWarn("⚠"), dbName, doltutil.ServerAddr(host, port))
 	b.WriteString("The server is running but this database hasn't been created yet.\n")
 
 	b.WriteString("\nDiagnose with:\n")
