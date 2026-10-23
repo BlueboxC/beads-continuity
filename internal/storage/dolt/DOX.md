@@ -31,7 +31,7 @@ Root DOX.md and the parent chain remain binding.
 
 - Dependency readers/counts retain each far end once across durable and optional wisp planes. Durable edge type wins, while dual-resident issue bodies follow existing wisp hydration. Only a typed missing optional wisp table reads as empty; propagate required-table and other read errors. Server iteration shares one read transaction across its joins.
 
-- Metadata constructors preflight the native format and backend without migration, then recheck after loading. Callers that create gates use the same admission first; preserve the registered-backend refusal and existing options.
+- Passive backend inspection never migrates legacy metadata. Metadata constructors preflight the native format and backend without migration, then recheck after loading. Callers that create gates use the same admission first; preserve the registered-backend refusal and existing options.
 
 - Server probe/clone callers reuse the store’s port resolution; preserve explicit init overrides and shared-server provenance.
 - IPv6 loopback never auto-starts the managed IPv4 server, adopts its local data directory or persists its port file.

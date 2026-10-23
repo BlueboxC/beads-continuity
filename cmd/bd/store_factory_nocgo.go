@@ -72,6 +72,9 @@ func acquireEmbeddedLock(_ string, _ bool) (util.Unlocker, error) {
 // newDoltStoreFromConfig creates a SQL-server-backed storage backend from config.
 func newDoltStoreFromConfig(ctx context.Context, beadsDir string) (s storage.DoltStorage, err error) {
 	defer func() { s, err = activateEventsJournalStore(beadsDir, s, err) }()
+	if err := checkDiscoveredBackend(beadsDir); err != nil {
+		return nil, err
+	}
 	cfg, err := configfile.Load(beadsDir)
 	if err != nil {
 		// Name the real cause: without this, a present-but-unloadable
@@ -100,6 +103,9 @@ func newDoltStoreFromConfig(ctx context.Context, beadsDir string) (s storage.Dol
 // so there is no mutation for a journal row to accompany (exemption is recorded
 // in the construction guard).
 func newReadOnlyStoreFromConfig(ctx context.Context, beadsDir string, disableAutoStart ...bool) (storage.DoltStorage, error) {
+	if err := checkDiscoveredBackend(beadsDir); err != nil {
+		return nil, err
+	}
 	cfg, err := configfile.Load(beadsDir)
 	if err != nil {
 		return nil, fmt.Errorf("load %s: %w", configfile.ConfigPath(beadsDir), err)

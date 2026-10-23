@@ -12,8 +12,6 @@ import (
 	"strings"
 	"testing"
 	"time"
-
-	"github.com/steveyegge/beads/internal/testutil"
 )
 
 // A workspace can declare server mode without ever writing metadata.json:
@@ -247,13 +245,4 @@ func envWithoutBeadsStorageSettings() []string {
 		kept = append(kept, entry)
 	}
 	return kept
-}
-
-func freeLoopbackPort(t *testing.T) int {
-	t.Helper()
-	port, err := testutil.FindFreePort()
-	if err != nil {
-		t.Fatalf("find free port: %v", err)
-	}
-	return port
 }

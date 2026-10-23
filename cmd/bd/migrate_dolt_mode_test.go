@@ -3,6 +3,7 @@ package main
 import (
 	"bytes"
 	"encoding/json"
+	"fmt"
 	"io"
 	"os"
 	"path/filepath"
@@ -1117,5 +1118,32 @@ func TestMigrateFromProxiedServer_ForwardJournalAtPreparedIsNotSidecarRefused(t 
 	if migrateErr != nil {
 		assert.NotContains(t, stderr, "migration sidecar does not match prepared state")
 		assert.NotContains(t, migrateErr.Error(), "migration sidecar does not match prepared state")
+	}
+}
+
+func TestMigrateToProxiedServer_RefusesExternalIPv6Root(t *testing.T) {
+	for _, host := range []string{"::1", "[::1]"} {
+		for _, dryRun := range []bool{false, true} {
+			for _, resume := range []bool{false, true} {
+				t.Run(fmt.Sprintf("%s/dry=%t/resume=%t", host, dryRun, resume), func(t *testing.T) {
+					beadsDir := migrateModeWorkspace(t, configfile.DoltModeServer)
+					t.Setenv("BEADS_DOLT_SHARED_SERVER", "")
+					t.Setenv("BEADS_DOLT_SERVER_HOST", "")
+					if resume {
+						t.Setenv("BEADS_MIGRATION_FAIL_PHASE", string(migratePrepared))
+						require.Error(t, runMigrateToProxiedServer(false, 0, false))
+						t.Setenv("BEADS_MIGRATION_FAIL_PHASE", "")
+					}
+					cfg, err := configfile.Load(beadsDir)
+					require.NoError(t, err)
+					cfg.DoltServerHost = host
+					require.NoError(t, cfg.Save(beadsDir))
+					touchFile(t, filepath.Join(beadsDir, "dolt-server.log"))
+					before := snapshotMigrationTree(t, beadsDir)
+					require.Error(t, runMigrateToProxiedServer(dryRun, 0, false))
+					assert.Equal(t, before, snapshotMigrationTree(t, beadsDir))
+				})
+			}
+		}
 	}
 }

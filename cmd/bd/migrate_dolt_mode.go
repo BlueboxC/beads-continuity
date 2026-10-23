@@ -700,6 +700,12 @@ func runMigrateToProxiedServer(dryRun bool, idleTimeout time.Duration, shared bo
 		return migrationInvalidState(fmt.Sprintf("repo is marked proxied-server but %s is missing; rerun migration with a recoverable journal", configfile.ProxiedServerClientInfoFileName))
 	}
 
+	if !shared && cfg.IsDoltServerMode() {
+		if host := cfg.GetDoltServerHost(); !configfile.IsLocalHostString(host) || configfile.IsIPv6LoopbackHost(host) {
+			return HandleError("the configured Dolt server host is externally managed (%s); this migration only re-points the proxy at the local Dolt root and would abandon the external data.\nMigrate on the server host itself, or clear dolt_server_host / dolt.host / BEADS_DOLT_SERVER_HOST first", host)
+		}
+	}
+
 	var rootPath string
 	if j != nil {
 		rootPath = j.RootPath
@@ -720,9 +726,6 @@ func runMigrateToProxiedServer(dryRun bool, idleTimeout time.Duration, shared bo
 		// it does not copy data. A workspace whose server mode comes from a
 		// remote host (GH#3545 inference or explicit config) would silently
 		// switch from the remote data to an empty/stale local database.
-		if host := cfg.GetDoltServerHost(); !configfile.IsLocalHostString(host) {
-			return HandleError("the configured Dolt server host is remote (%s); this migration only re-points the proxy at the local Dolt root and would abandon the remote data.\nMigrate on the server host itself, or clear dolt_server_host / dolt.host / BEADS_DOLT_SERVER_HOST first", host)
-		}
 		if doltserver.IsSharedServerMode() {
 			return HandleErrorWithHint("repo is in shared-server mode", "use 'bd migrate from-shared-server-to-proxied-server'")
 		}

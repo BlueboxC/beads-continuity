@@ -62,6 +62,13 @@ func normalizeLoadedConfig(cfg *configfile.Config) *configfile.Config {
 }
 
 func loadDoltBackendConfig(beadsDir string) (*configfile.Config, error) {
+	discovered, err := configfile.LoadNativeForDiscovery(beadsDir)
+	if err != nil {
+		return nil, fmt.Errorf("loading config: %w", err)
+	}
+	if err := requireDoltBackend(discovered, beadsDir); err != nil {
+		return nil, err
+	}
 	cfg, err := configfile.Load(beadsDir)
 	if err != nil {
 		return nil, fmt.Errorf("loading config: %w", err)
@@ -73,4 +80,14 @@ func loadDoltBackendConfig(beadsDir string) (*configfile.Config, error) {
 		return nil, err
 	}
 	return cfg, nil
+}
+
+// checkDiscoveredBackend admits direct factory targets before legacy migration.
+// Registered backends remain eligible for their own factory dispatch.
+func checkDiscoveredBackend(beadsDir string) error {
+	cfg, err := configfile.LoadNativeForDiscovery(beadsDir)
+	if err != nil {
+		return fmt.Errorf("loading config %s: %w", configfile.ConfigPath(beadsDir), err)
+	}
+	return validateConfiguredBackend(cfg, beadsDir)
 }

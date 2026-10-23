@@ -15,6 +15,17 @@ Upstream attribution and the MIT license remain intact. Fork additions are
 available on `codex/project-continuity`; upstream installation channels do not
 contain them. See [installation and workflow](docs/core-concepts/fork-continuity.md).
 
+## Ownership and bootstrap follow-ups
+
+The follow-ups to upstream PRs #7797, #7803, #7798 and #7804 preserve real
+storage in redirect-expected folders, refuse externally managed IPv6 local-root
+migration (including prepared retries), admit direct factory backends before
+legacy metadata migration, and resolve a fresh external clone without stale
+local port bookkeeping. Registered backend dispatch, ordinary storage-free
+cleanup and authoritative/shared port precedence remain intact. PR #7807's
+compatibility distinctions are adapted to this fork's actual 2.6.0 embedded
+engine; external CLI/server policy and dependency pins remain unchanged.
+
 ## Network privacy
 
 This fork removes anonymous command-usage collection and upload, including

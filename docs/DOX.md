@@ -16,6 +16,8 @@ Root DOX.md and the parent chain remain binding.
 
 - reference/graph-preview.md owns this fork’s experimental format, actual supported commands, source attribution and compatibility limits; ordinary onboarding remains in fork-continuity.md.
 
+- Dolt guidance distinguishes the qualified embedded dependency, standalone CLI policy and database storage-format compatibility. Attribute upstream cross-version measurements; neither a read-only success nor the advisory minimum qualifies writes to newer storage.
+
 ## Work Guidance
 
 Document shipped behavior and distinguish fork goals from implemented capabilities. Human gate guidance owns opt-in resolver setup, protected mutations, batch behavior and caller-controlled identity/admin limits; do not describe manual resolution as authenticated approval. Audit examples use stored EventType literals; sync onboarding separates fresh `init --remote` from existing workspaces, preserves local data and describes embedded as the default. Do not advertise removed CLI modes.

@@ -896,6 +896,10 @@ func PortSourceLabels() []string {
 // The port file (dolt-server.port) is written by Start() with the actual
 // listening port, so already-running-server connections use the right port.
 func DefaultConfig(beadsDir string) *Config {
+	return defaultConfigForHost(beadsDir, "")
+}
+
+func defaultConfigForHost(beadsDir, bootstrapHost string) *Config {
 	// In shared mode, use the shared server directory for port resolution
 	sharedMode := false
 	if IsSharedServerMode() {
@@ -929,6 +933,10 @@ func DefaultConfig(beadsDir string) *Config {
 		cfg.PortSharedServer = true
 	}
 
+	if !sharedMode && bootstrapHost != "" && (!configfile.IsLocalHostString(bootstrapHost) || configfile.IsIPv6LoopbackHost(bootstrapHost)) {
+		cfg.Mode = ServerModeExternal
+	}
+
 	// Host-inferred external config (GH#3545): the server lives on
 	// another machine.
 	if !sharedMode && (cfg.Mode == ServerModeExternal || cfg.PortSource == PortSourcePortFile) {
@@ -939,6 +947,9 @@ func DefaultConfig(beadsDir string) *Config {
 			}
 		}
 		host := fc.GetDoltServerHost()
+		if bootstrapHost != "" {
+			host = bootstrapHost
+		}
 		ipv6 := configfile.IsIPv6LoopbackHost(host)
 		external := cfg.Mode == ServerModeExternal && (!configfile.IsLocalHostString(host) || ipv6)
 		if external || ipv6 {
@@ -2150,6 +2161,15 @@ func IsPreV56DoltDir(doltDir string) bool {
 // DialConfig matches the actual legacy-port precedence used by the store.
 func DialConfig(beadsDir string) *Config {
 	cfg := DefaultConfig(beadsDir)
+	applyLegacyPortEnv(cfg)
+	return cfg
+}
+
+// DialConfigForHost resolves a bootstrap endpoint before its metadata exists.
+// Only the endpoint host is supplied early; shared-server ownership and the
+// common port-source chain retain their ordinary precedence.
+func DialConfigForHost(beadsDir, host string) *Config {
+	cfg := defaultConfigForHost(beadsDir, host)
 	applyLegacyPortEnv(cfg)
 	return cfg
 }

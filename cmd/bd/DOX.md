@@ -134,6 +134,10 @@ Root DOX.md and the parent chain remain binding.
 - Probe, clone, finalization and warmup resolve the target workspace endpoint consistently. An established missing server database uses the blocked plan and refuses initialization.
 - Reuse setup’s exact Claude plugin and hook resolution in doctor/tips; detection never installs integrations.
 
+- Server-to-proxy migration refuses externally managed hosts, including IPv6 loopback, before selecting a local root; a prepared journal does not bypass host admission. Preserve shared-server and completed-proxy recovery semantics.
+
+- Direct read/write/preview factories admit the target native format and backend without migration before loading metadata; registered backend dispatch remains available. Dolt-only helpers reject registered non-Dolt backends before rewriting legacy configuration.
+
 ## Work Guidance
 - Routed create adopts a sole metadata-less native database, retaining its prefix and project identity. Refuse ambiguous databases, dirty working sets under committing policy, non-embedded target settings and graph formats before writing selectors. Personal migration shares the guarded adoption; dry-run checks target admission without initialization.
 

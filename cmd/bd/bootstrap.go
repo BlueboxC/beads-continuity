@@ -1293,7 +1293,13 @@ func serverClonePort(beadsDir string, cfg *configfile.Config) int {
 	var dial *doltserver.Config
 	// A config file that does not load fails the same way for later
 	// commands, which run with what did load.
-	_ = config.WithBeadsDir(beadsDir, func() { dial = doltserver.DialConfig(beadsDir) })
+	_ = config.WithBeadsDir(beadsDir, func() {
+		if cfg != nil {
+			dial = doltserver.DialConfigForHost(beadsDir, cfg.GetDoltServerHost())
+		} else {
+			dial = doltserver.DialConfig(beadsDir)
+		}
+	})
 	if cfg != nil && cfg.DoltServerPort > 0 && !dial.PortSharedServer && !outranksMetadataPort(dial) {
 		if _, err := os.Stat(configfile.ConfigPath(beadsDir)); errors.Is(err, os.ErrNotExist) {
 			return cfg.DoltServerPort

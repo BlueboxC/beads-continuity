@@ -239,3 +239,23 @@ func perfServerWorkspaceOn(t *testing.T, host string, port int) string {
 	}
 	return tmpDir
 }
+
+func TestDatabaseSizeForServerExcludesExternalIPv6(t *testing.T) {
+	beadsDir := filepath.Join(t.TempDir(), ".beads")
+	if err := os.MkdirAll(filepath.Join(beadsDir, "dolt"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(beadsDir, "dolt", "local-data"), []byte("abc"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	for _, host := range []string{"::1", "[::1]", "db.invalid"} {
+		if size := databaseSizeForServer(beadsDir, host); !strings.HasPrefix(size, "n/a") {
+			t.Errorf("%s: counted unrelated local data: %s", host, size)
+		}
+	}
+	for _, host := range []string{"127.0.0.1", "localhost", ""} {
+		if size := databaseSizeForServer(beadsDir, host); size != "3 bytes" {
+			t.Errorf("%s: local positive control: %s", host, size)
+		}
+	}
+}

@@ -100,15 +100,16 @@ func RunDoltPerformanceDiagnostics(path string, enableProfiling bool) (*DoltPerf
 		return metrics, fmt.Errorf("server diagnostics failed: %w", err)
 	}
 
-	// Calculate database size. The data directory is this machine's, so it
-	// holds the database just measured only for a server on this machine.
-	if configfile.IsLocalHostString(host) {
-		metrics.DatabaseSize = getDoltDatabaseSize(getDatabasePath(beadsDir))
-	} else {
-		metrics.DatabaseSize = "n/a (server on another machine)"
-	}
+	metrics.DatabaseSize = databaseSizeForServer(beadsDir, host)
 
 	return metrics, nil
+}
+
+func databaseSizeForServer(beadsDir, host string) string {
+	if configfile.IsLocalHostString(host) && !configfile.IsIPv6LoopbackHost(host) {
+		return getDoltDatabaseSize(getDatabasePath(beadsDir))
+	}
+	return "n/a (externally managed server)"
 }
 
 // loadServerConfig is beadsDir's metadata.json, or, when that is missing or

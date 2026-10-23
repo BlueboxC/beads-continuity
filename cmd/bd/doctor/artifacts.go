@@ -188,12 +188,14 @@ func scanBeadsDir(beadsDir string, report *ArtifactReport) {
 
 	// Check if this should be a redirect-only directory
 	isRedirectExpected := isRedirectExpectedDir(beadsDir)
+	if isRedirectExpected && !fix.CanCleanRedirectDirectory(beadsDir, cfg) {
+		return
+	}
 
 	// Check if it has a redirect file
 	hasRedirect := hasRedirectFile(beadsDir)
 
-	// 1. Check for SQLite artifacts. Metadata that is absent or does not
-	// load leaves cfg nil, which selects the default Dolt backend.
+	// 1. Check for SQLite artifacts in positively identified Dolt workspaces.
 	scanSQLiteArtifacts(beadsDir, cfg, report)
 
 	// 2. Check for cruft .beads directories (should be redirect-only)

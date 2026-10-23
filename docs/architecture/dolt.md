@@ -51,10 +51,37 @@ the criterion for raising it; raise the pin here and in that script together.
 This pin is about the standalone `dolt` CLI, which only server and
 proxied-server mode use. Embedded mode is unaffected either way: it links the
 Dolt engine into `bd` at the dependency tuple in `go.mod`, independently of
-which `dolt` CLI is on your PATH. This fork uses driver v2.4.1 with Dolt 2.5.0 plus two engine corrections,
-the MIN/MAX correction and the BSD build-tag replacement documented in
-[FORK.md](https://github.com/BlueboxC/beads-continuity/blob/codex/project-continuity/FORK.md#embedded-engine-compatibility). It accepts native
-Dolt 2.4.2 backups; this does not raise the standalone server pin.
+which `dolt` CLI is on your PATH. This fork uses driver v2.4.1 with the qualified
+Dolt **2.6.0** engine and the fork corrections documented in
+[FORK.md](https://github.com/BlueboxC/beads-continuity/blob/codex/project-continuity/FORK.md#embedded-engine-compatibility).
+Native Dolt 2.4.2 backup compatibility was qualified separately; it does not
+qualify an older external server to open every database written by this engine
+or raise the standalone server pin.
+
+#### Storage compatibility is separate from the CLI pin
+
+Migration 0010 declares `compaction_snapshots.idx_comp_snap_issue` with
+`created_at DESC`. Dolt 2.3.3 introduced descending-index storage. A database
+created in embedded mode with this fork's modern engine, or initialized by an
+external server >=2.3.3, can therefore require Dolt >=2.3.3 thereafter.
+The fork does not convert that index back. An older database can retain its
+ascending representation; upgrading a reader alone does not establish which
+representation a database holds.
+
+As clarified in [upstream PR #7807](https://github.com/gastownhall/beads/pull/7807),
+pre-2.3.3 engines can still read some issue rows while `information_schema`
+queries and writes fail with `table has unknown fields`; writes touching
+`issues` may instead report a foreign-key failure on `fk_comp_snap_issue`.
+A release can fail during its schema probe while another source build reaches
+reads and fails only on writes. Neither `BD_IGNORE_SCHEMA_SKEW=1` nor a
+successful read establishes write compatibility. Preserve the existing binary
+and data recovery set and qualify the exact database/server combination before
+changing engines.
+
+PR #7807 also distinguishes whole-primary-key empty-table aggregates (no row
+before 2.5.0) from the 2.4.0–2.4.2 unmatched-prefix aggregate defect. Our graph
+history route remains embedded-only; upstream server-query workarounds and
+measurements are not evidence of a qualified graph server route in this fork.
 
 Dolt 2.3.0 (released 2026-08-13) regressed `CALL DOLT_RESET('--hard')`. A few
 percent of freshly created databases come up with that procedure unusable —
@@ -64,7 +91,7 @@ about the database looks wrong: `SELECT 1`, `CALL DOLT_CLEAN()`,
 `CALL DOLT_CHECKOUT('.')`, `CALL DOLT_COMMIT()` and soft resets all work
 normally, so the damage is invisible until something needs a hard reset.
 
-Measured by creating fresh databases and immediately calling the procedure:
+Historical upstream measurements, creating fresh databases and immediately calling the procedure:
 
 | Dolt version | Fresh databases with `DOLT_RESET('--hard')` broken |
 |--------------|----------------------------------------------------|
@@ -73,9 +100,12 @@ Measured by creating fresh databases and immediately calling the procedure:
 | 2.3.0        | 3 / 60                                             |
 | 2.3.1        | 3 / 100                                            |
 
-Versions after 2.3.1 have not been measured. Raise the pin only once a newer
-release is confirmed clean by that same measurement — not because it is
-newer.
+This table is the earlier upstream snapshot, not a fresh measurement by this
+fork. [PR #7807](https://github.com/gastownhall/beads/pull/7807) records later
+upstream measurements. They do not silently change this fork's external CLI
+pin or qualify an operator's existing database. In particular, the retained
+2.2.0 pin cannot open descending-index storage created by modern engines;
+server selection must also satisfy the storage compatibility requirement above.
 
 Pin rather than track `latest` for a second, independent reason: the upstream
 `releases/latest` URL resolves to the most recently *created* release, not the

@@ -397,9 +397,18 @@ version floor, so an older dolt can still be used at your own risk. To
 resolve it, install the pinned dolt version — see
 [Which Dolt version to install](/architecture/dolt#which-dolt-version-to-install)
 — and either update PATH or set `BEADS_DOLT_BIN` to the new binary's path.
-Install that specific version rather than `latest`: 2.3.x is a newer release
-that satisfies this warning but carries a
+Install a qualified specific version rather than `latest`: 2.3.0 and 2.3.1
+satisfy this warning but carry a
 [separate data-operation defect](/architecture/dolt#which-dolt-version-to-install).
+
+The advisory minimum and standalone pin are not a storage-format guarantee.
+A pre-2.3.3 server can fail on a database created with descending-index storage:
+`information_schema` queries or writes report `table has unknown fields`, and
+writes touching `issues` may instead name `fk_comp_snap_issue`. Some reads can
+still succeed. See [storage compatibility](/architecture/dolt#storage-compatibility-is-separate-from-the-cli-pin)
+before downgrading an engine; bypassing Beads schema checks does not repair an
+engine-format mismatch. The fork's embedded engine is 2.6.0, independently of
+the external binary selected by PATH or `BEADS_DOLT_BIN`.
 
 The advisory repeats at most once per day, not on every command: the probe
 result and the warning timestamp are cached (keyed by the binary's path,

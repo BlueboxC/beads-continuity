@@ -8,6 +8,7 @@ import (
 	"github.com/steveyegge/beads/internal/configfile"
 	"github.com/steveyegge/beads/internal/doltserver"
 	"github.com/steveyegge/beads/internal/storage"
+	"github.com/steveyegge/beads/internal/testutil"
 
 	"net"
 	"os"
@@ -826,5 +827,67 @@ func TestSyncActionClonesWhereTheRigsCommandsLook(t *testing.T) {
 				t.Errorf("warmup dials %s:%d, but later commands dial %s:%d", warmupHost, warmupPort, laterHost, laterPort)
 			}
 		})
+	}
+}
+
+func freeLoopbackPort(t *testing.T) int {
+	t.Helper()
+	port, err := testutil.FindFreePort()
+	if err != nil {
+		t.Fatalf("find free port: %v", err)
+	}
+	return port
+}
+
+func TestFreshCloneDiscardsOnlyExternalStalePortFile(t *testing.T) {
+	for _, host := range []string{"db.example.com", "::1", "[::1]", "127.0.0.1"} {
+		for _, override := range []string{"metadata", "yaml", "env", "legacy"} {
+			t.Run(host+"/"+override, func(t *testing.T) {
+				clonePortTestEnv(t)
+				d := filepath.Join(t.TempDir(), ".beads")
+				writeClonePortFile(t, filepath.Join(d, "config.yaml"), "# fresh clone\n")
+				writeClonePortFile(t, filepath.Join(d, "dolt-server.port"), "19999\n")
+				cfg := &configfile.Config{Backend: configfile.BackendDolt, DoltMode: configfile.DoltModeServer, DoltServerHost: host, DoltDatabase: "fresh_clone"}
+				want := configfile.DefaultDoltServerPort
+				switch override {
+				case "metadata":
+					cfg.DoltServerPort = 14444
+					want = 14444
+				case "yaml":
+					cfg.DoltServerPort = 14444
+					want = 15555
+					writeClonePortFile(t, filepath.Join(d, "config.yaml"), "dolt.port: 15555\n")
+				case "env":
+					cfg.DoltServerPort = 14444
+					want = 16666
+					t.Setenv("BEADS_DOLT_SERVER_PORT", "16666")
+				case "legacy":
+					want = 17777
+					t.Setenv("BEADS_DOLT_PORT", "17777")
+				}
+				if host == "127.0.0.1" && override != "env" && override != "legacy" {
+					want = 19999
+				}
+				loadClonePortConfig(t, d)
+				writeClonePortCredentials(t, []string{host}, []int{want, 19999})
+				got := serverClonePort(d, cfg)
+				if got != want {
+					t.Errorf("fresh clone port=%d want %d", got, want)
+				}
+				if err := cfg.Save(d); err != nil {
+					t.Fatal(err)
+				}
+				later := doltserver.DialConfig(d).Port
+				if got != later {
+					t.Errorf("clone port=%d differs from subsequent store port=%d", got, later)
+				}
+				if cfg.GetDoltServerPasswordForPort(got) != fmt.Sprintf("%s:%d", host, want) {
+					t.Errorf("credentials resolved for wrong port %d", got)
+				}
+				if data, err := os.ReadFile(filepath.Join(d, "dolt-server.port")); err != nil || string(data) != "19999\n" {
+					t.Errorf("resolver rewrote local port file: %s %v", data, err)
+				}
+			})
+		}
 	}
 }

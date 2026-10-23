@@ -103,7 +103,7 @@ func TestScanForArtifacts_CruftBeadsDir(t *testing.T) {
 	}
 
 	// Add cruft files
-	if err := os.WriteFile(filepath.Join(beadsDir, "beads.db"), []byte("data"), 0644); err != nil {
+	if err := os.WriteFile(filepath.Join(beadsDir, "obsolete.txt"), []byte("data"), 0644); err != nil {
 		t.Fatal(err)
 	}
 	if err := os.WriteFile(filepath.Join(beadsDir, "issues.jsonl"), []byte("data"), 0644); err != nil {
@@ -126,8 +126,8 @@ func TestScanForArtifacts_CruftBeadsDir(t *testing.T) {
 
 func TestScanForArtifacts_CruftBeadsDirNoRedirect(t *testing.T) {
 	// Cruft dir without redirect should be detected AND safe to delete.
-	// The location being redirect-expected is sufficient — stale cruft files
-	// are what prevent the redirect from being created in the first place.
+	// With no local storage present, stale non-database files
+	// can still be removed before the redirect is created.
 	dir := t.TempDir()
 	polecatsDir := filepath.Join(dir, "polecats", "testpolecat")
 	beadsDir := filepath.Join(polecatsDir, ".beads")
@@ -136,7 +136,7 @@ func TestScanForArtifacts_CruftBeadsDirNoRedirect(t *testing.T) {
 	}
 
 	// No redirect file, just extra files
-	if err := os.WriteFile(filepath.Join(beadsDir, "beads.db"), []byte("data"), 0644); err != nil {
+	if err := os.WriteFile(filepath.Join(beadsDir, "obsolete.txt"), []byte("data"), 0644); err != nil {
 		t.Fatal(err)
 	}
 

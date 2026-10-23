@@ -164,6 +164,9 @@ func acquireEmbeddedLock(beadsDir string, serverMode bool) (util.Unlocker, error
 // config, not the launching workspace's.
 func newDoltStoreFromConfig(ctx context.Context, beadsDir string) (s storage.DoltStorage, err error) {
 	defer func() { s, err = activateEventsJournalStore(beadsDir, s, err) }()
+	if err := checkDiscoveredBackend(beadsDir); err != nil {
+		return nil, err
+	}
 	cfg, err := configfile.Load(beadsDir)
 	if err != nil {
 		// A present-but-unloadable metadata.json must not degrade to the
@@ -294,6 +297,9 @@ func newPreviewStoreFromConfig(ctx context.Context, beadsDir string) (storage.Do
 // journal row to accompany. Registered in the construction guard's exemption
 // list with that reason.
 func openNonMutatingStoreFromConfig(ctx context.Context, beadsDir string, preview bool, disableAutoStart ...bool) (storage.DoltStorage, error) {
+	if err := checkDiscoveredBackend(beadsDir); err != nil {
+		return nil, err
+	}
 	cfg, err := configfile.Load(beadsDir)
 	if err != nil {
 		// Same contract as newDoltStoreFromConfig: a present-but-unloadable

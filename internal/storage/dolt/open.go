@@ -270,7 +270,7 @@ func resolveAutoStart(current bool, doltAutoStartCfg string, mode ServerMode) bo
 // GetBackendFromConfig returns the backend type from metadata.json.
 // Returns "dolt" if no config exists or backend is not specified.
 func GetBackendFromConfig(beadsDir string) string {
-	cfg, err := configfile.Load(beadsDir)
+	cfg, err := configfile.LoadForDiscovery(beadsDir)
 	if err != nil || cfg == nil {
 		return configfile.BackendDolt
 	}

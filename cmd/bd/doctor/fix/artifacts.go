@@ -80,8 +80,11 @@ func cleanBeadsDirArtifacts(beadsDir string) (removed, skipped, errCount int) {
 		return
 	}
 
-	hasDolt := hasDoltDir(beadsDir, cfg)
 	isRedirectExpected := isRedirectExpectedLocation(beadsDir)
+	if isRedirectExpected && !CanCleanRedirectDirectory(beadsDir, cfg) {
+		return
+	}
+	hasDolt := hasDoltDir(beadsDir, cfg)
 
 	// 1. Clean JSONL artifacts in dolt-native directories
 	if hasDolt {
@@ -217,6 +220,47 @@ func SelectsDolt(beadsDir string, cfg *configfile.Config) bool {
 		return false
 	}
 	return (cfg != nil && cfg.Backend == configfile.BackendDolt) || configfile.ExistingDoltDataDir(beadsDir, cfg) != ""
+}
+
+// CanCleanRedirectDirectory refuses cleanup when the directory holds storage
+// or foreign backend metadata. Its location alone does not make that data cruft.
+func CanCleanRedirectDirectory(beadsDir string, cfg *configfile.Config) bool {
+	if cfg != nil && cfg.Backend != "" && cfg.Backend != configfile.BackendDolt {
+		return false
+	}
+	if configfile.ExistingDoltDataDir(beadsDir, cfg) != "" {
+		return false
+	}
+	if cfg != nil {
+		for _, name := range []string{cfg.Database, cfg.SQLitePath} {
+			if name == "" {
+				continue
+			}
+			path := name
+			if !filepath.IsAbs(path) {
+				path = filepath.Join(beadsDir, path)
+			}
+			if _, err := os.Lstat(path); !os.IsNotExist(err) {
+				return false
+			}
+		}
+	}
+	entries, err := os.ReadDir(beadsDir)
+	if err != nil {
+		return false
+	}
+	for _, entry := range entries {
+		name := strings.ToLower(entry.Name())
+		if name == "dolt" || name == "embeddeddolt" || name == ".dolt" {
+			return false
+		}
+		for _, ext := range []string{".db", ".sqlite", ".sqlite3"} {
+			if strings.HasSuffix(name, ext) || strings.HasSuffix(name, ext+"-wal") || strings.HasSuffix(name, ext+"-shm") {
+				return false
+			}
+		}
+	}
+	return true
 }
 
 // cleanSQLiteArtifacts removes only files in a positively identified Dolt workspace.
