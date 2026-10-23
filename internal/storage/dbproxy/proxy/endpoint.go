@@ -1027,7 +1027,7 @@ func waitForRecordedProcessExit(pf *pidfile.PidFile, timeout time.Duration) erro
 
 func killSpawnedChild(child *spawnedProxyChild) error {
 	select {
-	case <-child.done:
+	case _ = <-child.done:
 		return nil
 	default:
 	}
@@ -1044,7 +1044,7 @@ func killSpawnedChild(child *spawnedProxyChild) error {
 	timer := time.NewTimer(shutdownConfirmDeadline)
 	defer timer.Stop()
 	select {
-	case <-child.done:
+	case _ = <-child.done:
 		return nil
 	case <-timer.C:
 		return fmt.Errorf("timeout (%s) waiting for pid %d", shutdownConfirmDeadline, child.cmd.Process.Pid)

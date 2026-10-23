@@ -4,12 +4,12 @@
 # `import ./overlay.nix self`.
 self: final: prev:
 let
-  # Apply the security patch to the existing Go recipe without changing Dolt.
+  # Pin the compiler required by the reviewed Dolt/analyzer tuple.
   beadsGo = final.go_1_26.overrideAttrs (_: {
-    version = "1.26.10";
+    version = "1.27.3";
     src = final.fetchurl {
-      url = "https://go.dev/dl/go1.26.10.src.tar.gz";
-      hash = "sha256-/WPog7ovK/ypPBZGsx6+9j4rHk0rMXyXidl2po2B828=";
+      url = "https://go.dev/dl/go1.27.3.src.tar.gz";
+      hash = "sha256-bndJA1zzYPBrJXXRYup535/ajvZxiJ5cN1+OUHd/Jrs=";
     };
   });
 in

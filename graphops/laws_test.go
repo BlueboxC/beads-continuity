@@ -340,9 +340,9 @@ func TestCanonicalizeJSONNumbers(t *testing.T) {
 		{"333333333.33333329", "333333333.3333333"},                          // the RFC 8785 worked example's input
 		{"1424953923781206.25", "1424953923781206.2"},
 		{"1e-400", "0"}, {"1e-324", "0"}, {"1e-1000000000000", "0"}, // below the range: read as zero
-		{"2.4703282292062327e-324", "0"},                      // just under half the smallest subnormal
-		{"4.9e-324", "5e-324"},                                // rounds up to the smallest subnormal, which spells differently
-		{"1.7976931348623158e308", "1.7976931348623157e+308"}, // rounds down to the largest double
+		{"2.4703282292062327e-324", "0"},                                                                      // just under half the smallest subnormal
+		{"4.9e-324", "5e-324"},                                                                                // rounds up to the smallest subnormal, which spells differently
+		{"1.7976931348623158e308", "1.7976931348623157e+308"},                                                 // rounds down to the largest double
 		{"1e400", ""}, {"-1e400", ""}, {"1e309", ""}, {"1.7976931348623159e308", ""}, {"1e1000000000000", ""}, // beyond the range
 	} {
 		_, err := graphops.CanonicalizeJSON([]byte(tc.in))

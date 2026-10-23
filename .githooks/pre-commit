@@ -11,16 +11,10 @@ staged_go_files=$(git diff --cached --name-only --diff-filter=ACM -- '*.go')
 if [ -n "$staged_go_files" ]; then
     # Build golangci-lint from source so it is never a stale global binary, and
     # pin the version to the one CI uses (.github/workflows/{pr,main}.yml).
-    GOLANGCI_LINT="go run github.com/golangci/golangci-lint/v2/cmd/golangci-lint@v2.10.1"
+    GOLANGCI_LINT="go run github.com/golangci/golangci-lint/v2/cmd/golangci-lint@v2.15.0"
 
-    # Build it with the repo's own Go, the way CI does. In CI, actions/setup-go
-    # installs the go.mod version and exports GOTOOLCHAIN=local. Locally
-    # GOTOOLCHAIN defaults to "auto", and for a pkg@version build that honours
-    # golangci-lint's own toolchain directive instead: it downgrades to
-    # go1.25.12, which then refuses this repo's newer go directive at config
-    # load ("the Go language version (go1.25) used to build golangci-lint is
-    # lower than the targeted Go version") and fails every Go commit. Pinning to
-    # the go directive reproduces CI's resolution on any host toolchain.
+    # Build with the repository's required compiler, independently of the
+    # linter module's own bootstrap floor, matching actions/setup-go in CI.
     go_toolchain="go$(awk '$1 == "go" { print $2; exit }' go.mod)"
     if [ "$go_toolchain" = "go" ]; then
         echo >&2 "pre-commit: no go directive in go.mod; cannot pin the lint toolchain"

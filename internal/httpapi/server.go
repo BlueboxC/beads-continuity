@@ -740,7 +740,7 @@ func (s *Server) Serve(ctx context.Context) error {
 	} else {
 		s.event("shutdown_complete")
 	}
-	<-errCh
+	_ = <-errCh
 	return nil
 }
 

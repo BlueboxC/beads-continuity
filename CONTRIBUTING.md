@@ -9,7 +9,7 @@ Thank you for your interest in contributing to bd! This document provides guidel
 - Go (see `go.mod` for the required version; currently 1.26+)
 - Git
 - A C compiler (CGO is required for the embedded Dolt database)
-- golangci-lint v2.10.1 for the required local lint gate
+- golangci-lint v2.15.0 for the required local lint gate
 - ICU headers are **not required** for building -- see [engdocs/ICU-POLICY.md](engdocs/ICU-POLICY.md)
 
 ### Getting Started
@@ -65,7 +65,7 @@ Use the same pinned golangci-lint version and repository-owned wrapper as CI:
 
 ```bash
 # Install the version pinned by CI
-go install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@v2.10.1
+go install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@v2.15.0
 
 # Run the required formatting and lint contract
 make ci-pr-lint

@@ -16,7 +16,7 @@ Root DOX.md and the parent chain remain binding.
 
 ## Work Guidance
 
-Keep required checks aligned with Makefile and scripts. Go setup follows the root module toolchain; all MCP package jobs pin uv 0.13.4. Do not enable publication or introduce credentials during fork bootstrap.
+Keep required checks aligned with Makefile and scripts. Go setup follows the root module toolchain; pin golangci-lint v2.15.0 for Go 1.27 export-data compatibility in all lint lanes; all MCP package jobs pin uv 0.13.4. Do not enable publication or introduce credentials during fork bootstrap.
 
 ## Verification
 

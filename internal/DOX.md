@@ -45,6 +45,7 @@ Root DOX.md and the parent chain remain binding.
 - Shared user-level agent templates apply only in initialized Beads repositories and retain the fork conservative authority profile. Project templates keep their existing wording.
 
 - Successful tracker pulls record the hash of the imported representation with the assigned local ID, after the issue write. Dry runs and failed writes do not advance this push baseline. Cache and issue writes remain separate, rather than crash-atomic.
+- Initialized GitHub/GitLab trackers extract fallback identifiers only from their configured origin and repository/project. Keep provider-family recognition separate so foreign references are skipped on push rather than recreated. GitLab numeric project IDs resolve their namespaced path once through the configured API before syncing; failed/missing metadata, mismatching numeric IDs and stale configured paths refuse initialization. Group pulls retain exact-URL matching for other projects, without bare-IID fallback or cross-project push.
 
 - Remote Dolt endpoints discard local bookkeeping ports, preserve authoritative configured ports over the legacy environment spelling, and use strict legacy parsing. Advice names remote hosts and the specific stale port file; only the sole external declaration suggests returning to managed mode.
 

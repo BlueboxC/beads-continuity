@@ -86,7 +86,7 @@ func (r *Runner) runHook(hookPath, event string, issue *types.Issue) (retErr err
 			}
 		}
 		// Wait for process to exit after the kill attempt
-		<-done
+		_ = <-done
 		addHookOutputEvents(span, &stdout, &stderr)
 		return ctx.Err()
 	case err := <-done:

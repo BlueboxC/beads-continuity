@@ -215,11 +215,22 @@ func (t *Tracker) IsExternalRef(ref string) bool {
 	if ghShorthandPattern.MatchString(ref) {
 		return true
 	}
-	return strings.Contains(ref, "github.com") && issueNumberPattern.MatchString(ref)
+	if strings.Contains(ref, "github.com") && issueNumberPattern.MatchString(ref) {
+		return true
+	}
+	if t.client != nil {
+		base, err := url.Parse(t.client.BaseURL)
+		u, refErr := url.Parse(ref)
+		return err == nil && refErr == nil && base.Host != "" && strings.EqualFold(base.Host, u.Host) && issueNumberPattern.MatchString(u.Path)
+	}
+	return false
 }
 
 // ExtractIdentifier extracts the issue number from a GitHub URL or shorthand ref.
 func (t *Tracker) ExtractIdentifier(ref string) string {
+	if t.client != nil {
+		return t.scopedIdentifier(ref)
+	}
 	if m := ghShorthandPattern.FindStringSubmatch(ref); len(m) >= 2 {
 		return m[1]
 	}
@@ -228,6 +239,44 @@ func (t *Tracker) ExtractIdentifier(ref string) string {
 		return ""
 	}
 	return matches[1]
+}
+
+// scopedIdentifier adapts PR #7794 to the shipping client without relationship-sync dependencies.
+func (t *Tracker) scopedIdentifier(ref string) string {
+	if m := ghShorthandPattern.FindStringSubmatch(ref); len(m) == 2 {
+		return m[1]
+	}
+	base, err := url.Parse(t.client.BaseURL)
+	if err != nil || base.Host == "" {
+		return ""
+	}
+	u, err := url.Parse(ref)
+	if err != nil || u.User != nil || !strings.EqualFold(u.Scheme, base.Scheme) {
+		return ""
+	}
+	webHost := base.Host
+	if strings.EqualFold(webHost, "api.github.com") {
+		webHost = "github.com"
+	}
+	if !strings.EqualFold(u.Host, base.Host) && !strings.EqualFold(u.Host, webHost) {
+		return ""
+	}
+	apiPath := strings.TrimRight(base.Path, "/")
+	webPath := strings.TrimSuffix(apiPath, "/api/v3")
+	for _, prefix := range []string{webPath + "/", apiPath + "/repos/"} {
+		if !strings.HasPrefix(u.Path, prefix) {
+			continue
+		}
+		parts := strings.Split(strings.TrimSuffix(strings.TrimPrefix(u.Path, prefix), "/"), "/")
+		if len(parts) != 4 || !strings.EqualFold(parts[0], t.client.Owner) || !strings.EqualFold(parts[1], t.client.Repo) || parts[2] != "issues" {
+			continue
+		}
+		n, err := strconv.Atoi(parts[3])
+		if err == nil && n > 0 && strconv.Itoa(n) == parts[3] {
+			return parts[3]
+		}
+	}
+	return ""
 }
 
 func (t *Tracker) BuildExternalRef(issue *tracker.TrackerIssue) string {

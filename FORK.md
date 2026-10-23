@@ -88,9 +88,9 @@ are introduced. Graph Preview, proxy routing and prior engine protections remain
 
 ## Build toolchain
 
-The root and both independent Go examples select Go 1.26.10 while retaining
-the Go 1.26.9 consumer floor. The Nix overlay pins the official 1.26.10 source
-archive and SHA-256; MCP CI jobs pin uv 0.13.4. This adapts Julian Knutsen's
+The root and both independent Go examples require and select Go 1.27.3 for
+Dolt 2.6.0 and its analyzer. The Nix overlay pins the official 1.27.3 source
+archive and SHA-256; MCP CI jobs pin uv 0.13.4. All lint lanes and the optional pre-commit hook pin golangci-lint v2.15.0, because v2.10.1 cannot read Go 1.27 export data. The earlier toolchain hardening adapted Julian Knutsen's
 [PR #7732](https://github.com/gastownhall/beads/pull/7732), including its
 updated Go 1.26 devcontainer. The fork has no Bazel setup to transplant.
 
@@ -98,10 +98,12 @@ updated Go 1.26 devcontainer. The fork has no Bazel setup to transplant.
 
 The embedded engine keeps `driver/v2 v2.4.1`, starting from coffeegoddd's
 [upstream proposal #7254](https://github.com/gastownhall/beads/pull/7254).
-It pins Dolt v2.5.1 plus the retained storage corrections, catalog and SQL fixes at
-[BlueboxC/dolt `b7b5cee73f29`](https://github.com/BlueboxC/dolt/commit/b7b5cee73f291ce4d196ab560a107cc6935c19d1),
-with the [SQL analyzer correction](https://github.com/BlueboxC/go-mysql-server/commit/2c79c9d78520486643c0a6ffdd364999be134f8a) on base `239e0ad6b2f9`. The engine remains a Go dependency;
+It pins Dolt v2.6.0 plus the retained storage corrections, catalog and SQL fixes at
+[BlueboxC/dolt `f9a07856a2c2`](https://github.com/BlueboxC/dolt/commit/f9a07856a2c2dcd3880cb3ebfa7558dab84ce878),
+with the [SQL analyzer correction](https://github.com/BlueboxC/go-mysql-server/commit/5d41f2e0332a5d22726f6869b373740f3da55b68) on base `38a1fb50b434`. The engine remains a Go dependency;
 Beads does not implement engine-specific SQL workarounds.
+
+The 2.6.0 merge reuses upstream corrections already present in the carried patch set. Its ORT merge-base resolver retains this fork's explicit refusal of conflicting virtual bases at merge and three-dot diff entry points. Native backups from Dolt 2.4.2 and the preceding embedded tuple pass isolated restore, logical roots/ref/history comparison, subsequent writes/reopen and a second backup readable by both engines. Installation still requires matched data/binary recovery and guarded readback; the driver, project schema and external CLI/server policy do not change.
 
 This tuple adds the bounded catalog fix for Dolt #12122, mixed-case CHECK merge
 references (PR #12152), matching remote-upstream cleanup (PR #12153/#11529),
@@ -280,10 +282,10 @@ separate optional glab reader, without importing the unrelated sync redesign.
   SQL acquisition of keyed projections and allows gradual reduction of old
   oversized state while retaining history. Complete snapshots reuse one binding
   validation per transaction. Ordinary storage and existing projects retain their format.
-- Root/example builds require Go >=1.26.9 and x/net >=0.60.0, alongside the reviewed gRPC and cryptography minima;
+- Root/example builds require Go >=1.27.3 and x/net >=0.60.0, alongside the reviewed gRPC and cryptography minima;
   Python package requirements retain PyJWT >=2.15.0 and dev urllib3 >=2.8.0.
 
-The verified local source cut passed the canonical Go baseline (102 packages),
+An earlier verified local source cut passed the canonical Go baseline (102 packages),
 targeted regressions, native/Windows cross-lint, documentation checks and real
 Python-client round trips. Embedded Dolt has separate complete batch inventories.
 Focused local-server tests reproduce concurrent data loss and migration false
@@ -399,6 +401,12 @@ macneale4's PR #12182 (exclude all common bases). Existing virtual-base diffs,
 Full-Text, NULL, history and backup contracts remain. Driver 2.4.1, the matched
 SQL analyzer, project formats and external CLI/server policy stay unchanged.
 The engine fork documents the regression scope and limits for each correction.
+
+## Repository-scoped tracker matching
+
+Adapt NahumLitvin's [PR #7794](https://github.com/gastownhall/beads/pull/7794) for [#7781](https://github.com/gastownhall/beads/issues/7781), preserving its contributor scenarios. Initialized GitHub fallback matching requires the configured host and owner/repository; API URLs, GitHub Enterprise subpaths, case-insensitive names and repository-local shorthand remain supported. This shipping baseline does not include upstream's relationship resolver, so its scope check is implemented directly in the existing tracker. Old owner/name URLs after a transfer or rename no longer match by number alone.
+
+For [#7795](https://github.com/gastownhall/beads/issues/7795), apply the same separation to GitLab issues, work items and milestones, preserving nested namespaces and self-hosted base paths. Numeric project IDs resolve `path_with_namespace` through one project-metadata read at initialization; an unavailable or incomplete response refuses synchronization. Group pulls can still match other projects by exact URL; project-specific push and IID fallback do not guess another project's identity. No new storage, schema, credentials or activation is introduced.
 
 ## Explicit workspace selection
 

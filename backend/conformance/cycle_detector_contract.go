@@ -490,9 +490,10 @@ func cycleDetectorTouching(report publicops.CycleReport, ids ...string) [][]stri
 func assertCycleDetectorPath(t *testing.T, cycle publicops.Cycle, edgeOrder ...string) {
 	t.Helper()
 	lowest := 0
+	var first string
 	for i, id := range edgeOrder {
-		if id < edgeOrder[lowest] {
-			lowest = i
+		if i == 0 || id < first {
+			lowest, first = i, id
 		}
 	}
 	want := append(append([]string{}, edgeOrder[lowest:]...), edgeOrder[:lowest]...)

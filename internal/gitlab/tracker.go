@@ -3,6 +3,7 @@ package gitlab
 import (
 	"context"
 	"fmt"
+	"net/url"
 	"regexp"
 	"strconv"
 	"strings"
@@ -87,6 +88,31 @@ func (t *Tracker) Init(ctx context.Context, store tracker.Store) error {
 
 	// Load project path for GraphQL (e.g., "socwave/socwave")
 	t.projectPath, _ = t.getConfig(ctx, "gitlab.project_path", "GITLAB_PROJECT_PATH")
+	if projectID != "" {
+		var resolvedPath string
+		if id, err := strconv.Atoi(projectID); err != nil {
+			resolvedPath, err = url.PathUnescape(projectID)
+			if err != nil {
+				return fmt.Errorf("invalid GitLab project path: %w", err)
+			}
+		} else {
+			if id <= 0 {
+				return fmt.Errorf("GitLab project ID must be positive")
+			}
+			project, err := t.client.FetchProject(ctx)
+			if err != nil {
+				return fmt.Errorf("resolving GitLab project scope: %w", err)
+			}
+			if project.ID != id || project.PathWithNamespace == "" {
+				return fmt.Errorf("GitLab project metadata does not identify configured project %d", id)
+			}
+			resolvedPath = project.PathWithNamespace
+		}
+		if t.projectPath != "" && strings.Trim(t.projectPath, "/") != strings.Trim(resolvedPath, "/") {
+			return fmt.Errorf("gitlab.project_path does not match gitlab.project_id; update the local project configuration")
+		}
+		t.projectPath = resolvedPath
+	}
 
 	// Load optional filter config
 	t.filter = t.loadFilterConfig(ctx)
@@ -515,7 +541,14 @@ func (t *Tracker) IsExternalRef(ref string) bool {
 		return true
 	}
 	if !strings.Contains(ref, "gitlab") && !strings.Contains(ref, "milestones") {
-		return false
+		if t.client == nil {
+			return false
+		}
+		base, err := url.Parse(t.client.BaseURL)
+		u, refErr := url.Parse(ref)
+		if err != nil || refErr != nil || base.Host == "" || !strings.EqualFold(base.Host, u.Host) {
+			return false
+		}
 	}
 	return issueIIDPattern.MatchString(ref) || milestoneIDPattern.MatchString(ref)
 }
@@ -524,6 +557,35 @@ func (t *Tracker) IsExternalRef(ref string) bool {
 func (t *Tracker) ExtractIdentifier(ref string) string {
 	if m := glShorthandPattern.FindStringSubmatch(ref); len(m) >= 2 {
 		return m[1]
+	}
+	if t.client != nil {
+		base, err := url.Parse(t.client.BaseURL)
+		if err != nil || base.Host == "" || t.projectPath == "" {
+			return ""
+		}
+		u, err := url.Parse(ref)
+		if err != nil || u.User != nil || !strings.EqualFold(u.Scheme, base.Scheme) || !strings.EqualFold(u.Host, base.Host) {
+			return ""
+		}
+		prefix := strings.TrimRight(base.Path, "/") + "/" + strings.Trim(t.projectPath, "/") + "/-/"
+		if !strings.HasPrefix(u.Path, prefix) {
+			return ""
+		}
+		parts := strings.Split(strings.TrimSuffix(strings.TrimPrefix(u.Path, prefix), "/"), "/")
+		if len(parts) != 2 {
+			return ""
+		}
+		n, err := strconv.Atoi(parts[1])
+		if err != nil || n <= 0 || strconv.Itoa(n) != parts[1] {
+			return ""
+		}
+		switch parts[0] {
+		case "issues", "work_items":
+			return parts[1]
+		case "milestones":
+			return gitLabMilestoneIdentifierPrefix + parts[1]
+		}
+		return ""
 	}
 	// Try milestone pattern first (more specific path)
 	if matches := milestoneIDPattern.FindStringSubmatch(ref); len(matches) >= 2 {

@@ -49,7 +49,8 @@ func TestStringsMustBeValidUTF8(t *testing.T) {
 	// The hazard, stated: encoding/json cannot tell the two apart.
 	ff, _ := json.Marshal("\xff")
 	fe, _ := json.Marshal("\xfe")
-	if string(ff) != string(fe) || string(ff) != `"\ufffd"` {
+	var decoded string
+	if string(ff) != string(fe) || json.Unmarshal(ff, &decoded) != nil || decoded != "\ufffd" {
 		t.Fatalf("test premise: encoding/json serializes \\xff as %s and \\xfe as %s", ff, fe)
 	}
 	okDecl, _ := graphops.NewOwnedLinkDecl("https://work.example/types/c", "", 1)

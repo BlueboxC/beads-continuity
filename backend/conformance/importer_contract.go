@@ -378,9 +378,10 @@ func assertImporterSkipped(t *testing.T, result publicops.ImportBatchResult, wan
 			result.SkippedDependencies, len(want), want)
 	}
 	for i, got := range result.SkippedDependencies {
-		if got.IssueID != want[i].IssueID || got.DependsOnID != want[i].DependsOnID {
+		expected := want[i] //nolint:gosec // Equal lengths are required above; the report bounds this index.
+		if got.IssueID != expected.IssueID || got.DependsOnID != expected.DependsOnID {
 			t.Errorf("SkippedDependencies[%d] names %s -> %s, want %s -> %s",
-				i, got.IssueID, got.DependsOnID, want[i].IssueID, want[i].DependsOnID)
+				i, got.IssueID, got.DependsOnID, expected.IssueID, expected.DependsOnID)
 		}
 		if got.Reason == "" {
 			t.Errorf("SkippedDependencies[%d] (%s -> %s) carries no reason; a caller told only that an edge went missing cannot act on it",

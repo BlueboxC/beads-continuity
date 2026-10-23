@@ -1,6 +1,6 @@
 # Linting Policy
 
-Last reviewed: 2026-10-13
+Last reviewed: 2026-10-23
 
 Freshness source: `.golangci.yml`, `scripts/ci/pr-lint.sh`, `Makefile`,
 `.github/workflows/pr.yml`, and `.github/workflows/main.yml`.
@@ -10,7 +10,7 @@ This document explains the required Go lint gate for this codebase.
 ## Current Status
 
 Lint is a required CI gate, and it runs in TWO LANES over the same pinned
-golangci-lint v2.10.1 release and the same `.golangci.yml`. Each must pass with
+golangci-lint v2.15.0 release and the same `.golangci.yml`. Each must pass with
 zero issues in its own scope.
 
 - **The PR lane reports only what the PR introduces.** Both of its jobs are

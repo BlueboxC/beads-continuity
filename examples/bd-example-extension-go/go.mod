@@ -1,8 +1,6 @@
 module bd-example-extension-go
 
-go 1.26.9
-
-toolchain go1.26.10
+go 1.27.3
 
 require github.com/steveyegge/beads v0.0.0-00010101000000-000000000000
 
@@ -66,7 +64,7 @@ require (
 	github.com/dolthub/file-locks v0.1.2 // indirect
 	github.com/dolthub/flatbuffers/v23 v23.3.3-dh.2 // indirect
 	github.com/dolthub/go-icu-regex v0.0.0-20260610153742-72563bc7ca83 // indirect
-	github.com/dolthub/go-mysql-server v0.20.1-0.20261016230655-239e0ad6b2f9 // indirect
+	github.com/dolthub/go-mysql-server v0.20.1-0.20261023021128-38a1fb50b434 // indirect
 	github.com/dolthub/gozstd v0.0.0-20240423170813-23a2903bca63 // indirect
 	github.com/dolthub/ishell v0.0.0-20260414231531-5f031e3e9037 // indirect
 	github.com/dolthub/jsonpath v0.0.2-0.20261015203105-2af4aa8c81af // indirect
@@ -185,6 +183,6 @@ replace github.com/steveyegge/beads => ../..
 
 replace github.com/dolthub/file-locks => github.com/shrisha/file-locks v0.1.2-0.20261015205944-1006a916595c
 
-replace github.com/dolthub/dolt/go => github.com/BlueboxC/dolt/go v0.0.0-20261023104232-b7b5cee73f29
+replace github.com/dolthub/dolt/go => github.com/BlueboxC/dolt/go v0.0.0-20261023131848-f9a07856a2c2
 
-replace github.com/dolthub/go-mysql-server => github.com/BlueboxC/go-mysql-server v0.0.0-20261023103840-2c79c9d78520
+replace github.com/dolthub/go-mysql-server => github.com/BlueboxC/go-mysql-server v0.0.0-20261023131544-5d41f2e0332a

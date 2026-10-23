@@ -393,6 +393,19 @@ func (c *Client) GetIssueLinks(ctx context.Context, iid int) ([]IssueLink, error
 	return links, nil
 }
 
+// FetchProject resolves numeric project IDs to their namespaced URL path.
+func (c *Client) FetchProject(ctx context.Context) (*Project, error) {
+	respBody, _, err := c.doRequest(ctx, http.MethodGet, c.buildURL("/projects/"+c.projectPath(), nil), nil)
+	if err != nil {
+		return nil, fmt.Errorf("failed to fetch project: %w", err)
+	}
+	var project Project
+	if err := json.Unmarshal(respBody, &project); err != nil {
+		return nil, fmt.Errorf("failed to parse project: %w", err)
+	}
+	return &project, nil
+}
+
 // FetchIssueByIID retrieves a single issue by its project-scoped IID.
 func (c *Client) FetchIssueByIID(ctx context.Context, iid int) (*Issue, error) {
 	urlStr := c.buildURL("/projects/"+c.projectPath()+"/issues/"+strconv.Itoa(iid), nil)
