@@ -1006,6 +1006,9 @@ func applyChangeDirSelection() error {
 	if err != nil {
 		return HandleError("%v", err)
 	}
+	if beadsDirFromCaller != "" && !utils.PathsEqual(beads.ExplicitBeadsDir(), beadsDir) {
+		return HandleError("cannot use -C directory %q: it selects %q but caller BEADS_DIR selects %q; unset BEADS_DIR or select the same workspace", changeDir, beadsDir, beadsDirFromCaller)
+	}
 	changeDirEnvSnapshot = make(map[string]envSnapshotValue, 3)
 	for _, key := range []string{"BEADS_DIR", "BEADS_DB", "BD_DB"} {
 		value, ok := os.LookupEnv(key)

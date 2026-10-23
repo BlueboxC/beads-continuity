@@ -94,3 +94,73 @@ func TestIsPreviewCommand(t *testing.T) {
 		})
 	}
 }
+
+func TestApplyChangeDirSelectionPreservesCallerAuthority(t *testing.T) {
+	originalDir, originalCaller, originalSnapshot := changeDir, beadsDirFromCaller, changeDirEnvSnapshot
+	t.Cleanup(func() {
+		changeDir, beadsDirFromCaller, changeDirEnvSnapshot = originalDir, originalCaller, originalSnapshot
+	})
+	target := t.TempDir()
+	beadsDir := filepath.Join(target, ".beads")
+	if err := os.MkdirAll(beadsDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(beadsDir, "metadata.json"), []byte(`{"backend":"dolt"}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	targetDir, err := filepath.EvalSymlinks(beadsDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	other := t.TempDir()
+	alias := t.TempDir()
+	if err := os.WriteFile(filepath.Join(alias, "redirect"), []byte(beadsDir), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	cwd, err := os.Getwd()
+	if err != nil {
+		t.Fatal(err)
+	}
+	relative, err := filepath.Rel(cwd, beadsDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, tc := range []struct {
+		name, caller string
+		conflict     bool
+	}{
+		{name: "empty"}, {name: "same", caller: beadsDir}, {name: "relative", caller: relative},
+		{name: "redirect", caller: alias}, {name: "different", caller: other, conflict: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Setenv("BEADS_DIR", tc.caller)
+			beadsDirFromCaller = tc.caller
+			changeDir, changeDirEnvSnapshot = target, nil
+			err := applyChangeDirSelection()
+			if tc.conflict {
+				if err == nil {
+					restoreChangeDirSelection()
+					t.Fatal("conflicting caller selector was silently replaced")
+				}
+				if got := os.Getenv("BEADS_DIR"); got != tc.caller {
+					t.Fatalf("caller selector changed: %q", got)
+				}
+				if changeDirEnvSnapshot != nil {
+					t.Fatal("refused selection published an environment snapshot")
+				}
+				return
+			}
+			if err != nil {
+				t.Fatal(err)
+			}
+			selected, err := filepath.EvalSymlinks(os.Getenv("BEADS_DIR"))
+			if err != nil || selected != targetDir {
+				t.Fatalf("selection=%q err=%v want=%q", selected, err, targetDir)
+			}
+			restoreChangeDirSelection()
+			if got := os.Getenv("BEADS_DIR"); got != tc.caller {
+				t.Fatalf("caller restoration=%q want=%q", got, tc.caller)
+			}
+		})
+	}
+}

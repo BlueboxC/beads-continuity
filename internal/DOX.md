@@ -50,6 +50,8 @@ Root DOX.md and the parent chain remain binding.
 
 - Workspace gates classify unsupported locks separately from contention and refuse both shared and exclusive admission. A writable first-busy check may probe one private sibling; readonly/existing-only paths create nothing and retain their busy behavior. Preserve OS lock authority and never delete a gate.
 
+- Path-parameterized discovery stops a linked worktree walk at its repository boundary when its main-checkout fallback is usable. An unrelated parent store cannot win over that fallback; ordinary non-worktree walk-up remains unchanged.
+
 ## Work Guidance
 
 Tracker adapters share configuration resolution: local integration credentials never query Dolt, including Notion authentication; authenticated tracker endpoints use explicit local YAML/environment. If no local destination exists, a historical nonempty synced endpoint or store failure refuses connection instead of choosing a public default. Ordinary values keep storage-first/environment fallback including store errors. Credential classification also recognizes case and surrounding-space variants without normalizing ordinary stored keys.

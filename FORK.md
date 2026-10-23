@@ -99,8 +99,8 @@ updated Go 1.26 devcontainer. The fork has no Bazel setup to transplant.
 The embedded engine keeps `driver/v2 v2.4.1`, starting from coffeegoddd's
 [upstream proposal #7254](https://github.com/gastownhall/beads/pull/7254).
 It pins Dolt v2.5.1 plus the retained storage corrections, catalog and SQL fixes at
-[BlueboxC/dolt `d28505a80a74`](https://github.com/BlueboxC/dolt/commit/d28505a80a74390147245836b5f1ff14fec40224),
-with the [SQL analyzer correction](https://github.com/BlueboxC/go-mysql-server/commit/6071a7f383bafdeb4276f4de8b9c5205fcbda26c) on base `239e0ad6b2f9`. The engine remains a Go dependency;
+[BlueboxC/dolt `b7b5cee73f29`](https://github.com/BlueboxC/dolt/commit/b7b5cee73f291ce4d196ab560a107cc6935c19d1),
+with the [SQL analyzer correction](https://github.com/BlueboxC/go-mysql-server/commit/2c79c9d78520486643c0a6ffdd364999be134f8a) on base `239e0ad6b2f9`. The engine remains a Go dependency;
 Beads does not implement engine-specific SQL workarounds.
 
 This tuple adds the bounded catalog fix for Dolt #12122, mixed-case CHECK merge
@@ -399,3 +399,15 @@ macneale4's PR #12182 (exclude all common bases). Existing virtual-base diffs,
 Full-Text, NULL, history and backup contracts remain. Driver 2.4.1, the matched
 SQL analyzer, project formats and external CLI/server policy stay unchanged.
 The engine fork documents the regression scope and limits for each correction.
+
+## Explicit workspace selection
+
+For [#7782](https://github.com/gastownhall/beads/issues/7782), adapt Rongjun GENG's [PR #7792](https://github.com/gastownhall/beads/pull/7792). A linked worktree selects its main checkout's store before any unrelated ancestor, with or without inherited metadata. A conflicting caller `BEADS_DIR` now refuses before rebinding instead of silently choosing a different project. Matching canonical/relative paths and redirects retain their behavior.
+
+## Measured history-compaction reporting
+
+Adapt the actual-count portion of csauer02-personal-user’s [PR #7790](https://github.com/gastownhall/beads/pull/7790). `commits_after` is read from the resulting history, including its initial commit. A failed readback omits the field and warns. Keep this fork’s exclusive embedded lease, clean-set and head guards, and server/proxy rewrite refusal; the stacked online compaction changes are not imported.
+
+### SQL and journal follow-up (October 23, 2026)
+
+The pinned tuple carries GMS #4056’s JOIN predicate preservation, #4047’s distinct GREATEST/LEAST comparison/result types, Dolt #12191’s execution-time AS OF binding, and PR #12194’s release of grown idle journal buffers. Preserve exact decimals, the shared COALESCE helper, selected-revision and NULL errors, fixed journal limits and reader/Close coordination. Repeated large flushes allocate again to reduce idle heap; no general RSS or throughput guarantee is inferred. Driver, schema, project formats, hooks and personalized capacities stay unchanged. Contributor attribution and precise regression limits remain in the dependency forks.

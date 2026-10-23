@@ -185,6 +185,6 @@ replace github.com/steveyegge/beads => ../..
 
 replace github.com/dolthub/file-locks => github.com/shrisha/file-locks v0.1.2-0.20261015205944-1006a916595c
 
-replace github.com/dolthub/dolt/go => github.com/BlueboxC/dolt/go v0.0.0-20261022230602-d28505a80a74
+replace github.com/dolthub/dolt/go => github.com/BlueboxC/dolt/go v0.0.0-20261023104232-b7b5cee73f29
 
-replace github.com/dolthub/go-mysql-server => github.com/BlueboxC/go-mysql-server v0.0.0-20261022082133-6071a7f383ba
+replace github.com/dolthub/go-mysql-server => github.com/BlueboxC/go-mysql-server v0.0.0-20261023103840-2c79c9d78520

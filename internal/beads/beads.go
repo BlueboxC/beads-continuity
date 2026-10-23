@@ -621,11 +621,14 @@ func FindBeadsDirFrom(startDir string) string {
 
 	fallbackBeadsDir := ""
 	fallbackHasDB := false
+	fallbackHasProjectFiles := false
 	if repoRoot != "" {
 		fallbackBeadsDir = worktreeFallbackBeadsDirForRepo(repoRoot)
 		if fallbackBeadsDir != "" {
 			if fbInfo, err := os.Stat(fallbackBeadsDir); err == nil && fbInfo.IsDir() {
-				fallbackHasDB = hasBeadsDatabase(FollowRedirect(fallbackBeadsDir))
+				resolvedFallback := FollowRedirect(fallbackBeadsDir)
+				fallbackHasDB = hasBeadsDatabase(resolvedFallback)
+				fallbackHasProjectFiles = hasBeadsProjectFiles(resolvedFallback)
 			}
 		}
 	}
@@ -647,6 +650,11 @@ func FindBeadsDirFrom(startDir string) string {
 			} else if hasBeadsProjectFiles(resolved) {
 				return resolved
 			}
+		}
+
+		// A linked worktree belongs to its main checkout, not an unrelated ancestor.
+		if repoRoot != "" && utils.PathsEqual(dir, repoRoot) && fallbackHasProjectFiles {
+			break
 		}
 
 		parent := filepath.Dir(dir)

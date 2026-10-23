@@ -144,7 +144,7 @@ Examples:
 			if oldCommits <= 1 {
 				fmt.Printf("\n  Nothing to compact (0-1 old commits).\n")
 			} else {
-				fmt.Printf("\n  Result: %d commits → %d commits\n", totalCommits, recentCommits+1)
+				fmt.Printf("\n  Estimated result: %d commits → %d commits (including the initial commit)\n", totalCommits, recentCommits+2)
 				fmt.Printf("  Run with --force to proceed.\n")
 			}
 			return nil
@@ -187,6 +187,12 @@ Examples:
 		if err := compactor.Compact(ctx, initialHash, boundaryHash, oldCommits, recentHashes); err != nil {
 			return HandleError("compact failed: %v", err)
 		}
+		var resultCommits int
+		if after, err := store.Log(ctx, 0); err != nil {
+			WarnError("counting commits after compact: %v", err)
+		} else {
+			resultCommits = len(after)
+		}
 
 		// Prune remote-tracking refs before GC: they still anchor the
 		// pre-compact chain, and with them in place GC reclaims nothing on any
@@ -202,18 +208,19 @@ Examples:
 		sizeAfter := storeSizeBytes(ctx)
 
 		elapsed := time.Since(start)
-		resultCommits := len(recentHashes) + 1
 
 		if jsonOutput {
 			result := map[string]interface{}{
 				"success":            true,
 				"commits_before":     totalCommits,
-				"commits_after":      resultCommits,
 				"old_squashed":       oldCommits,
 				"recent_kept":        len(recentHashes),
 				"remote_refs_pruned": pruned,
 				"tags_anchoring":     tags,
 				"elapsed_ms":         elapsed.Milliseconds(),
+			}
+			if resultCommits > 0 {
+				result["commits_after"] = resultCommits
 			}
 			if gcMode != "" {
 				result["gc_mode"] = gcMode
@@ -221,7 +228,11 @@ Examples:
 			addGCSizeJSON(result, sizeBefore, sizeAfter)
 			return outputJSON(result)
 		}
-		fmt.Printf("✓ Compacted %d commits → %d\n", totalCommits, resultCommits)
+		if resultCommits > 0 {
+			fmt.Printf("✓ Compacted %d commits → %d\n", totalCommits, resultCommits)
+		} else {
+			fmt.Printf("✓ Compacted %d commits\n", totalCommits)
+		}
 		fmt.Printf("  Squashed: %d old commits → 1 base\n", oldCommits)
 		fmt.Printf("  Preserved: %d recent commits\n", len(recentHashes))
 		if line := gcSizeLine(sizeBefore, sizeAfter); line != "" {

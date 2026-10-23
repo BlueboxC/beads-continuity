@@ -10,6 +10,14 @@ and source-backed solutions matters across sessions. [FORK.md](https://github.co
 identifies the upstream baseline, implemented additions and remaining limits.
 All project data stays in that project's existing Beads Dolt.
 
+## Explicit workspace selection
+
+`bd -C <directory>` resolves a linked worktree through its own project before
+considering unrelated ancestors. If an inherited nonempty `BEADS_DIR` selects a
+different workspace, the command refuses before opening or modifying it. Unset
+that selector or point it at the same project. Canonical paths and redirects
+that identify the same workspace are accepted.
+
 ## Network privacy
 
 Anonymous usage metrics are removed: no machine ID, event queue or uploader is
@@ -364,3 +372,7 @@ only an explicitly selected, known-valid project backup; do not reinitialize to
 bypass a refusal. Keep source/binary provenance and private backups before an
 upgrade. Passing local tests does not qualify every native compact cycle or a
 production runtime, and source publication never publishes project Dolt data.
+
+### History compact reports
+
+`compact --json` reads `commits_after` from the rewritten history rather than estimating it. If that read fails, the rewrite remains successful and the count is omitted with a warning. The dry-run estimate includes the initial commit. Embedded exclusivity and refusal of online server/proxy rewrites are unchanged.

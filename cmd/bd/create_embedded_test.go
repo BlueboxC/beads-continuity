@@ -802,7 +802,7 @@ func TestEmbeddedPreviewDoesNotConsumeVersionMarker(t *testing.T) {
 	}
 }
 
-func TestEmbeddedChangeDirOverridesInheritedBeadsDir(t *testing.T) {
+func TestEmbeddedChangeDirRefusesConflictingCallerSelection(t *testing.T) {
 	bd := buildEmbeddedBD(t)
 	callerDir, callerBeadsDir, _ := bdInit(t, bd, "--prefix", "caller")
 	targetDir, targetBeadsDir, _ := bdInit(t, bd, "--prefix", "target")
@@ -811,8 +811,8 @@ func TestEmbeddedChangeDirOverridesInheritedBeadsDir(t *testing.T) {
 	cmd.Dir = callerDir
 	cmd.Env = append(bdEnv(callerDir), "BEADS_DIR="+callerBeadsDir)
 	stdout, stderr, err := runCommandBuffers(t, cmd)
-	if err != nil {
-		t.Fatalf("bd -C target create failed: %v\nstdout:\n%s\nstderr:\n%s", err, stdout.String(), stderr.String())
+	if err == nil || !strings.Contains(stderr.String(), "BEADS_DIR") {
+		t.Fatalf("conflicting -C target was not refused: %v\nstdout:\n%s\nstderr:\n%s", err, stdout.String(), stderr.String())
 	}
 
 	countIssues := func(beadsDir, database string) int {
@@ -840,6 +840,20 @@ func TestEmbeddedChangeDirOverridesInheritedBeadsDir(t *testing.T) {
 
 	if got := countIssues(callerBeadsDir, "caller"); got != 0 {
 		t.Fatalf("inherited BEADS_DIR received %d issues, want 0", got)
+	}
+	if got := countIssues(targetBeadsDir, "target"); got != 0 {
+		t.Fatalf("refused -C target received %d issues, want 0", got)
+	}
+
+	cmd = exec.Command(bd, "-C", targetDir, "create", "Explicit target", "--json")
+	cmd.Dir = callerDir
+	cmd.Env = bdEnv(callerDir)
+	stdout, stderr, err = runCommandBuffers(t, cmd)
+	if err != nil {
+		t.Fatalf("bd -C target without conflicting selector failed: %v\nstdout:\n%s\nstderr:\n%s", err, stdout.String(), stderr.String())
+	}
+	if got := countIssues(callerBeadsDir, "caller"); got != 0 {
+		t.Fatalf("caller received %d issues after explicit target create, want 0", got)
 	}
 	if got := countIssues(targetBeadsDir, "target"); got != 1 {
 		t.Fatalf("-C target received %d issues, want 1", got)

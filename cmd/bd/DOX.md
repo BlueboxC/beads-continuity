@@ -126,6 +126,10 @@ Root DOX.md and the parent chain remain binding.
 
 - Native `vc status` reads staged/unstaged table changes through the storage Status role and exposes both in text/JSON. Failed working-set reads withhold success output; this read never stages, commits or changes the documented LWW conflict policy. Graph/proxy admission stays unchanged.
 
+- Explicit -C selection refuses a conflicting inherited nonempty BEADS_DIR before rebinding the process. Matching canonical paths and redirects remain valid; restoration preserves the caller environment. No implicit project initialization or database migration.
+
+- History compact reports its actual post-rewrite log count; failed readback omits the count and emits an advisory without relabeling a successful rewrite as failed. Dry-run estimates retain the initial commit. Existing embedded exclusivity and server/proxy refusal stay in force.
+
 ## Work Guidance
 - Routed create adopts a sole metadata-less native database, retaining its prefix and project identity. Refuse ambiguous databases, dirty working sets under committing policy, non-embedded target settings and graph formats before writing selectors. Personal migration shares the guarded adoption; dry-run checks target admission without initialization.
 
