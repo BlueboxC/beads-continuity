@@ -403,8 +403,9 @@ satisfy this warning but carry a
 
 The advisory minimum and standalone pin are not a storage-format guarantee.
 A pre-2.3.3 server can fail on a database created with descending-index storage:
-`information_schema` queries or writes report `table has unknown fields`, and
-writes touching `issues` may instead name `fk_comp_snap_issue`. Some reads can
+schema probes such as `information_schema.tables` and a plain `INSERT` can
+report `table has unknown fields`; an `UPDATE` or `DELETE` on `issues` can
+instead name `fk_comp_snap_issue`. Reads of issue rows and `SHOW TABLES` can
 still succeed. See [storage compatibility](/architecture/dolt#storage-compatibility-is-separate-from-the-cli-pin)
 before downgrading an engine; bypassing Beads schema checks does not repair an
 engine-format mismatch. The fork's embedded engine is 2.6.0, independently of

@@ -69,9 +69,11 @@ ascending representation; upgrading a reader alone does not establish which
 representation a database holds.
 
 As clarified in [upstream PR #7807](https://github.com/gastownhall/beads/pull/7807),
-pre-2.3.3 engines can still read some issue rows while `information_schema`
-queries and writes fail with `table has unknown fields`; writes touching
-`issues` may instead report a foreign-key failure on `fk_comp_snap_issue`.
+pre-2.3.3 engines can still read issue rows and list tables while schema
+probes such as `information_schema.tables` and writes such as a plain `INSERT`
+fail with `table has unknown fields`. An `UPDATE` or `DELETE` on `issues` can
+instead report a foreign-key failure on `fk_comp_snap_issue`; that symptom
+must not be attributed to every kind of write touching `issues`.
 A release can fail during its schema probe while another source build reaches
 reads and fails only on writes. Neither `BD_IGNORE_SCHEMA_SKEW=1` nor a
 successful read establishes write compatibility. Preserve the existing binary
