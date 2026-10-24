@@ -1,0 +1,26 @@
+name: Dependency Nix qualification
+on:
+  push:
+    branches: [codex/dependency-qualification-20261024]
+permissions:
+  contents: read
+jobs:
+  nix:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      - uses: DeterminateSystems/determinate-nix-action@61cbfe2efc2d4e7a8a6d56967c3c1058e846c858
+      - name: Compute hash and independently build
+        run: |
+          bash scripts/update-nix-vendorhash.sh
+          nix build .#default --print-build-logs
+          ./result/bin/bd --help > /dev/null
+          sha256sum go.mod go.sum default.nix
+          cat default.nix
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: qualified-default-nix
+          path: default.nix
+          retention-days: 1
+          if-no-files-found: error
