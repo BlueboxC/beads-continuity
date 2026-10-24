@@ -86,3 +86,9 @@ Use the affected existing checks selected in engdocs/TESTING.md; verify indexed 
 
 - [activity/DOX.md](activity/DOX.md) — Bounded observed session/turn journal, distinct from reviewed knowledge.
 - [graphpatch/DOX.md](graphpatch/DOX.md) — Bounded ordered graph property patches.
+
+- [legacyimport/DOX.md](legacyimport/DOX.md) — Preview3 preparation: bounded decoding of ordinary Beads export records.
+- [memorycatalog/DOX.md](memorycatalog/DOX.md) — Preview3 preparation: the selected Preview3 Memory Type declarations.
+- [memoryquery/DOX.md](memoryquery/DOX.md) — Preview3 preparation: bounded typed Memory relationship traversal.
+- [typecatalog/DOX.md](typecatalog/DOX.md) — Preview3 preparation: fixed Type-family descriptors and selection.
+- [typeconstraints/DOX.md](typeconstraints/DOX.md) — Preview3 preparation: pure validation of selected Type/Link outcomes.

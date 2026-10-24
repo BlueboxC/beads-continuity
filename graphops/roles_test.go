@@ -86,7 +86,7 @@ func TestPackageShapeAndImports(t *testing.T) {
 	if !ok || len(pkgs) != 1 {
 		t.Fatalf("expected exactly the graphops package, got %v", pkgs)
 	}
-	want := map[string]bool{"doc.go": false, "errors.go": false, "types.go": false, "laws.go": false, "reader.go": false, "types_role.go": false, "identity.go": false}
+	want := map[string]bool{"doc.go": false, "errors.go": false, "types.go": false, "laws.go": false, "reader.go": false, "types_role.go": false, "identity.go": false, "resource_identity.go": false}
 	for path, file := range pkg.Files {
 		base := path[strings.LastIndex(path, "/")+1:]
 		if base == "writer.go" {

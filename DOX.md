@@ -43,6 +43,12 @@ Root owns fork policy, public API packages, license, build/version files, small 
 - The embedded engine pins official Dolt 2.6.0 plus the minimal BlueboxC/dolt engine corrections documented in FORK.md. Keep driver, engine and external CLI versions distinct. Carry storage fixes in the engine dependency, preserve contributor attribution, and do not enable multi-branch commit options or add core SQL workarounds.
 - Follow AGENTS.md, AGENT_INSTRUCTIONS.md and engdocs/TESTING.md. Keep manual experiments in disposable directories.
 
+## Preview3 preparation boundary
+
+- This isolated branch carries the pure Type/catalog/query preparation from pinned PR291. Existing native and schema8 continuity routes remain authoritative. No Preview3 activation or lossless conversion is implemented by these additions.
+- Preserve all fork runtime, security, telemetry, capacity, Codex, knowledge and recovery contracts while adapting the remaining provider/CLI seams. Never relabel a schema8 selector as schema11, rewrite retained snapshots in place, or substitute ordinary JSONL interchange for a full-history conversion.
+- `engdocs/design/preview3-integration.md` owns the preservation and qualification contract. Work state belongs in the operator Beads workspace; private project captures and evidence stay outside public Git.
+
 ## Verification
 
 - Use the checks selected by engdocs/TESTING.md, including git diff --check. Report unavailable tooling instead of claiming a check passed.

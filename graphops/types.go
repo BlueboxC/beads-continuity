@@ -442,6 +442,10 @@ func NewBead(spec BeadSpec) (Bead, error) {
 	if err := ValidateBeadPath(spec.Path); err != nil {
 		return Bead{}, err
 	}
+	return newBead(spec)
+}
+
+func newBead(spec BeadSpec) (Bead, error) {
 	if err := ValidateTypeURL(spec.TypeURL); err != nil {
 		return Bead{}, fmt.Errorf("bead %s type: %w", spec.Path, err)
 	}
@@ -537,6 +541,10 @@ func NewLink(spec LinkSpec) (Link, error) {
 	if err := ValidateLinkPath(spec.Path); err != nil {
 		return Link{}, err
 	}
+	return newLink(spec)
+}
+
+func newLink(spec LinkSpec) (Link, error) {
 	if err := ValidateTypeURL(spec.TypeURL); err != nil {
 		return Link{}, fmt.Errorf("link %s type: %w", spec.Path, err)
 	}

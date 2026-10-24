@@ -23,3 +23,7 @@ The additional canonical-JSON dependency is `github.com/gowebpki/jcs v1.0.1`
 `internal/storage/issueops/JCS-LICENSE`; THIRD_PARTY_LICENSES credits its authors.
 Experimental format limits remain explicit; upstream draft release qualification
 is not inherited by this adaptation.
+
+## Preview3 preparation subset
+
+The isolated integration branch additionally adapts descriptor refinements and canonical identity helpers from [donnabox/beads PR291](https://github.com/donnabox/beads/pull/291), exact source `0c4dc1f0d68a371e56b3e461b968e828e4ea254c`. Contributor domain/catalog/query tests are retained. Public-ID constructor semantics use explicit new helpers; original constructor assertions and schema8 validation remain. The fork keeps its Go1.27-compatible UTF-8 test premise. These pure additions do not install the candidate schema11/generation12, migrate schema8 stores, replace the continuity adapter or change the qualified Dolt tuple.
