@@ -16,7 +16,7 @@ Root DOX.md and the parent chain remain binding.
 
 - All six CLI execution paths share a 120-second communication deadline and child cleanup on timeout/cancellation. POSIX cleanup terminates the owned process group, including pipe-retaining descendants; pipe draining has a five-second backstop. Cancellation propagates; timeout reports code 124 and an unknown operation outcome, with no automatic retry. JSON/text decoding, command-specific routing and literal arguments remain unchanged; init still uses only its initialization/actor flags.
 - Comment/note IDs and bodies are literal positional arguments after `--`; configured CLI options precede that boundary. Issue creation binds title content through `--title`, preserving option-shaped text, configured actor and other fields.
-- Published runtime requirements include PyJWT >=2.15.0; the dev group requires urllib3 >=2.8.0. Preserve these security minima and the locked dependency graph.
+- Published runtime requirements include PyJWT >=2.15.0 and opentelemetry-api >=1.45.1; the dev group requires urllib3 >=2.8.0. Preserve these security minima and the locked dependency graph.
 
 - The eight query/discovery tools advertise advisory MCP readOnlyHint metadata. Mixed context/admin actions and writers remain unannotated. This metadata does not enforce CLI readonly mode or change workspace initialization.
 

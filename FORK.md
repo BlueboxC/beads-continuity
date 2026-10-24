@@ -108,7 +108,7 @@ are introduced. Graph Preview, proxy routing and prior engine protections remain
 
 The root and both independent Go examples require and select Go 1.27.3 for
 Dolt 2.6.0 and its analyzer. The Nix overlay pins the official 1.27.3 source
-archive and SHA-256; MCP CI jobs pin uv 0.13.4. All lint lanes and the optional pre-commit hook pin golangci-lint v2.15.0, because v2.10.1 cannot read Go 1.27 export data. The earlier toolchain hardening adapted Julian Knutsen's
+archive and SHA-256; MCP CI jobs pin uv 0.13.5. All lint lanes and the optional pre-commit hook pin golangci-lint v2.15.0, because v2.10.1 cannot read Go 1.27 export data. The earlier toolchain hardening adapted Julian Knutsen's
 [PR #7732](https://github.com/gastownhall/beads/pull/7732), including its
 updated Go 1.26 devcontainer. The fork has no Bazel setup to transplant.
 
@@ -469,3 +469,9 @@ Adapt julianknutsen's [PR #7802](https://github.com/gastownhall/beads/pull/7802)
 ### UTC virtual-base evaluation
 
 The embedded engine additionally adapts macneale4’s [Dolt PR #12198](https://github.com/dolthub/dolt/pull/12198): virtual time defaults evaluate in UTC and restore the caller session setting. The driver/analyzer pins and schema stay unchanged. Retain the fork's conflicting-base refusal, virtual-object retention and matched data/binary recovery.
+
+## Scoped dependency maintenance
+
+Adapt Julian Knutsen's [PR #7814](https://github.com/gastownhall/beads/pull/7814), [PR #7813](https://github.com/gastownhall/beads/pull/7813) and [PR #7812](https://github.com/gastownhall/beads/pull/7812): MCP build jobs use uv 0.13.5, the Python runtime requires opentelemetry-api >=1.45.1, and the OpenAPI generator uses kin-openapi 0.149.0 with jsonschema 6.0.3. Retain FastMCP 3.4.5, the existing CLI/hooks integration and all Dolt/analyzer/driver pins. The Nix Go1.27.3 overlay retains the pinned source, uses Go1.26 to bootstrap, and adapts the pinned vendor opt-in patch to the renamed loader state. Recompute the fixed-output dependency hash and independently build after lock changes.
+
+The three-clone [#7811](https://github.com/gastownhall/beads/issues/7811) label-loss reproduction is already covered by this fork's companion-table settlement correction for [#7757](https://github.com/gastownhall/beads/issues/7757); do not add a second resolution workaround. Qualify the actual binary and report stock-version differences separately.

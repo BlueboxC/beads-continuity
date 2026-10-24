@@ -5,12 +5,25 @@
 self: final: prev:
 let
   # Pin the compiler required by the reviewed Dolt/analyzer tuple.
-  beadsGo = final.go_1_26.overrideAttrs (_: {
+  beadsGo = final.go_1_26.overrideAttrs (old: {
     version = "1.27.3";
     src = final.fetchurl {
       url = "https://go.dev/dl/go1.27.3.src.tar.gz";
       hash = "sha256-bndJA1zzYPBrJXXRYup535/ajvZxiJ5cN1+OUHd/Jrs=";
     };
+    env = old.env // {
+      GOROOT_BOOTSTRAP = "${final.go_1_26}/share/go";
+    };
+    # Go 1.27 renamed this loader state; retain the pinned Nix vendor opt-in.
+    patches = map (
+      patch:
+      if final.lib.hasSuffix "go_no_vendor_checks-1.26.patch" (toString patch) then
+        final.writeText "go_no_vendor_checks-1.27.patch" (
+          builtins.replaceStrings [ "loaderstate" ] [ "ld" ] (builtins.readFile patch)
+        )
+      else
+        patch
+    ) old.patches;
   });
 in
 {
