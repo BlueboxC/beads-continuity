@@ -117,8 +117,8 @@ updated Go 1.26 devcontainer. The fork has no Bazel setup to transplant.
 The embedded engine keeps `driver/v2 v2.4.1`, starting from coffeegoddd's
 [upstream proposal #7254](https://github.com/gastownhall/beads/pull/7254).
 It pins Dolt v2.6.0 plus the retained storage corrections, catalog and SQL fixes at
-[BlueboxC/dolt `f729dbf7377a`](https://github.com/BlueboxC/dolt/commit/f729dbf7377a5d1614faa60ab8d58d74503ff490),
-with the [SQL analyzer correction](https://github.com/BlueboxC/go-mysql-server/commit/5d41f2e0332a5d22726f6869b373740f3da55b68) on base `38a1fb50b434`. The engine remains a Go dependency;
+[BlueboxC/dolt `212be23824de`](https://github.com/BlueboxC/dolt/commit/212be23824def28adfbfb25cd89be67ed91349ae),
+with the [SQL analyzer correction](https://github.com/BlueboxC/go-mysql-server/commit/1aa8b38f5b78da630065da597096598bd17df318) on base `38a1fb50b434`. The engine remains a Go dependency;
 Beads does not implement engine-specific SQL workarounds.
 
 The 2.6.0 merge reuses upstream corrections already present in the carried patch set. Its ORT merge-base resolver retains this fork's explicit refusal of conflicting virtual bases at merge and three-dot diff entry points. Native backups from Dolt 2.4.2 and the preceding embedded tuple pass isolated restore, logical roots/ref/history comparison, subsequent writes/reopen and a second backup readable by both engines. Installation still requires matched data/binary recovery and guarded readback; the driver, project schema and external CLI/server policy do not change.
@@ -489,3 +489,7 @@ Adapt upstream #7815 across action families already used by this fork, with tag-
 ### Go module maintenance (#7808)
 
 Adopt Anthropic SDK1.83.0 and the reviewed x/mod0.42.0, x/net0.61.0, x/crypto0.58.0, x/text0.43.0 and x/tools0.51.0 graph, including their required x/sync, x/sys, x/term and x/telemetry versions. Mirror the effective graph into both independent examples. Retain Go1.27.3, the custom Dolt/analyzer replacements, driver2.4.1 and the existing telemetry policy. Qualify SDK response/retry behavior with local HTTP fixtures, preserve generated API bytes and compute the Nix vendor hash from these exact locks. This is dependency maintenance, without schema or project-format migration.
+
+### SQL execution follow-ups (October 24, 2026)
+
+The tuple incorporates GMS PRs #4062, #4058 and #4059 for Dolt #12205: LATERAL scopes retain legal ON predicates; EXIT handlers execute their entire body; and session select limits no longer truncate the input to DISTINCT/window expressions. The handler loop additionally preserves its instruction counter through IF/WHILE branches, with true/false and tail-operation regressions. Existing exact-decimal, Full-Text, storage and merge protections remain. Embedded normal/prepared qualification covers 22 cases, supplemented by the contributor engine suites and the Beads regression suite. Multiple procedure result sets (Dolt #12199) remain outside this correction. Engine upgrades retain matched data/binary recovery and native backup checks; the driver, schemas, capacities, hooks and external CLI/server policy are unchanged.

@@ -21,7 +21,7 @@ buildGoModule {
   proxyVendor = true;
   # Match the locked Go dependencies; recompute after go.mod/go.sum changes
   # with scripts/update-nix-vendorhash.sh or a verified same-source Nix CI hash.
-  vendorHash = "sha256-0Y0bjBvrBuAtBHNomR7wDnR95WFUZTaUU4X3bGacaCA=";
+  vendorHash = "sha256-5bqEC97XYxV82hlTWouiAmD+HSwB01Ja0KVgqC9vfxw=";
 
   env.GOTOOLCHAIN = "local";
 
