@@ -31,3 +31,5 @@ Reuse existing build and verification entry points. Do not run release publicati
 Use the affected existing checks selected in engdocs/TESTING.md; verify indexed child contracts.
 
 ## Child DOX Index
+
+- [ci/windows-make-shell/DOX.md](ci/windows-make-shell/DOX.md) — Windows Make toolchain provisioning and cache verification.

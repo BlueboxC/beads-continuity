@@ -1,0 +1,433 @@
+name: Maintenance qualification
+on:
+  push:
+    branches: [codex/maintenance-qualification-20261024]
+permissions:
+  contents: read
+env:
+  BD_DISABLE_METRICS: '1'
+  DOLT_DISABLE_EVENT_FLUSH: '1'
+jobs:
+  windows-make-shell:
+    name: Windows Make shell (${{ matrix.host }})
+    runs-on: windows-latest
+    timeout-minutes: 55
+    strategy:
+      fail-fast: false
+      matrix:
+        host:
+          - native
+          - msys2
+          - cygwin
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v6
+
+      - name: Check Windows tooling diagnostics
+        shell: pwsh
+        run: ./scripts/ci/windows-make-shell/diagnostics.ps1
+
+      - name: Verify native cache input guards
+        if: ${{ !cancelled() && matrix.host == 'native' }}
+        shell: pwsh
+        run: ./scripts/ci/windows-make-shell/test-cache-inputs.ps1
+
+      - name: Compute toolchain cache keys
+        id: toolchain-keys
+        shell: pwsh
+        run: ./scripts/ci/windows-make-shell/cache-keys.ps1
+
+      # Restore-only, like every restore here: main.yml's saver writes it. A
+      # stalled cache download is abandoned after a minute as a miss.
+      - name: Restore cached native GNU Make
+        id: native-make-cache
+        if: ${{ !cancelled() && matrix.host == 'native' }}
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        env:
+          SEGMENT_DOWNLOAD_TIMEOUT_MINS: "1"
+        with:
+          path: ${{ runner.temp }}/make-shell/native
+          key: beads-make-shell-native-v1-${{ runner.os }}-${{ runner.arch }}-make-4.4.1-cc6dc291113d
+
+      - name: Install native GNU Make
+        id: install-native
+        if: ${{ !cancelled() && matrix.host == 'native' }}
+        timeout-minutes: 8
+        shell: pwsh
+        env:
+          NATIVE_MAKE_CACHE: ${{ runner.temp }}/make-shell/native
+        run: ./scripts/ci/windows-make-shell/native-make.ps1 -Mode Install -CacheDir $env:NATIVE_MAKE_CACHE
+
+      # release: false uses the image's C:\msys64 instead of downloading MSYS2
+      # from GitHub; no update and no install here (msys2-packages.sh installs,
+      # with retries, against the image's sync database). F7b review fix
+      # (B1): setup-msys2's own package cache would SAVE an actions/cache
+      # entry from a PR on Blacksmith, so it is off
+      # (TestBlacksmithReachablePRJobsDisableDefaultCachingActions).
+      - name: Set up preinstalled MSYS2
+        id: msys2-shell
+        if: ${{ !cancelled() && matrix.host == 'msys2' }}
+        timeout-minutes: 3
+        uses: msys2/setup-msys2@66cd2cce69caa17b53920067426061ca1de3a884 # v2.32.0
+        with:
+          msystem: MSYS
+          path-type: minimal
+          release: false
+          update: false
+          cache: false
+
+      - name: Restore MSYS2 package cache
+        id: msys2-cache
+        if: ${{ !cancelled() && matrix.host == 'msys2' && steps.toolchain-keys.outputs.msys2-sync-db != '' }}
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        env:
+          SEGMENT_DOWNLOAD_TIMEOUT_MINS: "1"
+        with:
+          path: ${{ runner.temp }}/make-shell/msys2
+          key: beads-make-shell-msys2-v1-${{ runner.os }}-${{ runner.arch }}-git-make-${{ steps.toolchain-keys.outputs.msys2-sync-db }}
+          restore-keys: beads-make-shell-msys2-v1-${{ runner.os }}-${{ runner.arch }}-git-make-
+
+      # git as well as make: the Makefile runs `git rev-parse` while parsing.
+      - name: Install MSYS2 GNU Make
+        id: install-msys2
+        if: ${{ !cancelled() && matrix.host == 'msys2' && steps.msys2-shell.outcome == 'success' }}
+        timeout-minutes: 8
+        shell: msys2 {0}
+        env:
+          MSYS2_PACKAGE_CACHE: ${{ runner.temp }}/make-shell/msys2
+          MSYS2_PACKAGE_CACHE_HIT: ${{ steps.msys2-cache.outputs.cache-hit }}
+        run: bash scripts/ci/windows-make-shell/msys2-packages.sh git make
+
+      # This month's snapshot, or before main's saver has refreshed it, the
+      # newest older one: any of them installs offline.
+      - name: Restore Cygwin package cache
+        id: cygwin-cache
+        if: ${{ !cancelled() && matrix.host == 'cygwin' }}
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        env:
+          SEGMENT_DOWNLOAD_TIMEOUT_MINS: "1"
+        with:
+          path: ${{ runner.temp }}/make-shell/cygwin
+          key: beads-make-shell-cygwin-v1-${{ runner.os }}-${{ runner.arch }}-git-make-${{ steps.toolchain-keys.outputs.month }}
+          restore-keys: beads-make-shell-cygwin-v1-${{ runner.os }}-${{ runner.arch }}-git-make-
+
+      # A failure here (a corrupt or unverifiable cache) only hands over to
+      # the online installer below; the failed step stays visible.
+      - name: Install Cygwin GNU Make from the package cache
+        id: cygwin-cached
+        if: ${{ !cancelled() && matrix.host == 'cygwin' && steps.cygwin-cache.outputs.cache-matched-key != '' }}
+        continue-on-error: true
+        timeout-minutes: 5
+        shell: pwsh
+        env:
+          CYGWIN_PACKAGE_CACHE: ${{ runner.temp }}/make-shell/cygwin
+        run: ./scripts/ci/windows-make-shell/cygwin-offline.ps1 -Mode Install -CacheDir $env:CYGWIN_PACKAGE_CACHE -Root (Join-Path $env:RUNNER_TEMP 'cygwin')
+
+      - name: Set up Cygwin GNU Make
+        if: ${{ !cancelled() && matrix.host == 'cygwin' && steps.cygwin-cached.outcome != 'success' }}
+        id: cygwin
+        # The network fallback when the package cache was missing or failed.
+        # cygwin-install-action downloads setup-x86_64.exe from cygwin.com and
+        # the packages from a mirror, often slowly enough to red the required
+        # check for a reason unrelated to the change under test. Treat a
+        # setup failure as a (non-blocking) warning: the smoke step below is
+        # gated on a Cygwin setup succeeding, so a genuine Cygwin Make
+        # regression still fails loudly, while a flaky download only skips
+        # the leg with a warning. Review SF-2 (2026-10-03): a 10-minute step
+        # timeout caps how long a hung download can block the exercise steps
+        # behind it, instead of consuming the whole 30-minute job timeout.
+        continue-on-error: true
+        timeout-minutes: 10
+        uses: cygwin/cygwin-install-action@3f0a3f9f988f7e96b8c18098ae05eaec175f5b52 # v6
+        with:
+          packages: git make
+          add-to-path: 'false'
+
+      - name: Warn when Cygwin setup was skipped by a download failure
+        if: ${{ !cancelled() && matrix.host == 'cygwin' && steps.cygwin.outcome == 'failure' }}
+        shell: bash
+        run: |
+          echo "::warning title=Cygwin Make-shell leg skipped::No Cygwin install: the main-saved package cache was missing or failed, and cygwin-install-action could not download Cygwin (network flake); skipping the Cygwin-hosted Make smoke test. This is an infrastructure failure, not a code failure."
+
+      - name: Exercise native Windows Make
+        id: native
+        if: ${{ !cancelled() && matrix.host == 'native' && steps.install-native.outcome == 'success' }}
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $make = (Get-Command make.exe -ErrorAction Stop).Source
+          $hostOutput = & $make --no-print-directory -f NUL --eval '$(info MAKE_HOST=$(MAKE_HOST))' --eval 'noop:;' noop
+          $makeHost = (($hostOutput | Where-Object { $_ -like 'MAKE_HOST=*' }) -replace '^MAKE_HOST=', '').Trim()
+          if ($LASTEXITCODE -ne 0 -or ($makeHost -ne 'Windows32' -and $makeHost -notmatch '-mingw32$')) {
+            throw "Expected native Windows GNU Make, found '$makeHost' at '$make'"
+          }
+
+          $git = (Get-Command git.exe -ErrorAction Stop).Source
+          if ($git -notmatch ' ') {
+            throw "Expected the hosted Git for Windows path to contain a space, found '$git'"
+          }
+
+          $profile = Join-Path $env:RUNNER_TEMP 'profile with spaces'
+          New-Item -ItemType Directory -Force -Path $profile | Out-Null
+          $poison = Join-Path $profile 'poison bash env.sh'
+          Set-Content -LiteralPath $poison -Encoding utf8 -Value 'exit 97'
+
+          $env:USERPROFILE = $profile
+          $env:BASH_ENV = $poison
+          $env:BASHOPTS = 'failglob'
+          $env:SHELLOPTS = 'nounset'
+          $env:GIT_EXEC_PATH = Join-Path $profile 'missing git exec path'
+          $env:PATH = "$(Split-Path $git);$env:SystemRoot\System32"
+
+          & $make --no-print-directory help | Out-Null
+          if ($LASTEXITCODE -ne 0) {
+            throw 'Native Make failed while parsing or running help'
+          }
+
+          @'
+          include Makefile
+          .RECIPEPREFIX := >
+          .PHONY: windows-make-shell-smoke
+          windows-make-shell-smoke:
+          >@case "$(SHELL)" in */bin/bash.exe) ;; *) exit 1;; esac
+          >@test -n "$$BASH_VERSION"
+          >@test "$$(command -v sed)" = /usr/bin/sed
+          >@test "$$(command -v env)" = /usr/bin/env
+          >@test -z "$${BASH_ENV+x}"
+          >@case "$$-" in *u*) exit 1;; esac
+          >@shopt -q failglob && exit 1 || :
+          >@test -z "$${GIT_EXEC_PATH+x}"
+          >@env printf '%s\n' 'native Windows Make shell smoke passed'
+          '@ | & $make --no-print-directory -f - windows-make-shell-smoke
+          if ($LASTEXITCODE -ne 0) {
+            throw 'Native Make shell smoke failed'
+          }
+
+          function Get-TreeManifest {
+            param([Parameter(Mandatory)][string]$Root)
+
+            @(
+              Get-ChildItem -LiteralPath $Root -Recurse -Force | ForEach-Object {
+                $relative = [IO.Path]::GetRelativePath($Root, $_.FullName).Replace('\', '/')
+                if ($_.PSIsContainer) {
+                  "D $relative"
+                } else {
+                  $hash = (Get-FileHash -LiteralPath $_.FullName -Algorithm SHA256).Hash
+                  "F $relative $hash"
+                }
+              }
+            ) | Sort-Object
+          }
+
+          $proofRoot = Join-Path $env:RUNNER_TEMP ("make install proof " + [guid]::NewGuid().ToString('N'))
+          $fixtureRepo = Join-Path $proofRoot 'fixture repo'
+          $buildDir = Join-Path $fixtureRepo 'build output'
+          $installRoot = Join-Path $proofRoot 'install sandbox'
+          $installProfile = Join-Path $installRoot 'profile with spaces'
+          New-Item -ItemType Directory -Force -Path $buildDir, $installProfile | Out-Null
+          Copy-Item -LiteralPath (Join-Path $env:GITHUB_WORKSPACE 'Makefile') -Destination $fixtureRepo
+          Copy-Item -LiteralPath (Join-Path $env:GITHUB_WORKSPACE 'go.mod') -Destination $fixtureRepo
+
+          $sentinel = Join-Path $buildDir 'bd.exe'
+          Set-Content -LiteralPath $sentinel -Encoding ascii -NoNewline -Value 'native-install-sentinel'
+          $sentinelHash = (Get-FileHash -LiteralPath $sentinel -Algorithm SHA256).Hash
+
+          & $git -C $fixtureRepo init --quiet
+          & $git -C $fixtureRepo config core.hooksPath .githooks
+          if ($LASTEXITCODE -ne 0) {
+            throw 'Could not initialize the isolated install fixture repository'
+          }
+          & $git -C $fixtureRepo -c user.name=install-proof -c user.email=install-proof@example.invalid `
+            -c commit.gpgsign=false commit --allow-empty --quiet -m 'Initialize install proof'
+          if ($LASTEXITCODE -ne 0) {
+            throw 'Could not commit the isolated install fixture repository'
+          }
+          $fixtureBefore = @(Get-TreeManifest -Root $fixtureRepo)
+
+          $env:USERPROFILE = $installProfile
+          Push-Location $fixtureRepo
+          try {
+            & $make --no-print-directory -o build "BUILD_DIR=$buildDir" GIT_BUILD=install-proof install-force
+            if ($LASTEXITCODE -ne 0) {
+              throw 'Native Make install-force failed for a spaced USERPROFILE'
+            }
+          } finally {
+            Pop-Location
+          }
+
+          $installed = Join-Path $installProfile '.local\bin\bd.exe'
+          if (-not (Test-Path -LiteralPath $installed -PathType Leaf)) {
+            throw "Native Make did not install bd.exe at the exact destination '$installed'"
+          }
+          if ((Get-FileHash -LiteralPath $installed -Algorithm SHA256).Hash -ne $sentinelHash) {
+            throw 'Native Make installed bd.exe with unexpected contents'
+          }
+
+          $expectedInstall = @(
+            'D profile with spaces'
+            'D profile with spaces/.local'
+            'D profile with spaces/.local/bin'
+            "F profile with spaces/.local/bin/bd.exe $sentinelHash"
+          ) | Sort-Object
+          $actualInstall = @(Get-TreeManifest -Root $installRoot)
+          if (Compare-Object -ReferenceObject $expectedInstall -DifferenceObject $actualInstall) {
+            throw "Native Make changed paths outside the exact install destination:`n$($actualInstall -join "`n")"
+          }
+
+          $fixtureAfter = @(Get-TreeManifest -Root $fixtureRepo)
+          if (Compare-Object -ReferenceObject $fixtureBefore -DifferenceObject $fixtureAfter) {
+            throw 'Native Make split the spaced install path or otherwise mutated the fixture repository'
+          }
+
+      - name: Exercise MSYS2-hosted Make
+        id: msys2
+        if: ${{ !cancelled() && matrix.host == 'msys2' && steps.install-msys2.outcome == 'success' }}
+        shell: msys2 {0}
+        run: |
+          set -euo pipefail
+          make_host="$(
+            make --no-print-directory -f /dev/null \
+              --eval '$(info $(MAKE_HOST))' \
+              --eval 'noop:;' noop |
+              sed -n '1p'
+          )"
+          case "$make_host" in
+            *-msys|*-cygwin) ;;
+            *) echo "Expected a POSIX-hosted MSYS2 GNU Make, found '$make_host'" >&2; exit 1 ;;
+          esac
+
+          profile="$(cygpath -u "$RUNNER_TEMP")/profile with spaces"
+          mkdir -p "$profile"
+          bash_env="$profile/compat bash env.sh"
+          printf '%s\n' 'exit 97' > "$bash_env"
+          export BASH_ENV="$bash_env"
+          export GIT_EXEC_PATH="$profile/missing git exec path"
+          export PATH=/usr/bin
+
+          make --no-print-directory help >/dev/null
+          cat > "$profile/smoke.mk" <<'MAKE_EOF'
+          include Makefile
+          .RECIPEPREFIX := >
+          .PHONY: windows-make-shell-smoke
+          windows-make-shell-smoke:
+          >@case "$(SHELL)" in */sh) ;; *) exit 1;; esac
+          >@test -n "$$BASH_VERSION"
+          >@test "$$(command -v sed)" = /usr/bin/sed
+          >@test "$$(command -v env)" = /usr/bin/env
+          >@test -f "$$BASH_ENV"
+          >@test -n "$$GIT_EXEC_PATH"
+          >@case "$$PATH" in *';'*) exit 1;; esac
+          >@env printf '%s\n' 'MSYS2 Make shell smoke passed'
+          MAKE_EOF
+          make --no-print-directory -f "$profile/smoke.mk" windows-make-shell-smoke
+
+      - name: Exercise Cygwin-hosted Make
+        id: cygwin-test
+        # Only run when the Cygwin toolchain actually installed; a skipped install
+        # (download flake) leaves this leg un-exercised rather than failing on a
+        # missing bash. A real install success followed by a Make regression here
+        # still fails the job as before.
+        if: ${{ !cancelled() && matrix.host == 'cygwin' && (steps.cygwin-cached.outcome == 'success' || steps.cygwin.outcome == 'success') }}
+        shell: pwsh
+        env:
+          CYGWIN_ROOT: ${{ steps.cygwin-cached.outputs.root || steps.cygwin.outputs.root }}
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $bash = Join-Path $env:CYGWIN_ROOT 'bin\bash.exe'
+          $script = @'
+          set -euo pipefail
+          export PATH=/usr/bin
+          cd "$(cygpath -u "$GITHUB_WORKSPACE")"
+
+          make_host="$(
+            make --no-print-directory -f /dev/null \
+              --eval '$(info $(MAKE_HOST))' \
+              --eval 'noop:;' noop |
+              sed -n '1p'
+          )"
+          case "$make_host" in
+            *-cygwin) ;;
+            *) echo "Expected Cygwin GNU Make, found '$make_host'" >&2; exit 1 ;;
+          esac
+
+          profile="$(mktemp -d)"
+          trap 'rm -rf -- "$profile"' EXIT
+          bash_env="$profile/cygwin bash env.sh"
+          printf '%s\n' 'exit 97' > "$bash_env"
+          export BASH_ENV="$bash_env"
+          export GIT_EXEC_PATH="$profile/missing git exec path"
+
+          make --no-print-directory help >/dev/null
+          cat > "$profile/smoke.mk" <<'MAKE_EOF'
+          include Makefile
+          .RECIPEPREFIX := >
+          .PHONY: windows-make-shell-smoke
+          windows-make-shell-smoke:
+          >@case "$(SHELL)" in */sh) ;; *) exit 1;; esac
+          >@test -n "$$BASH_VERSION"
+          >@test "$$(command -v sed)" = /usr/bin/sed
+          >@test "$$(command -v env)" = /usr/bin/env
+          >@test -f "$$BASH_ENV"
+          >@test -n "$$GIT_EXEC_PATH"
+          >@case "$$PATH" in *';'*) exit 1;; esac
+          >@env printf '%s\n' 'Cygwin Make shell smoke passed'
+          MAKE_EOF
+          make --no-print-directory -f "$profile/smoke.mk" windows-make-shell-smoke
+          '@
+          $script = $script.Replace("`r`n", "`n")
+          & $bash --noprofile --norc -c $script
+          if ($LASTEXITCODE -ne 0) {
+            throw 'Cygwin Make shell smoke failed'
+          }
+
+      - name: Verify that this host was exercised
+        if: ${{ always() }}
+        shell: pwsh
+        env:
+          HOST_LEG: ${{ matrix.host }}
+          NATIVE_OUTCOME: ${{ steps.native.outcome }}
+          MSYS2_OUTCOME: ${{ steps.msys2.outcome }}
+          CYGWIN_OUTCOME: ${{ steps.cygwin-test.outcome }}
+        run: |
+          $outcome = switch ($env:HOST_LEG) {
+            'native' { $env:NATIVE_OUTCOME }
+            'msys2' { $env:MSYS2_OUTCOME }
+            'cygwin' { $env:CYGWIN_OUTCOME }
+          }
+          if ($outcome -ne 'success') { throw "$env:HOST_LEG was not exercised: $outcome" }
+
+      - name: Native pinned cache round trip without the image candidate
+        if: ${{ matrix.host == 'native' }}
+        timeout-minutes: 8
+        shell: pwsh
+        env:
+          NATIVE_MAKE_CACHE: ${{ runner.temp }}/make-shell/native
+        run: |
+          ./scripts/ci/windows-make-shell/native-make.ps1 -Mode Seed -CacheDir $env:NATIVE_MAKE_CACHE
+          $source = Get-Content ./scripts/ci/windows-make-shell/native-make.ps1 -Raw
+          $source = $source.Replace("`$ImageMake = 'C:\mingw64\bin\mingw32-make.exe'", "`$ImageMake = (Join-Path `$env:RUNNER_TEMP 'absent-image-candidate.exe')")
+          $proof = Join-Path $env:RUNNER_TEMP 'native-cache-proof.ps1'
+          Set-Content -LiteralPath $proof -Value $source
+          & $proof -Mode Install -CacheDir $env:NATIVE_MAKE_CACHE -Destination (Join-Path $env:RUNNER_TEMP 'native-cache-proof')
+
+      - name: MSYS2 warm package cache with unavailable download proxies
+        if: ${{ matrix.host == 'msys2' }}
+        timeout-minutes: 8
+        shell: msys2 {0}
+        env:
+          MSYS2_PACKAGE_CACHE: ${{ runner.temp }}/make-shell/msys2
+          MSYS2_PACKAGE_CACHE_HIT: 'true'
+          http_proxy: http://127.0.0.1:9
+          https_proxy: http://127.0.0.1:9
+        run: bash scripts/ci/windows-make-shell/msys2-packages.sh git make
+
+      - name: Cygwin signed local package round trip
+        if: ${{ matrix.host == 'cygwin' && steps.cygwin.outcome == 'success' }}
+        timeout-minutes: 8
+        shell: pwsh
+        env:
+          CYGWIN_PACKAGE_CACHE: ${{ runner.temp }}/make-shell/cygwin
+          CYGWIN_SETUP: ${{ steps.cygwin.outputs.setup }}
+          CYGWIN_DOWNLOADS: ${{ steps.cygwin.outputs.package-cache }}
+        run: |
+          ./scripts/ci/windows-make-shell/cygwin-offline.ps1 -Mode Seed -CacheDir $env:CYGWIN_PACKAGE_CACHE -SetupExe $env:CYGWIN_SETUP -PackageDir $env:CYGWIN_DOWNLOADS
+          ./scripts/ci/windows-make-shell/cygwin-offline.ps1 -Mode Install -CacheDir $env:CYGWIN_PACKAGE_CACHE -Root (Join-Path $env:RUNNER_TEMP 'cygwin-cache-proof')

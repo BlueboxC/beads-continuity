@@ -493,11 +493,11 @@ func TestGoCacheOwnershipTopology(t *testing.T) {
 	})
 	assertNoUnmanagedGoCacheSteps(t, workflows, map[string]map[string]bool{
 		"main.yml": {
-			"build-artifacts": true, "build-embedded": true, "pr-core-wrapper": true, "test": true, "test-windows": true,
+			"build-artifacts": true, "build-embedded": true, "pr-core-wrapper": true, "test": true, "test-windows": true, "windows-make-shell-toolchains": true,
 		},
 		"pr.yml": {
 			"build-artifacts": true, "pr-core-wrapper": true, "test-macos": true, "worktree-remove-windows": true,
-			"check-doc-freshness-platforms": true, "pr-preflight-platforms": true, "build-examples": true,
+			"check-doc-freshness-platforms": true, "pr-preflight-platforms": true, "build-examples": true, "windows-make-shell": true,
 		},
 		"pr-risk.yml": {"build-embedded": true},
 	})
@@ -1099,6 +1099,7 @@ type ciWorkflowStrategy struct {
 }
 
 type ciWorkflowMatrix struct {
+	Host    []string                  `yaml:"host"`
 	OS      []string                  `yaml:"os"`
 	Shard   []int                     `yaml:"shard"`
 	Include []ciWorkflowMatrixInclude `yaml:"include"`
