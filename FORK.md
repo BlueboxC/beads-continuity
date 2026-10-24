@@ -479,3 +479,7 @@ The three-clone [#7811](https://github.com/gastownhall/beads/issues/7811) label-
 ### Windows Make toolchain reliability
 
 Adapt Julian Knutsen's [PR #7820](https://github.com/gastownhall/beads/pull/7820) while retaining the fork's three-host Windows matrix and Make exercise bodies. Image tools and verified restored packages precede bounded online fallbacks; the main-only saver uses matching content/image/month keys. Retain native checksums, MSYS2 package signatures and the signed Cygwin index/installer checks. Unlike the proposal's warning-only online native path, a mismatched downloaded Make executable is refused before publication. Native Windows file controls cover that refusal and invalid Cygwin cache layouts without executing the invalid executable fixture.
+
+### Pinned CI action maintenance
+
+Adapt upstream #7815 across action families already used by this fork, with tag-to-SHA verification and correct version comments. Preserve workflow permissions, guards, inputs and the Windows host matrix. `github-script` is absent and is not introduced. The updated JavaScript actions run on Node 24; release/deployment credentials and publication remain subject to their existing gates.
