@@ -11,7 +11,7 @@ Shared tool discovery, cache keys, verified package installation and refusal con
 ## Local Contracts
 
 - Prefer the runner image, then verified cached content, then bounded network fallback. Native downloaded/cached Make must match its SHA-256 pin.
-- MSYS2 retains the image's sync database and requires trusted package signatures; never refresh or partially upgrade it.
+- MSYS2 retains the image's sync database and requires trusted package signatures; never refresh or partially upgrade it. Download targets even if already installed, then require every resolved package file to exist and be nonempty in the cache before installation or saving.
 - Cygwin requires the pinned signed installer and exactly one signed nonempty index layout before invoking local installation. Invalid caches hand over to the existing online fallback.
 - PR jobs restore only. The saver runs only on this repository's main pushes; keys bind native content, the image's MSYS2 database or the UTC month.
 - Keep host isolation, existing Make exercise bodies, fail-fast behavior and the distinction between provisioning skips and product failures.

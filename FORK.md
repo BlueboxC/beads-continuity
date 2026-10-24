@@ -478,7 +478,9 @@ The three-clone [#7811](https://github.com/gastownhall/beads/issues/7811) label-
 
 ### Windows Make toolchain reliability
 
-Adapt Julian Knutsen's [PR #7820](https://github.com/gastownhall/beads/pull/7820) while retaining the fork's three-host Windows matrix and Make exercise bodies. Image tools and verified restored packages precede bounded online fallbacks; the main-only saver uses matching content/image/month keys. Retain native checksums, MSYS2 package signatures and the signed Cygwin index/installer checks. Unlike the proposal's warning-only online native path, a mismatched downloaded Make executable is refused before publication. Native Windows file controls cover that refusal and invalid Cygwin cache layouts without executing the invalid executable fixture.
+Adapt Julian Knutsen's [PR #7820](https://github.com/gastownhall/beads/pull/7820) while retaining the fork's three-host Windows matrix and Make exercise bodies. Image tools and verified restored packages precede bounded online fallbacks; the main-only saver uses matching content/image/month keys. Retain native checksums, MSYS2 package signatures and the signed Cygwin index/installer checks. Both cached and online native executables must match the pinned SHA-256 before publication, agreeing with the latest upstream follow-up. Native Windows file controls cover that refusal and invalid Cygwin cache layouts without executing the invalid executable fixture.
+
+MSYS2 downloads targets even when the image already has them installed and requires every resolved package file to exist and be nonempty before installation or saving. This prevents an empty seed from being reported as an exact cache hit.
 
 ### Pinned CI action maintenance
 
