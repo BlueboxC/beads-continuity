@@ -1,0 +1,23 @@
+name: SQL engine Nix qualification
+on:
+  push:
+    branches: [codex/sql-nix-qualification-20261024]
+permissions:
+  contents: read
+env:
+  BD_DISABLE_METRICS: "1"
+  DOLT_DISABLE_EVENT_FLUSH: "1"
+jobs:
+  nix:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      - uses: DeterminateSystems/determinate-nix-action@96c5ee93a9dddf2830d31e1da6ec719077336c28
+      - name: Build the exact consumer and module tuple
+        run: |
+          nix build .#default --print-build-logs
+          ./result/bin/bd version --json
+          sha256sum go.mod go.sum default.nix overlay.nix flake.lock packages.nix
