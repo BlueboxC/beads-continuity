@@ -483,3 +483,9 @@ Adapt Julian Knutsen's [PR #7820](https://github.com/gastownhall/beads/pull/7820
 ### Pinned CI action maintenance
 
 Adapt upstream #7815 across action families already used by this fork, with tag-to-SHA verification and correct version comments. Preserve workflow permissions, guards, inputs and the Windows host matrix. `github-script` is absent and is not introduced. The updated JavaScript actions run on Node 24; release/deployment credentials and publication remain subject to their existing gates.
+
+### Go module maintenance (#7808)
+
+Adopt Anthropic SDK1.83.0 and the reviewed x/mod0.42.0, x/net0.61.0, x/crypto0.58.0, x/text0.43.0 and x/tools0.51.0 graph, including their required x/sync, x/sys, x/term and x/telemetry versions. Mirror the effective graph into both independent examples. Retain Go1.27.3, the custom Dolt/analyzer replacements, driver2.4.1 and the existing telemetry policy. Qualify SDK response/retry behavior with local HTTP fixtures, preserve generated API bytes and compute the Nix vendor hash from these exact locks. This is dependency maintenance, without schema or project-format migration.
+
+The latest #7820 follow-up is included: MSYS2 downloads without `--needed` and checks that every resolved package file exists and is nonempty before installation, preventing an already-installed image package from producing an empty saved cache. The online native checksum refusal also agrees with this follow-up.

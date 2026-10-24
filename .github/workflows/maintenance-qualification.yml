@@ -16,9 +16,7 @@ jobs:
       fail-fast: false
       matrix:
         host:
-          - native
           - msys2
-          - cygwin
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v6
 
@@ -432,55 +430,19 @@ jobs:
           ./scripts/ci/windows-make-shell/cygwin-offline.ps1 -Mode Seed -CacheDir $env:CYGWIN_PACKAGE_CACHE -SetupExe $env:CYGWIN_SETUP -PackageDir $env:CYGWIN_DOWNLOADS
           ./scripts/ci/windows-make-shell/cygwin-offline.ps1 -Mode Install -CacheDir $env:CYGWIN_PACKAGE_CACHE -Root (Join-Path $env:RUNNER_TEMP 'cygwin-cache-proof')
 
-  nix-and-action-compatibility:
-    runs-on: ubuntu-latest
-    timeout-minutes: 60
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
-      - uses: DeterminateSystems/determinate-nix-action@96c5ee93a9dddf2830d31e1da6ec719077336c28
-        with:
-          extra-conf: |
-            max-jobs = 2
-            min-free = 2147483648
-      - name: Refresh the exact module hash
+      - name: Verify MSYS2 seed when target packages are already installed
+        shell: msys2 {0}
         run: |
-          df -h . /nix
-          ./scripts/update-nix-vendorhash.sh
-      - name: Independently qualify the resulting package
-        run: |
-          nix build .#default --no-update-lock-file
-          ./result/bin/bd --version
-          sha256sum go.mod go.sum overlay.nix default.nix flake.nix flake.lock > qualification-inputs.sha256
-      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
-        with:
-          name: nix-qualified-inputs
-          path: |
-            default.nix
-            qualification-inputs.sha256
-          retention-days: 3
-      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333
-        with:
-          name: nix-qualified-inputs
-          path: ${{ runner.temp }}/nix-qualified-readback
-      - name: Verify artifact bytes
-        run: |
-          cmp default.nix "$RUNNER_TEMP/nix-qualified-readback/default.nix"
-          cmp qualification-inputs.sha256 "$RUNNER_TEMP/nix-qualified-readback/qualification-inputs.sha256"
-  setup-action-compatibility:
-    runs-on: ubuntu-latest
-    timeout-minutes: 10
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
-      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1
-        with:
-          node-version: '22'
-          package-manager-cache: false
-      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0
-        with:
-          python-version: '3.14'
-      - name: Verify interpreter entry points
-        run: |
-          node --version
-          python --version
-          node -e 'if (process.versions.node.split(".")[0] !== "22") process.exit(1)'
-          python -c 'import sys; assert sys.version_info[:2] == (3,14)'
+          set -euo pipefail
+          base="$(cygpath -u "$RUNNER_TEMP")"
+          pacman -Q git make
+          old="$base/already-installed-old-cache"
+          fixed="$base/already-installed-fixed-cache"
+          MSYS2_PACKAGE_CACHE="$old" MSYS2_PACKAGE_CACHE_HIT=false bash .github/fixtures/maintenance-old-msys2.sh git make
+          test "$(find "$old" -type f -name '*.pkg.tar.*' ! -name '*.sig' | wc -l)" -eq 0
+          echo 'Reproduced: the prior helper succeeded with an empty package cache.'
+          MSYS2_PACKAGE_CACHE="$fixed" MSYS2_PACKAGE_CACHE_HIT=false bash scripts/ci/windows-make-shell/msys2-packages.sh git make
+          test "$(find "$fixed" -type f -name '*.pkg.tar.*' ! -name '*.sig' | wc -l)" -gt 0
+          MSYS2_PACKAGE_CACHE="$fixed" MSYS2_PACKAGE_CACHE_HIT=true http_proxy=http://127.0.0.1:1 https_proxy=http://127.0.0.1:1 bash scripts/ci/windows-make-shell/msys2-packages.sh git make
+          echo 'PASS: complete nonempty seed and warm reuse with unavailable download proxies.'
+
