@@ -259,3 +259,44 @@ func TestDatabaseSizeForServerExcludesExternalIPv6(t *testing.T) {
 		}
 	}
 }
+
+// TestRunDoltPerformanceDiagnosticsUnresolvedPort pins bd doctor --perf with
+// no port resolved for a server bd does not run: at the IPv6 loopback in
+// either spelling, where the port file bd's own 127.0.0.1 server leaves names
+// no port, or on another machine. No bd command starts that server, so the
+// error gives the store's advice to pin the port, not a check of port 0 or
+// `bd dolt start`.
+func TestRunDoltPerformanceDiagnosticsUnresolvedPort(t *testing.T) {
+	for _, tc := range []struct {
+		name     string
+		host     string
+		portFile bool
+	}{
+		{"bare IPv6 loopback", "::1", false},
+		{"bracketed IPv6 loopback beside a port file", "[::1]", true},
+		{"remote host", "db.invalid", false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			tmpDir := perfServerWorkspaceOn(t, tc.host, 0)
+			if tc.portFile {
+				if err := os.WriteFile(filepath.Join(tmpDir, ".beads", "dolt-server.port"), []byte("13307"), 0o600); err != nil {
+					t.Fatal(err)
+				}
+			}
+
+			_, err := RunDoltPerformanceDiagnostics(tmpDir, false)
+			if err == nil {
+				t.Fatalf("performance diagnostics succeeded with no port for the server at %s", tc.host)
+			}
+			want := "bd does not manage the Dolt server at " + tc.host + "; pin its port with BEADS_DOLT_SERVER_PORT or dolt.port"
+			if !strings.Contains(err.Error(), want) {
+				t.Errorf("error does not contain %q:\n%v", want, err)
+			}
+			for _, banned := range []string{":0", "nc -zv", "bd dolt start", "13307"} {
+				if strings.Contains(err.Error(), banned) {
+					t.Errorf("error contains %q:\n%v", banned, err)
+				}
+			}
+		})
+	}
+}

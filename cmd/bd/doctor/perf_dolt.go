@@ -68,6 +68,12 @@ func RunDoltPerformanceDiagnostics(path string, enableProfiling bool) (*DoltPerf
 	fileCfg := loadServerConfig(beadsDir)
 	host := fileCfg.GetDoltServerHost()
 
+	if dsCfg.Port == 0 {
+		if advice := doltserver.UnresolvedPortAdvice(host); advice != "" {
+			return metrics, fmt.Errorf("no Dolt server port is configured.\n%s", advice)
+		}
+	}
+
 	// Check server status
 	serverRunning := isDoltServerRunning(host, dsCfg.Port)
 	if serverRunning {

@@ -11,7 +11,6 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
-	"strconv"
 	"strings"
 	"time"
 
@@ -26,6 +25,7 @@ import (
 	"github.com/steveyegge/beads/internal/storage/dbproxy/identity"
 	"github.com/steveyegge/beads/internal/storage/dbproxy/pidfile"
 	"github.com/steveyegge/beads/internal/storage/dbproxy/util"
+	"github.com/steveyegge/beads/internal/storage/doltutil"
 	"github.com/steveyegge/beads/internal/storage/versioncontrolops"
 )
 
@@ -427,7 +427,7 @@ func (s *DoltServer) Running(_ context.Context) bool {
 }
 
 func (s *DoltServer) Dial(ctx context.Context) (net.Conn, error) {
-	network, addr := "tcp", net.JoinHostPort(s.config.Host(), strconv.Itoa(s.config.Port()))
+	network, addr := "tcp", doltutil.ServerAddr(s.config.Host(), s.config.Port())
 	if sock := s.config.Socket(); sock != "" {
 		network, addr = "unix", sock
 	}

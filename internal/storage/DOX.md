@@ -35,7 +35,7 @@ Root DOX.md and the parent chain remain binding.
 - Embedded merge settlement stages newly merged companion tables before its resolution commit, retaining unrelated pre-existing dirty tables. Abort and explicit strategy guards remain unchanged.
 - Optional ProjectSnapshotter lends only memory, issue and dependency reads from one callback-scoped transaction. Failed reads withhold the complete projection; unsupported adapters retain their existing acquisition path.
 
-- Shared server-address construction accepts bare and bracketed IPv6. Preserve socket transport and keep IPv6 loopback outside managed IPv4 lifecycle/data ownership.
+- Shared server-address construction accepts bare, bracketed and surrounding-space-padded IPv6, including a managed proxy backend's TCP Dial. Preserve socket transport and keep IPv6 loopback outside managed IPv4 lifecycle/data ownership.
 
 ## Work Guidance
 

@@ -26,6 +26,13 @@ cleanup and authoritative/shared port precedence remain intact. PR #7807's
 compatibility distinctions are adapted to this fork's actual 2.6.0 embedded
 engine; external CLI/server policy and dependency pins remain unchanged.
 
+The additional #7803 delta at `c9dc31d491fa` is adapted with contributor
+regressions: unmanaged endpoints with no port get configuration advice instead
+of port-zero probes or an auto-start skip, and `doctor --server` fails.
+Host normalization trims surrounding whitespace for dialing and credentials;
+the proxy backend's TCP Dial shares IPv6 address construction. Owned/proxied
+lifecycle, Unix sockets, engine pins and existing recovery guards are retained.
+
 ## Network privacy
 
 This fork removes anonymous command-usage collection and upload, including

@@ -21,7 +21,7 @@ Root DOX.md and the parent chain remain binding.
 - Redirect-expected paths do not establish cleanup ownership: scan and cleanup preserve directories containing database files/sidecars, configured existing database paths, local Dolt roots or foreign backend metadata before any artifact removal.
 
 - Claude plugin and hook checks reuse setup’s exact identity and settings precedence; personal disablement remains effective.
-- Server diagnostics format bare/bracketed IPv6 through the shared address builder and retain external-owner advice. Performance diagnostics do not attribute local directory sizes to externally managed IPv6 loopback endpoints.
+- Server diagnostics format bare/bracketed IPv6 through the shared address builder and retain external-owner advice. An unmanaged endpoint without a resolved port fails with pin-the-port advice instead of an auto-start skip or a port-zero probe; server health marks the result unsuccessful. Owned/proxied health checks retain their existing auto-start skip. Performance diagnostics do not attribute local directory sizes to externally managed IPv6 loopback endpoints.
 
 ## Work Guidance
 

@@ -138,6 +138,8 @@ Root DOX.md and the parent chain remain binding.
 
 - Direct read/write/preview factories admit the target native format and backend without migration before loading metadata; registered backend dispatch remains available. Dolt-only helpers reject registered non-Dolt backends before rewriting legacy configuration.
 
+- Server diagnostics do not dial port zero for unmanaged IPv6/remote endpoints. Status, test, show and database-cleanup advice name the missing port setting; doctor --server fails. Preserve owned/proxied auto-start behavior and existing JSON/exit contracts.
+
 ## Work Guidance
 - Routed create adopts a sole metadata-less native database, retaining its prefix and project identity. Refuse ambiguous databases, dirty working sets under committing policy, non-embedded target settings and graph formats before writing selectors. Personal migration shares the guarded adoption; dry-run checks target admission without initialization.
 
