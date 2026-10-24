@@ -97,9 +97,12 @@ func TestGraphPreviewListOrderAndCapWorkflow(t *testing.T) {
 		t.Run(engine, func(t *testing.T) {
 			const scope = "https://example.invalid/order/"
 			work, home := graphListWorkspace(t, bd, engine, scope)
+			identities := map[string]string{}
 			call := func(args ...string) string {
 				t.Helper()
-				return graphPolicyCLI(t, bd, work, home, nil, "", append(args, "--json")...)
+				output := graphPolicyCLI(t, bd, work, home, nil, "", append(args, "--json")...)
+				graphCaptureWorkflowIdentity(t, args, output, identities)
+				return output
 			}
 			structured := func(extraEnv []string, extra ...string) ([]graphListedBead, bool) {
 				t.Helper()
@@ -108,7 +111,14 @@ func TestGraphPreviewListOrderAndCapWorkflow(t *testing.T) {
 			pathsOf := func(beads []graphListedBead) []string {
 				paths := []string{}
 				for _, bead := range beads {
-					paths = append(paths, strings.TrimPrefix(bead.ID, scope))
+					path := strings.TrimPrefix(bead.ID, scope)
+					for private, public := range identities {
+						if bead.ID == public {
+							path = private
+							break
+						}
+					}
+					paths = append(paths, path)
 				}
 				return paths
 			}
@@ -134,11 +144,11 @@ func TestGraphPreviewListOrderAndCapWorkflow(t *testing.T) {
 			expect("after editing the oldest", beads, more, edited, false)
 			beads, more = structured(nil, "--limit", "2")
 			expect("--limit 2 keeps the two newest", beads, more, edited[:2], true)
-			beads, more = structured(nil, "--bead-type", "types/preview-memory-v2")
+			beads, more = structured(nil, "--bead-type", "types/memory")
 			expect("Memory Type", beads, more, []string{"beads/first", "beads/third"}, false)
-			beads, more = structured(nil, "--bead-type", "types/preview-issue-v3")
+			beads, more = structured(nil, "--bead-type", "types/issue")
 			expect("Issue Type", beads, more, []string{"beads/second"}, false)
-			if got := graphListHumanPaths(graphPolicyCLI(t, bd, work, home, nil, "", "list")); !slices.Equal(got, edited) {
+			if got := graphNormalizeWorkflowPaths(graphListHumanPaths(graphPolicyCLI(t, bd, work, home, nil, "", "list")), identities, scope); !slices.Equal(got, edited) {
 				t.Fatalf("human rows %v follow a different order than the structured list %v", got, edited)
 			}
 

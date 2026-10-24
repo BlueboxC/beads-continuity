@@ -261,7 +261,7 @@ func TestIssueReopenRefusalRollback(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			if _, err := s.Create(ctx, CreateRequest{Path: "beads/memory", Body: "unchanged"}); err != nil {
+			if _, err := s.Create(ctx, CreateRequest{Title: "Memory", Path: "beads/memory", Body: "unchanged"}); err != nil {
 				t.Fatal(err)
 			}
 			before := reopenState(t, ctx, s)

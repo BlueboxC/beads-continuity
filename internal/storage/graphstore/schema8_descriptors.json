@@ -1,0 +1,156 @@
+[
+  {
+    "conformsTo": [],
+    "describes": "link",
+    "description": "The source cites the target as supporting context. Informational example with live unpinned local Issue or Memory endpoints and independent multiedge identity. Closed properties admit only an optional UTF-8 string note. Memory sources own this Link; Issue sources do not. No scheduling effect.",
+    "id": "https://schema8.example.invalid/types/example-cites",
+    "name": "Example cites",
+    "source": {
+      "conformsTo": [],
+      "external": "none"
+    },
+    "target": {
+      "conformsTo": [],
+      "external": "none"
+    }
+  },
+  {
+    "conformsTo": [],
+    "describes": "link",
+    "description": "The source follows a policy or model described by the target. Informational example with live unpinned local Issue or Memory endpoints and independent multiedge identity. Closed properties admit only an optional UTF-8 string note. Memory sources own this Link; Issue sources do not. No scheduling effect.",
+    "id": "https://schema8.example.invalid/types/example-follows",
+    "name": "Example follows",
+    "source": {
+      "conformsTo": [],
+      "external": "none"
+    },
+    "target": {
+      "conformsTo": [],
+      "external": "none"
+    }
+  },
+  {
+    "conformsTo": [],
+    "describes": "link",
+    "description": "Experimental native blocks Dependency between unpinned live local durable Issues. Native direction, pair uniqueness and scheduling policy remain authoritative. Source owns this Link. Closed properties are the native row ID (nativeId) and thread ID (threadId); common metadata preserves the native JSON object. These fields are immutable through graph authoring. No production Dependency contract.",
+    "id": "https://schema8.example.invalid/types/preview-blocks-v2",
+    "name": "Experimental blocking Dependency v2",
+    "source": {
+      "conformsTo": [
+        "https://schema8.example.invalid/types/preview-issue-v3"
+      ],
+      "external": "none"
+    },
+    "target": {
+      "conformsTo": [
+        "https://schema8.example.invalid/types/preview-issue-v3"
+      ],
+      "external": "none"
+    }
+  },
+  {
+    "conformsTo": [],
+    "describes": "link",
+    "description": "Experimental native discovered-from Dependency between unpinned live local durable Issues. Native direction, pair uniqueness and scheduling policy remain authoritative. Source owns this Link. Closed properties are the native row ID (nativeId) and thread ID (threadId); common metadata preserves the native JSON object. These fields are immutable through graph authoring. No production Dependency contract.",
+    "id": "https://schema8.example.invalid/types/preview-discovered-from-v1",
+    "name": "Experimental discovered-from Dependency v1",
+    "source": {
+      "conformsTo": [
+        "https://schema8.example.invalid/types/preview-issue-v3"
+      ],
+      "external": "none"
+    },
+    "target": {
+      "conformsTo": [
+        "https://schema8.example.invalid/types/preview-issue-v3"
+      ],
+      "external": "none"
+    }
+  },
+  {
+    "conformsTo": [],
+    "describes": "bead",
+    "description": "Experimental native Issue adapter. Classification remains a property. Preserves native lifecycle policy and owns at most 1000 outgoing Dependencies in total across blocks, parent-child, discovered-from and related. Complete source-owned state is retained with each Issue version. No production Type or complete History contract.",
+    "id": "https://schema8.example.invalid/types/preview-issue-v3",
+    "name": "Experimental Issue v3",
+    "ownsOutgoing": {
+      "https://schema8.example.invalid/types/preview-blocks-v2": {
+        "max": 1000
+      },
+      "https://schema8.example.invalid/types/preview-discovered-from-v1": {
+        "max": 1000
+      },
+      "https://schema8.example.invalid/types/preview-native-related-v1": {
+        "max": 1000
+      },
+      "https://schema8.example.invalid/types/preview-parent-child-v1": {
+        "max": 1000
+      }
+    }
+  },
+  {
+    "conformsTo": [],
+    "describes": "bead",
+    "description": "Disposable C0 preview. The installed writer accepts exactly UTF-8 title and body strings, owns up to 1000 outgoing Links, and always records a complete retained snapshot. This descriptor does not claim the complete Memory or History contract.",
+    "id": "https://schema8.example.invalid/types/preview-memory-v2",
+    "name": "Experimental Memory v2",
+    "ownsOutgoing": {
+      "*": {
+        "max": 1000
+      }
+    }
+  },
+  {
+    "conformsTo": [],
+    "describes": "link",
+    "description": "Experimental native related Dependency between unpinned live local durable Issues. Native direction, pair uniqueness and scheduling policy remain authoritative. Source owns this Link. Closed properties are the native row ID (nativeId) and thread ID (threadId); common metadata preserves the native JSON object. These fields are immutable through graph authoring. No production Dependency contract.",
+    "id": "https://schema8.example.invalid/types/preview-native-related-v1",
+    "name": "Experimental native related Dependency v1",
+    "source": {
+      "conformsTo": [
+        "https://schema8.example.invalid/types/preview-issue-v3"
+      ],
+      "external": "none"
+    },
+    "target": {
+      "conformsTo": [
+        "https://schema8.example.invalid/types/preview-issue-v3"
+      ],
+      "external": "none"
+    }
+  },
+  {
+    "conformsTo": [],
+    "describes": "link",
+    "description": "Experimental native parent-child Dependency between unpinned live local durable Issues. Native direction, pair uniqueness and scheduling policy remain authoritative. Source owns this Link. Closed properties are the native row ID (nativeId) and thread ID (threadId); common metadata preserves the native JSON object. These fields are immutable through graph authoring. No production Dependency contract.",
+    "id": "https://schema8.example.invalid/types/preview-parent-child-v1",
+    "name": "Experimental parent-child Dependency v1",
+    "source": {
+      "conformsTo": [
+        "https://schema8.example.invalid/types/preview-issue-v3"
+      ],
+      "external": "none"
+    },
+    "target": {
+      "conformsTo": [
+        "https://schema8.example.invalid/types/preview-issue-v3"
+      ],
+      "external": "none"
+    }
+  },
+  {
+    "conformsTo": [],
+    "describes": "link",
+    "description": "Disposable informational Link with live unpinned local Issue or Memory endpoints and independent multiedge identity. Closed properties record admits only optional UTF-8 string note. Memory sources own outgoing Links; Issue sources do not own this Type. No scheduling effect or production Type contract.",
+    "id": "https://schema8.example.invalid/types/preview-related-v2",
+    "name": "Experimental informational Link v2",
+    "source": {
+      "conformsTo": [],
+      "external": "none"
+    },
+    "target": {
+      "conformsTo": [],
+      "external": "none"
+    }
+  }
+]

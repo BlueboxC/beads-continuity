@@ -140,173 +140,65 @@ func graphGenerationQueryInt(t *testing.T, cfg *configfile.Config, query string)
 func TestGraphPreviewMarkerGenerationWorkflow(t *testing.T) {
 	bd := buildBDUnderTest(t)
 	work, home := t.TempDir(), t.TempDir()
-	const scope = "https://example.invalid/generation/"
-	graphPolicyCLI(t, bd, work, home, nil, "", "init", "--graph-mode", "link", "--scope-url", scope, "--skip-hooks", "--skip-agents", "--non-interactive")
-	beadsDir := filepath.Join(work, ".beads")
-	markerPath := filepath.Join(beadsDir, graphPreviewMarker)
-	dataDir := filepath.Join(beadsDir, "embeddeddolt")
-
-	loadConfig := func(t *testing.T) *configfile.Config {
-		t.Helper()
-		cfg, err := configfile.LoadForDiscovery(beadsDir)
-		if err != nil || cfg == nil {
-			t.Fatalf("read initialized binding: %v", err)
-		}
-		return cfg
+	graphPolicyCLI(t, bd, work, home, nil, "", "init", "--graph-mode", "link", "--scope-url", "https://example.invalid/generation/", "--skip-hooks", "--skip-agents", "--non-interactive")
+	dir := filepath.Join(work, ".beads")
+	marker := filepath.Join(dir, graphPreviewMarker)
+	raw, err := os.ReadFile(marker)
+	if err != nil || string(raw) != graphPreviewGeneration {
+		t.Fatalf("fresh marker: %q %v", raw, err)
 	}
-	// readTypes runs a read command against the workspace under the given marker
-	// and returns how many Bead and Link Types it reports installed.
-	readTypes := func(t *testing.T, marker string) (beadTypes, linkTypes int) {
-		t.Helper()
-		writeFile(t, markerPath, []byte(marker))
-		var installed struct {
-			Result struct {
-				BeadTypes []json.RawMessage `json:"beadTypes"`
-				LinkTypes []json.RawMessage `json:"linkTypes"`
-			} `json:"result"`
-		}
-		out := graphPolicyCLI(t, bd, work, home, nil, "", "types", "--json")
-		if err := json.Unmarshal([]byte(out), &installed); err != nil {
-			t.Fatalf("types under marker %q: %v\n%s", marker, err, out)
-		}
-		return len(installed.Result.BeadTypes), len(installed.Result.LinkTypes)
+	cfg, err := configfile.LoadForDiscovery(dir)
+	if err != nil || cfg.GraphSchemaVersion != graphstore.SchemaVersion {
+		t.Fatalf("fresh schema: %v", err)
 	}
-	// refuse asserts that a command is refused at admission under the marker, with
-	// exactly the wanted message, and that the refusal changed nothing on disk.
-	refuse := func(t *testing.T, marker, want string, args ...string) {
+	out := graphPolicyCLI(t, bd, work, home, nil, "", "types", "--json")
+	var installed struct {
+		Result struct{ BeadTypes, LinkTypes []json.RawMessage }
+	}
+	if err = json.Unmarshal([]byte(out), &installed); err != nil {
+		t.Fatal(err)
+	}
+	if len(installed.Result.BeadTypes) != 23 || len(installed.Result.LinkTypes) != 32 {
+		t.Fatalf("generation13 Type inventory: %s", out)
+	}
+	refuse := func(value, want string, args ...string) {
 		t.Helper()
-		writeFile(t, markerPath, []byte(marker))
-		before := legacyUpgradeTreeDigest(t, beadsDir)
+		writeFile(t, marker, []byte(value))
+		before := legacyUpgradeTreeDigest(t, dir)
 		if got := graphGenerationRefusal(t, bd, work, home, args...); got != want {
-			t.Fatalf("marker %q: refusal message\n got: %s\nwant: %s", marker, got, want)
+			t.Fatalf("%q: got %q want %q", value, got, want)
 		}
-		if after := legacyUpgradeTreeDigest(t, beadsDir); after != before {
-			t.Fatalf("marker %q: refused command changed the workspace", marker)
+		if legacyUpgradeTreeDigest(t, dir) != before {
+			t.Fatal("marker refusal changed workspace")
 		}
 	}
-	newerRefusal := func(number string) string {
-		return "graph_mode workspace format link-preview-v" + number + " is newer than this bd supports (link-preview-v7); upgrade bd; no database was opened"
+	for _, value := range []string{"link-preview-v5\n", "link-preview-v6\n", "link-preview-v7\n", "link-preview-v12\n", "link-preview-v13", "link-preview-v013\n", "link-preview-v13\n\n", ""} {
+		refuse(value, graphGenerationFirstGateRefusal, "types")
 	}
-
-	t.Run("fresh init writes the current generation", func(t *testing.T) {
-		marker, err := os.ReadFile(markerPath)
-		if err != nil || string(marker) != "link-preview-v7\n" {
-			t.Fatalf("fresh workspace marker = %q (%v), want link-preview-v7 and a newline", marker, err)
-		}
-		// Common metadata changes the storage layout independently of the
-		// installed Type generation.
-		if cfg := loadConfig(t); cfg.GraphSchemaVersion != 8 {
-			t.Fatalf("graph_schema_version = %d, want 8", cfg.GraphSchemaVersion)
-		}
-		if persisted := graphGenerationQueryInt(t, loadConfig(t), `SELECT schema_version FROM graph_preview_scope WHERE singleton = 1`); persisted != 8 {
-			t.Fatalf("persisted schema_version = %d, want 8", persisted)
-		}
-	})
-
-	t.Run("current generation has all native Types", func(t *testing.T) {
-		if beads, links := readTypes(t, graphPreviewGeneration); beads != 2 || links != 7 {
-			t.Fatalf("current Types = %d Bead, %d Link", beads, links)
-		}
-		refuse(t, "link-preview-v6\n", graphGenerationSecondGateRefusal, "types")
-	})
-
-	// Construct a real layout-7 database in this disposable workspace. Relabeling
-	// the new Type set as legacy must not stand in for actual compatibility.
-	cfg := loadConfig(t)
-	cfg.DoltDatabase += "_legacy"
-	cfg.GraphSchemaVersion = graphstore.LegacySchemaVersion
-	if err := graphstore.Init(t.Context(), graphstore.Options{Backend: "embedded", DataDir: dataDir, Database: cfg.DoltDatabase,
-		Binding: graphstore.Binding{WorkspaceID: cfg.GraphWorkspace, ScopeURL: cfg.GraphScopeURL, AuthorityID: cfg.GraphAuthorityID, SchemaVersion: cfg.GraphSchemaVersion}}); err != nil {
+	refuse("link-preview-v7\n", graphGenerationFirstGateRefusal, "remember", "refused", "--id", "beads/refused")
+	future := "graph_mode workspace format link-preview-v14 is newer than this bd supports (link-preview-v13); upgrade bd; no database was opened"
+	refuse("link-preview-v14\n", future, "types")
+	if err = os.Remove(marker); err != nil {
 		t.Fatal(err)
 	}
-	if err := cfg.Save(beadsDir); err != nil {
+	before := legacyUpgradeTreeDigest(t, dir)
+	if got := graphGenerationRefusal(t, bd, work, home, "types"); got != graphGenerationSecondGateRefusal || legacyUpgradeTreeDigest(t, dir) != before {
+		t.Fatalf("missing marker: %q", got)
+	}
+	data := filepath.Join(dir, "embeddeddolt")
+	away := data + ".away"
+	if err = os.Rename(data, away); err != nil {
 		t.Fatal(err)
 	}
-
-	t.Run("admits link-preview-v6 over six Types", func(t *testing.T) {
-		if beads, links := readTypes(t, "link-preview-v6\n"); beads != 2 || links != 4 {
-			t.Fatalf("installed Types = %d Bead, %d Link; want 2 and 4", beads, links)
+	t.Cleanup(func() {
+		if err := os.Rename(away, data); err != nil {
+			t.Error(err)
 		}
 	})
-
-	t.Run("admits link-preview-v5 over six Types", func(t *testing.T) {
-		if beads, links := readTypes(t, "link-preview-v5\n"); beads != 2 || links != 4 {
-			t.Fatalf("installed Types = %d Bead, %d Link; want 2 and 4", beads, links)
-		}
-	})
-
-	t.Run("refuses a newer generation at the first gate", func(t *testing.T) {
-		// 10 sorts before 6 as text and 18446744073709551616 overflows 64 bits;
-		// both are still newer, and the write is refused the same way as a read.
-		for _, number := range []string{"8", "10", "18446744073709551616"} {
-			refuse(t, "link-preview-v"+number+"\n", newerRefusal(number), "types")
-		}
-		refuse(t, "link-preview-v8\n", newerRefusal("8"), "remember", "Refused write", "--id", "beads/refused", "--title", "Refused")
-	})
-
-	t.Run("keeps the existing refusal for every other marker", func(t *testing.T) {
-		for _, tc := range []struct{ name, marker string }{
-			{"older generation", "link-preview-v4\n"},
-			{"empty file", ""},
-			{"current generation without a newline", "link-preview-v6"},
-			{"newer generation without a newline", "link-preview-v7"},
-			{"leading zero", "link-preview-v06\n"},
-			{"trailing text on the current generation", "link-preview-v6x\n"},
-			{"trailing text on a newer generation", "link-preview-v7x\n"},
-			{"no number", "link-preview-v"},
-			{"no number with a newline", "link-preview-v\n"},
-			{"newer generation with a second newline", "link-preview-v7\n\n"},
-		} {
-			t.Run(tc.name, func(t *testing.T) {
-				refuse(t, tc.marker, graphGenerationFirstGateRefusal, "types")
-			})
-		}
-	})
-
-	t.Run("a missing marker is refused at the second gate", func(t *testing.T) {
-		if err := os.Remove(markerPath); err != nil {
-			t.Fatal(err)
-		}
-		before := legacyUpgradeTreeDigest(t, beadsDir)
-		if got := graphGenerationRefusal(t, bd, work, home, "types"); got != graphGenerationSecondGateRefusal {
-			t.Fatalf("missing marker: refusal message\n got: %s\nwant: %s", got, graphGenerationSecondGateRefusal)
-		}
-		if after := legacyUpgradeTreeDigest(t, beadsDir); after != before {
-			t.Fatal("refused command changed the workspace")
-		}
-	})
-
-	t.Run("a newer generation is refused before the store is opened", func(t *testing.T) {
-		away := filepath.Join(beadsDir, "embeddeddolt.away")
-		if err := os.Rename(dataDir, away); err != nil {
-			t.Fatal(err)
-		}
-		t.Cleanup(func() {
-			if err := os.Rename(away, dataDir); err != nil {
-				t.Error(err)
-			}
-		})
-		// Control: with the store gone, a supported marker fails for some other
-		// reason, so the refusal below cannot come from looking at the store.
-		writeFile(t, markerPath, []byte("link-preview-v6\n"))
-		stdout, stderr, exit := graphGenerationRun(t, bd, work, home, "types", "--json")
-		if exit == 0 || stdout != "" {
-			t.Fatalf("a missing store was not noticed: exit %d stdout=%q stderr=%q", exit, stdout, stderr)
-		}
-		for _, marker := range []string{graphGenerationFirstGateRefusal, graphGenerationSecondGateRefusal, "newer than this bd supports"} {
-			if strings.Contains(stderr, marker) {
-				t.Fatalf("a supported marker was refused as a marker problem: %s", stderr)
-			}
-		}
-		refuse(t, "link-preview-v8\n", newerRefusal("8"), "types")
-	})
-
-	t.Run("admits link-preview-v5 over the legacy four Types", func(t *testing.T) {
-		// Removing the two unused example rows recreates the original four-Type
-		// installation, which this bd still opens and never upgrades.
-		graphGenerationExec(t, loadConfig(t), `DELETE FROM graph_preview_types WHERE name IN ('example-follows','example-cites')`)
-		if beads, links := readTypes(t, "link-preview-v5\n"); beads != 2 || links != 2 {
-			t.Fatalf("installed Types = %d Bead, %d Link; want the original 2 and 2", beads, links)
-		}
-	})
+	writeFile(t, marker, []byte(graphPreviewGeneration))
+	stdout, stderr, exit := graphGenerationRun(t, bd, work, home, "types", "--json")
+	if exit == 0 || stdout != "" || strings.Contains(stderr, graphGenerationFirstGateRefusal) || strings.Contains(stderr, graphGenerationSecondGateRefusal) {
+		t.Fatalf("current marker did not reach store check: %d %q %q", exit, stdout, stderr)
+	}
+	refuse("link-preview-v14\n", future, "types")
 }

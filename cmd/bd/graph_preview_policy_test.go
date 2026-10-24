@@ -282,7 +282,7 @@ func TestGraphPreviewC0DeferredCommandsRefuseBeforeLegacyOpen(t *testing.T) {
 	} {
 		before := legacyUpgradeTreeDigest(t, work)
 		code := "capability_unavailable"
-		if args[0] == "close" {
+		if args[0] == "close" || args[0] == "link" {
 			// --force is now admitted; the Memory selector must still be
 			// refused by the graph writer without touching its workspace.
 			code = "invalid_properties"

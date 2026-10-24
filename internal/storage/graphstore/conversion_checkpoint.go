@@ -62,7 +62,12 @@ func CheckpointConversion(ctx context.Context, o Options, plan ConversionPlan, b
 	if err != nil {
 		return err
 	}
-	got, err := planConversionWithPruneInTx(ctx, tx, o, plan.PruneObsoleteCode)
+	var got ConversionPlan
+	if plan.SourceSchema == 8 {
+		got, err = planSchema8InTx(ctx, tx, o)
+	} else {
+		got, err = planConversionWithPruneInTx(ctx, tx, o, plan.PruneObsoleteCode)
+	}
 	rollbackErr := tx.Rollback()
 	if err != nil || rollbackErr != nil {
 		return errors.Join(err, rollbackErr)
@@ -108,7 +113,12 @@ func CheckpointConversion(ctx context.Context, o Options, plan ConversionPlan, b
 		return err
 	}
 	// The verification open is distinct from the restoring connector/session.
-	checked, err := planConversion(ctx, candidateOptions, plan.PruneObsoleteCode)
+	var checked ConversionPlan
+	if plan.SourceSchema == 8 {
+		checked, err = PlanSchema8Conversion(ctx, candidateOptions)
+	} else {
+		checked, err = planConversion(ctx, candidateOptions, plan.PruneObsoleteCode)
+	}
 	if err != nil {
 		return err
 	}

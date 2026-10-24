@@ -155,7 +155,7 @@ func TestIssueAppendNotesNativeRecorderExactlyOnce(t *testing.T) {
 				}
 			}
 			// Exercise the post-mapping budget failure with machine journaling enabled.
-			if _, err := s.Create(ctx, CreateRequest{Path: "beads/context", Body: strings.Repeat("m", 7<<20)}); err != nil {
+			if _, err := s.Create(ctx, CreateRequest{Title: "Context", Path: "beads/context", Body: strings.Repeat("m", 7<<20)}); err != nil {
 				t.Fatal(err)
 			}
 			state = workflowState(t, ctx, s)

@@ -3,6 +3,7 @@ package graphstore
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"fmt"
 	"sort"
 
@@ -32,10 +33,22 @@ func (s *Store) BlockedIssues(ctx context.Context) ([]BlockedIssue, error) {
 // BlockedIssuesFiltered uses the native blocked predicate and keeps the
 // complete graph admission and canonical ID checks in the same snapshot.
 func (s *Store) BlockedIssuesFiltered(ctx context.Context, filter types.WorkFilter) ([]BlockedIssue, error) {
+	return s.BlockedIssuesFilteredSelected(ctx, filter, nil)
+}
+
+// BlockedIssuesFilteredSelected resolves an optional CLI parent against the
+// same checked snapshot used for blocked membership. A graph path can differ
+// from the native Issue ID consumed by the native parent predicate.
+func (s *Store) BlockedIssuesFilteredSelected(ctx context.Context, filter types.WorkFilter, parent *IssueSelector) ([]BlockedIssue, error) {
+	if parent != nil {
+		if err := validateIssueSelector(*parent); err != nil {
+			return nil, err
+		}
+	}
 	var result []BlockedIssue
 	err := s.withTx(ctx, false, func(tx *sql.Tx) error {
 		var err error
-		result, err = s.blockedIssuesFilteredInTx(ctx, tx, filter)
+		result, err = s.blockedIssuesFilteredInTx(ctx, tx, filter, parent)
 		return err
 	})
 	if err != nil {
@@ -45,13 +58,34 @@ func (s *Store) BlockedIssuesFiltered(ctx context.Context, filter types.WorkFilt
 }
 
 func (s *Store) blockedIssuesInTx(ctx context.Context, tx *sql.Tx) ([]BlockedIssue, error) {
-	return s.blockedIssuesFilteredInTx(ctx, tx, types.WorkFilter{})
+	return s.blockedIssuesFilteredInTx(ctx, tx, types.WorkFilter{}, nil)
 }
 
-func (s *Store) blockedIssuesFilteredInTx(ctx context.Context, tx *sql.Tx, filter types.WorkFilter) ([]BlockedIssue, error) {
+func (s *Store) blockedIssuesFilteredInTx(ctx context.Context, tx *sql.Tx, filter types.WorkFilter, parent *IssueSelector) ([]BlockedIssue, error) {
 	snapshot, err := s.currentSnapshotInTx(ctx, tx)
 	if err != nil {
 		return nil, err
+	}
+	if parent != nil {
+		_, issue, resolveErr := s.resolveLiveIssueSelectorInTx(ctx, tx, *parent)
+		switch {
+		case resolveErr == nil:
+			parentID := issue.Properties.ID
+			filter.ParentID = &parentID
+		case errors.Is(resolveErr, ErrNotFound):
+			// Preserve the ordinary dotted-ID fallback for a bare ID. An
+			// explicit graph path with no Issue selects no native children.
+			parentID := parent.NativeID
+			if parentID == "" {
+				parentID = parent.Path
+			}
+			filter.ParentID = &parentID
+		case errors.Is(resolveErr, errNonIssueSelector):
+			parentID := parent.Path
+			filter.ParentID = &parentID
+		default:
+			return nil, resolveErr
+		}
 	}
 	// Keep full authority admission first; an invalid workspace is not treated
 	// as an otherwise valid workspace with unsupported wisp contents.
@@ -103,7 +137,7 @@ func (s *Store) blockedIssuesFilteredInTx(ctx context.Context, tx *sql.Tx, filte
 		}
 		seen[blocked.ID] = true
 		item := BlockedIssue{Issue: issue, BlockedBy: make([]string, 0, len(blocked.BlockedBy))}
-		// Native dependency pairs are unique and the preview admits no wisp plane.
+		// This preview admits unique local blocks-only pairs and no wisp plane.
 		// A duplicate violates that admitted invariant; do not silently dedupe a
 		// future broader native result into an apparently supported graph view.
 		blockers := make(map[string]bool)

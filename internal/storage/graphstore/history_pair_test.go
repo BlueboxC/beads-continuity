@@ -40,7 +40,8 @@ func TestReadVersionPairDeletedMemory(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			linked, err := s.AddInformationalLink(ctx, LinkCreateRequest{Path: "links/context", SourcePath: "beads/plan", TargetPath: "beads/work", ExpectedSourceRevision: first.Revision, Properties: map[string]any{"note": "retained context"}})
+			constraint := createSelectedConstraintFixture(t, ctx, s, "beads/z-rule")
+			linked, err := s.AddInformationalLink(ctx, LinkCreateRequest{Path: "links/context", TypeURL: s.ScopeURL() + "types/subject-to", SourcePath: "beads/plan", TargetPath: "beads/z-rule", ExpectedSourceRevision: first.Revision, Properties: map[string]any{"note": "retained context"}})
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -72,7 +73,7 @@ func TestReadVersionPairDeletedMemory(t *testing.T) {
 			if got, err := s.Read(ctx, "beads/work"); err != nil || !reflect.DeepEqual(got, survivor) {
 				t.Fatalf("surviving Issue changed: %+v %v", got, err)
 			}
-			if got, err := s.CurrentSnapshot(ctx); err != nil || len(got.Records) != 1 || !reflect.DeepEqual(got.Records[0], survivor) {
+			if got, err := s.CurrentSnapshot(ctx); err != nil || len(got.Records) != 2 || !reflect.DeepEqual(got.Records[0], survivor) || !reflect.DeepEqual(got.Records[1], constraint) {
 				t.Fatalf("deleted Memory/Link leaked into current snapshot: %+v %v", got, err)
 			}
 			for _, from := range []Record{first, owned, final} {
@@ -207,7 +208,8 @@ func TestReadVersionPairLifecycle(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			link, err := s.AddInformationalLink(ctx, LinkCreateRequest{Path: "links/context", SourcePath: "beads/plan", TargetPath: "beads/work", ExpectedSourceRevision: memory.Revision, Properties: map[string]any{"note": "before"}})
+			createSelectedConstraintFixture(t, ctx, s, "beads/z-rule")
+			link, err := s.AddInformationalLink(ctx, LinkCreateRequest{Path: "links/context", TypeURL: s.ScopeURL() + "types/subject-to", SourcePath: "beads/plan", TargetPath: "beads/z-rule", ExpectedSourceRevision: memory.Revision, Properties: map[string]any{"note": "before"}})
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -331,7 +333,7 @@ func TestReadVersionPairCorruptSecond(t *testing.T) {
 					t.Error(err)
 				}
 			}()
-			memory, err := s.Create(ctx, CreateRequest{Path: "beads/plan", Body: "before"})
+			memory, err := s.Create(ctx, CreateRequest{Title: "Plan", Path: "beads/plan", Body: "before"})
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -343,7 +345,8 @@ func TestReadVersionPairCorruptSecond(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			link, err := s.AddInformationalLink(ctx, LinkCreateRequest{Path: "links/context", SourcePath: "beads/plan", TargetPath: "beads/work", ExpectedSourceRevision: memory.Version})
+			createSelectedConstraintFixture(t, ctx, s, "beads/z-rule")
+			link, err := s.AddInformationalLink(ctx, LinkCreateRequest{Path: "links/context", TypeURL: s.ScopeURL() + "types/subject-to", SourcePath: "beads/plan", TargetPath: "beads/z-rule", ExpectedSourceRevision: memory.Version})
 			if err != nil {
 				t.Fatal(err)
 			}

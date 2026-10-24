@@ -283,7 +283,7 @@ func TestGraphPreviewVersionsCLI(t *testing.T) {
 
 	// Issue plane: created, then renamed, so there are two versions to order
 	// and a second row to carry native attribution.
-	run(t, "create", "Issue subject", "--id", "beads/issue", "--actor", author, "--json")
+	createdIssue := graphMixedResult[graphstore.IssueRecord](t, run(t, "create", "Issue subject", "--id", "beads/issue", "--actor", author, "--json"))
 	run(t, "create", "Link target", "--id", "beads/target", "--actor", author, "--json")
 	run(t, "update", "beads/issue", "--title", "Issue subject renamed", "--actor", author, "--json")
 	// Memory plane: created, then replaced. Memory records no attribution
@@ -309,7 +309,11 @@ func TestGraphPreviewVersionsCLI(t *testing.T) {
 			{"links/related", "link"},
 		} {
 			resource, kind, rows, members := graphVersionsListed(t, run(t, "versions", subject.selector, "--json"))
-			if resource != subject.selector || kind != subject.kind {
+			wanted := subject.selector
+			if subject.kind == "issue" {
+				wanted = strings.TrimPrefix(createdIssue.ID, scope)
+			}
+			if resource != wanted || kind != subject.kind {
 				t.Fatalf("listing misidentified its subject: resource=%q kind=%q want %q/%q", resource, kind, subject.selector, subject.kind)
 			}
 			graphVersionsAssertKeys(t, subject.selector, members)
@@ -343,10 +347,11 @@ func TestGraphPreviewVersionsCLI(t *testing.T) {
 			t.Fatal("unlink did not report its private deletion token")
 		}
 		human := run(t, "versions", "links/related")
-		if strings.Contains(human, removedLink.Link.Version) {
-			t.Fatalf("non-citable deletion token appeared in human version list:\n%s", human)
+		timeline, state, _ := strings.Cut(human, "\nCurrent state:")
+		if strings.Contains(timeline, removedLink.Link.Version) || !strings.Contains(state, "Deletion revision: "+removedLink.Link.Version) {
+			t.Fatalf("terminal guard was confused with a citable version:\n%s", human)
 		}
-		if !strings.Contains(human, "This Link has been removed.") {
+		if !strings.Contains(human, "This Resource has been removed.") {
 			t.Fatalf("removed Link has no human state notice:\n%s", human)
 		}
 		for _, row := range rows {
@@ -362,7 +367,7 @@ func TestGraphPreviewVersionsCLI(t *testing.T) {
 		}
 		for _, selector := range []string{"beads/issue", "beads/memory"} {
 			clean := run(t, "versions", selector)
-			if strings.Contains(clean, "This Link has been removed.") {
+			if strings.Contains(clean, "This Resource has been removed.") {
 				t.Fatalf("%s rendered Link removal guidance:\n%s", selector, clean)
 			}
 		}

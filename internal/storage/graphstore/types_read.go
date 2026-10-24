@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"context"
 	"database/sql"
-	"errors"
 	"fmt"
 	"sort"
 	"strings"
@@ -12,9 +11,9 @@ import (
 	graph "github.com/steveyegge/beads/graphops"
 )
 
-// ListInstalledTypes returns the persisted, validated descriptor set in stable
-// ID order. In particular, an older four-Type installation remains four Types;
-// this read never installs the newer examples or enumerates binary-only Types.
+// ListInstalledTypes returns checked fixed/retained bindings and currently
+// configured unused native Issue declarations in stable ID order. This read
+// never installs a binding; partial or older generations are refused.
 func (s *Store) ListInstalledTypes(ctx context.Context) ([]graph.TypeDescriptor, error) {
 	var descriptors []graph.TypeDescriptor
 	err := s.withTx(ctx, false, func(tx *sql.Tx) error {
@@ -22,7 +21,7 @@ func (s *Store) ListInstalledTypes(ctx context.Context) ([]graph.TypeDescriptor,
 			return err
 		}
 		var err error
-		descriptors, err = installedPreviewTypes(ctx, tx, s.ScopeURL(), s.options.Binding.SchemaVersion)
+		descriptors, err = s.selectedDescriptorsInTx(ctx, tx)
 		return err
 	})
 	if err != nil {
@@ -34,11 +33,11 @@ func (s *Store) ListInstalledTypes(ctx context.Context) ([]graph.TypeDescriptor,
 	return descriptors, nil
 }
 
-// ReadType reads an admitted installed descriptor, never a reconstructed stand-in.
-// The preview fixes its installed descriptors at initialization; every record read
-// and write checks that immutable binding. Separate Type and record reads thus
-// cannot silently adopt a changed Type contract. Custom Type installation is not
-// supported by this accessor or by the preview writer.
+// ReadType reads a checked selected declaration. Native adapter definitions are
+// deterministic; used concrete bindings persist immutably across configuration
+// edits and retained reads. Configured unused classes may be derived, and their
+// visibility does not authorize new native use. This accessor never registers
+// or edits a Type, and every record validates its concrete binding.
 func (s *Store) ReadType(ctx context.Context, path string) (graph.TypeDescriptor, error) {
 	if !strings.HasPrefix(path, "types/") {
 		return graph.TypeDescriptor{}, fmt.Errorf("%w: expected a local types/ path", graph.ErrValidation)
@@ -65,43 +64,52 @@ func (s *Store) ReadType(ctx context.Context, path string) (graph.TypeDescriptor
 }
 
 // readTypeInTx requires the caller to validate the binding in this transaction.
+// Concrete native identities are authoritative adapter-derived descriptors;
+// their existence does not bypass native classification admission.
 func (s *Store) readTypeInTx(ctx context.Context, tx *sql.Tx, id string) (graph.TypeDescriptor, error) {
+	// Resolve against the complete selected installer definition set, rather than
+	// a hardcoded command alias switch or an unbounded persisted descriptor.
 	var name string
-	switch id {
-	case MemoryTypeURL(s.options.Binding.ScopeURL):
-		name = "memory"
-	case s.issueTypeURL():
-		name = "issue"
-	case s.dependencyTypeURL():
-		name = "dependency"
-	case ParentChildTypeURL(s.ScopeURL()):
-		name = "parent-child"
-	case DiscoveredFromTypeURL(s.ScopeURL()):
-		name = "discovered-from"
-	case NativeRelatedTypeURL(s.ScopeURL()):
-		name = "native-related"
-	case RelatedTypeURL(s.options.Binding.ScopeURL):
-		name = "related"
-	case ExampleFollowsTypeURL(s.ScopeURL()):
-		name = "example-follows"
-	case ExampleCitesTypeURL(s.ScopeURL()):
-		name = "example-cites"
-	default:
+	var expected graph.TypeDescriptor
+	for _, definition := range previewTypeDefinitions() {
+		if id != s.ScopeURL()+"types/"+definition.name {
+			continue
+		}
+		candidate, err := definition.build(s.ScopeURL())
+		if err != nil {
+			return graph.TypeDescriptor{}, err
+		}
+		if candidate.ID() != id {
+			return graph.TypeDescriptor{}, fmt.Errorf("%w: selected Type identity differs", ErrInvalidStore)
+		}
+		name, expected = definition.name, candidate
+		break
+	}
+	if name == "" {
+		if isConcreteNativeIssue(s.ScopeURL(), id) || isConcreteNativeDependency(s.ScopeURL(), id) {
+			descriptors, err := s.selectedDescriptorsInTx(ctx, tx)
+			if err != nil {
+				return graph.TypeDescriptor{}, err
+			}
+			for _, d := range descriptors {
+				if d.ID() == id {
+					return d, nil
+				}
+			}
+			return graph.TypeDescriptor{}, ErrNotFound
+		}
 		return graph.TypeDescriptor{}, ErrNotFound
 	}
 	var raw []byte
 	var fingerprint string
-	if err := tx.QueryRowContext(ctx, `SELECT descriptor,fingerprint FROM graph_preview_types WHERE name=?`, name).Scan(&raw, &fingerprint); err != nil {
-		if errors.Is(err, sql.ErrNoRows) {
-			return graph.TypeDescriptor{}, ErrNotFound
-		}
+	if err := tx.QueryRowContext(ctx, `SELECT descriptor,fingerprint FROM graph_preview_types WHERE name=? AND OCTET_LENGTH(descriptor)=?`, name, len(expected.CanonicalJSON())).Scan(&raw, &fingerprint); err != nil {
 		return graph.TypeDescriptor{}, fmt.Errorf("%w: read installed %s descriptor: %v", ErrInvalidStore, name, err)
 	}
 	parsed, err := graph.ParseTypeDescriptor(raw)
 	if err != nil {
 		return graph.TypeDescriptor{}, fmt.Errorf("%w: invalid installed %s descriptor: %v", ErrInvalidStore, name, err)
 	}
-	if parsed.ID() != id || !bytes.Equal(parsed.CanonicalJSON(), raw) || parsed.Fingerprint() != fingerprint {
+	if parsed.ID() != id || !bytes.Equal(parsed.CanonicalJSON(), raw) || !bytes.Equal(raw, expected.CanonicalJSON()) || parsed.Fingerprint() != fingerprint || fingerprint != expected.Fingerprint() {
 		return graph.TypeDescriptor{}, fmt.Errorf("%w: installed %s descriptor identity or fingerprint differs", ErrInvalidStore, name)
 	}
 	return parsed, nil

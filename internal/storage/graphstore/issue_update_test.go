@@ -212,7 +212,7 @@ func TestIssueUpdateRefusalAndRollback(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			if _, err := s.Create(ctx, CreateRequest{Path: "beads/memory", Body: "body"}); err != nil {
+			if _, err := s.Create(ctx, CreateRequest{Title: "Memory", Path: "beads/memory", Body: "body"}); err != nil {
 				t.Fatal(err)
 			}
 			req := UpdateIssueRequest{Path: "beads/work", Actor: "editor", ExpectedRevision: issue.Revision, Title: issueEditString("After")}

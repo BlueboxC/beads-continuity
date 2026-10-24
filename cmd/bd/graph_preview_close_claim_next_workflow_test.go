@@ -34,9 +34,12 @@ func TestGraphPreviewCloseClaimNextWorkflow(t *testing.T) {
 				}
 				initArgs = append(initArgs, "--server", "--external", "--server-host", "127.0.0.1", "--server-port", port, "--server-user", "root")
 			}
+			identities := map[string]string{}
 			call := func(args ...string) string {
 				t.Helper()
-				return graphPolicyCLI(t, bd, work, home, nil, "", append(args, "--json")...)
+				output := graphPolicyCLI(t, bd, work, home, nil, "", append(args, "--json")...)
+				graphCaptureWorkflowIdentity(t, args, output, identities)
+				return output
 			}
 			call(initArgs...)
 			call("create", "Blocking prerequisite", "--id", "blocker", "--priority", "3")
@@ -52,7 +55,7 @@ func TestGraphPreviewCloseClaimNextWorkflow(t *testing.T) {
 			}
 			first := graphMixedResult[claimResult](t, call("close", "blocker", "--claim-next", "--session", "claim-session", "--reason", "Done"))
 			if len(first.Closed) != 1 || first.Closed[0].Properties.Status != types.StatusClosed ||
-				first.Closed[0].Properties.ClosedBySession != "claim-session" || first.Claimed.ID != scope+"beads/dependent" ||
+				first.Closed[0].Properties.ClosedBySession != "claim-session" || first.Claimed.ID != graphWorkflowIdentity(identities, scope, "beads/dependent") ||
 				first.Claimed.Properties.Status != types.StatusInProgress || first.Claimed.Properties.Assignee == "" ||
 				first.Claimed.Properties.LeaseExpiresAt == nil || first.Claimed.Properties.HeartbeatAt == nil ||
 				first.Claimed.Properties.LeaseExpiresAt.Sub(*first.Claimed.Properties.HeartbeatAt) != 5*time.Minute ||
@@ -100,9 +103,9 @@ func TestGraphPreviewCloseClaimNextWorkflow(t *testing.T) {
 				}
 				return stdout.String()
 			}
-			mixed := graphMixedResult[claimResult](t, partial(scope+"beads/next", "close", "spare", "missing", "--claim-next", "--reason", "Done"))
-			if len(mixed.Closed) != 1 || mixed.Closed[0].ID != scope+"beads/spare" || mixed.Closed[0].Properties.Status != types.StatusClosed ||
-				mixed.Claimed.ID != scope+"beads/next" || mixed.Claimed.Revision == nextBefore.Revision || mixed.Claimed.Properties.Status != types.StatusInProgress {
+			mixed := graphMixedResult[claimResult](t, partial(graphWorkflowIdentity(identities, scope, "beads/next"), "close", "spare", "missing", "--claim-next", "--reason", "Done"))
+			if len(mixed.Closed) != 1 || mixed.Closed[0].ID != graphWorkflowIdentity(identities, scope, "beads/spare") || mixed.Closed[0].Properties.Status != types.StatusClosed ||
+				mixed.Claimed.ID != graphWorkflowIdentity(identities, scope, "beads/next") || mixed.Claimed.Revision == nextBefore.Revision || mixed.Claimed.Properties.Status != types.StatusInProgress {
 				t.Fatalf("partial close lost the committed close or claim: %+v", mixed)
 			}
 			if got := graphMixedResult[graphstore.IssueRecord](t, call("show", "next")); !reflect.DeepEqual(got, mixed.Claimed) {

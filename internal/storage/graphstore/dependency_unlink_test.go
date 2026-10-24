@@ -60,7 +60,7 @@ func setupDependencyUnlink(t *testing.T, backend string, count int) dependencyUn
 }
 
 func dependencyUnlinkRequest(link LinkRecord, source IssueRecord) LinkDeleteRequest {
-	return LinkDeleteRequest{Path: strings.TrimPrefix(link.ID, strings.TrimSuffix(source.ID, "beads/source")), Actor: "remover", ExpectedRevision: link.Revision, ExpectedSourceRevision: source.Revision}
+	return LinkDeleteRequest{Path: strings.TrimPrefix(link.ID, strings.TrimSuffix(source.ID, source.Properties.ID)), Actor: "remover", ExpectedRevision: link.Revision, ExpectedSourceRevision: source.Revision}
 }
 
 func dependencyRemovalCount(t *testing.T, f dependencyUnlinkFixture) int {
@@ -108,12 +108,99 @@ func assertDependencyOwned(t *testing.T, source IssueRecord, links ...LinkRecord
 	}
 }
 
+func TestDependencyPairRemoveUsesNativeWriterAndNoop(t *testing.T) {
+	for _, backend := range []string{"embedded", "server"} {
+		t.Run(backend, func(t *testing.T) {
+			f := setupDependencyUnlink(t, backend, 2)
+			beforeUnsupported := workflowState(t, f.ctx, f.store)
+			if got, err := f.store.AddInformationalLink(f.ctx, LinkCreateRequest{
+				Path: "links/unsupported", SourcePath: "beads/source", TargetPath: "beads/first", Actor: "author",
+			}); err == nil || !reflect.ValueOf(got).IsZero() || !reflect.DeepEqual(beforeUnsupported, workflowState(t, f.ctx, f.store)) {
+				t.Fatalf("unsupported Issue-to-Issue References changed state: %+v %v", got, err)
+			}
+			// References no longer permits Issue-to-Issue. Keep the exact native
+			// Dependency pair and use a separate Memory for the unowned control.
+			if _, err := f.store.Create(f.ctx, CreateRequest{Path: "beads/context", Title: "Context"}); err != nil {
+				t.Fatal(err)
+			}
+			info, err := f.store.AddInformationalLink(f.ctx, LinkCreateRequest{
+				Path: "links/info", SourcePath: "beads/source", TargetPath: "beads/context", Actor: "author",
+			})
+			if err != nil {
+				t.Fatal(err)
+			}
+			before := workflowState(t, f.ctx, f.store)
+			events := dependencyRemovalCount(t, f)
+			missing, err := f.store.RemoveDependency(f.ctx, DependencyRemoveRequest{SourcePath: "beads/source", TargetPath: "beads/third", Actor: "remover"})
+			if err != nil || missing.Removed || !reflect.DeepEqual(missing.Source, f.source) || !reflect.DeepEqual(missing.Target, f.targets[2]) || !reflect.DeepEqual(before, workflowState(t, f.ctx, f.store)) {
+				t.Fatalf("absent pair changed state: %+v %v", missing, err)
+			}
+			removed, err := f.store.RemoveDependency(f.ctx, DependencyRemoveRequest{SourcePath: "beads/source", TargetPath: "beads/first", Actor: "remover"})
+			if err != nil || !removed.Removed || removed.Link.ID != f.links[0].ID || removed.Link.State != "deleted" || removed.Source.Revision == f.source.Revision || !reflect.DeepEqual(removed.Target, f.targets[0]) {
+				t.Fatalf("pair removal lost canonical Link/Issue write: %+v %v", removed, err)
+			}
+			if dependencyRemovalCount(t, f) != events+1 {
+				t.Fatal("pair removal must record exactly one native dependency_removed event")
+			}
+			assertDependencyOwned(t, removed.Source, f.links[1])
+			if current, err := f.store.ShowLink(f.ctx, "links/first"); !errors.Is(err, ErrGone) || current.ID != "" {
+				t.Fatalf("removed Link remains live: %+v %v", current, err)
+			}
+			if current, err := f.store.ShowLink(f.ctx, "links/info"); err != nil || !reflect.DeepEqual(current, info.Link) {
+				t.Fatalf("pair removal touched unowned informational control: %+v %v", current, err)
+			}
+			if current, err := f.store.ShowIssue(f.ctx, "beads/first"); err != nil || !reflect.DeepEqual(current, f.targets[0]) {
+				t.Fatalf("target changed: %+v %v", current, err)
+			}
+			before = workflowState(t, f.ctx, f.store)
+			repeated, err := f.store.RemoveDependency(f.ctx, DependencyRemoveRequest{SourcePath: "beads/source", TargetPath: "beads/first", Actor: "remover"})
+			if err != nil || repeated.Removed || repeated.Link.ID != "" || !reflect.DeepEqual(repeated.Source, removed.Source) || !reflect.DeepEqual(before, workflowState(t, f.ctx, f.store)) || dependencyRemovalCount(t, f) != events+1 {
+				t.Fatalf("repeat pair removal changed state: %+v %v", repeated, err)
+			}
+			if _, err := f.store.RemoveDependency(f.ctx, DependencyRemoveRequest{SourcePath: "beads/source", TargetPath: "beads/second"}); !errors.Is(err, storage.ErrValidation) || !reflect.DeepEqual(before, workflowState(t, f.ctx, f.store)) {
+				t.Fatalf("invalid actor changed state: %v", err)
+			}
+		})
+	}
+}
+
+func TestDependencyPairRemoveRefusesNonBlockingKind(t *testing.T) {
+	for _, backend := range []string{"embedded", "server"} {
+		t.Run(backend, func(t *testing.T) {
+			f := setupDependencyUnlink(t, backend, 0)
+			added, err := f.store.AddDependency(f.ctx, DependencyRequest{
+				Path: "links/tracks", SourcePath: "beads/source", TargetPath: "beads/first",
+				Type: "tracks", Actor: "author", ExpectedSourceRevision: f.source.Revision,
+			})
+			if err != nil {
+				t.Fatal(err)
+			}
+			before := workflowState(t, f.ctx, f.store)
+			removed, err := f.store.RemoveDependency(f.ctx, DependencyRemoveRequest{
+				SourcePath: "beads/source", TargetPath: "beads/first", Actor: "remover",
+			})
+			// Pair removal selects blocks only. A nonblocking Link is not
+			// the selected pair and must remain an exact, write-free no-op.
+			if err != nil || removed.Removed || !reflect.ValueOf(removed.Link).IsZero() || !reflect.DeepEqual(removed.Source, added.Source) || !reflect.DeepEqual(removed.Target, added.Target) {
+				t.Fatalf("nonblocking pair removal was not an exact no-op: %+v %v", removed, err)
+			}
+			if !reflect.DeepEqual(before, workflowState(t, f.ctx, f.store)) {
+				t.Fatal("nonblocking pair no-op changed state")
+			}
+			current, err := f.store.ShowLink(f.ctx, "links/tracks")
+			if err != nil || !reflect.DeepEqual(current, added.Link) {
+				t.Fatalf("nonblocking pair no-op changed Dependency: %+v %v", current, err)
+			}
+		})
+	}
+}
+
 func TestDependencyUnlinkLifecycle(t *testing.T) {
 	for _, backend := range []string{"embedded", "server"} {
 		t.Run(backend, func(t *testing.T) {
 			f := setupDependencyUnlink(t, backend, 2)
 			s, ctx := f.store, f.ctx
-			memory, err := s.Create(ctx, CreateRequest{Path: "beads/context", Body: "Context"})
+			memory, err := s.Create(ctx, CreateRequest{Title: "Context", Path: "beads/context", Body: "Context"})
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -264,7 +351,7 @@ func TestDependencyUnlinkRefusalRollback(t *testing.T) {
 					r.Path = ""
 					r.SourcePath = "beads/source"
 					r.TargetPath = "beads/first"
-					r.TypeURL = DependencyTypeURL(s.ScopeURL())
+					r.TypeURL = f.links[0].Type
 				}, ErrCapabilityUnavailable},
 			}
 			for _, tc := range cases {

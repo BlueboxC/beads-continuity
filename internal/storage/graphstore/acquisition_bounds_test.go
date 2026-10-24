@@ -19,7 +19,7 @@ import (
 // still agree, so the refusal is the acquisition bound, not corruption.
 func seedUnreadableMemory(t *testing.T, ctx context.Context, s *Store, path, body string) Record {
 	t.Helper()
-	first, err := s.Create(ctx, CreateRequest{Path: path, Body: "fixture"})
+	first, err := s.Create(ctx, CreateRequest{Title: "Fixture", Path: path, Body: "fixture"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -58,11 +58,11 @@ func TestGraphWritesPreserveAcquisitionBounds(t *testing.T) {
 			})
 			body := strings.Repeat("x", 1<<20)
 			for i := 0; i < 7; i++ {
-				if _, err := s.Create(ctx, CreateRequest{Path: fmt.Sprintf("beads/m%d", i), Body: body}); err != nil {
+				if _, err := s.Create(ctx, CreateRequest{Title: "Fixture", Path: fmt.Sprintf("beads/m%d", i), Body: body}); err != nil {
 					t.Fatal(err)
 				}
 			}
-			small, err := s.Create(ctx, CreateRequest{Path: "beads/small", Body: "small"})
+			small, err := s.Create(ctx, CreateRequest{Title: "Fixture", Path: "beads/small", Body: "small"})
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -70,7 +70,7 @@ func TestGraphWritesPreserveAcquisitionBounds(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			if got, err := s.Create(ctx, CreateRequest{Path: "beads/excess", Body: body}); !errors.Is(err, ErrLimitExceeded) || !reflect.ValueOf(got).IsZero() {
+			if got, err := s.Create(ctx, CreateRequest{Title: "Fixture", Path: "beads/excess", Body: body}); !errors.Is(err, ErrLimitExceeded) || !reflect.ValueOf(got).IsZero() {
 				t.Fatalf("oversized create: nonzero=%t err=%v", !reflect.ValueOf(got).IsZero(), err)
 			}
 			if got, err := s.PatchMemory(ctx, MemoryPatchRequest{Path: "beads/small", Body: &body, ExpectedRevision: small.Revision}); !errors.Is(err, ErrLimitExceeded) || !reflect.ValueOf(got).IsZero() {
@@ -122,7 +122,7 @@ func TestOversizedGraphCanShrinkWithoutDiscardingHistory(t *testing.T) {
 			if _, err := s.CurrentSnapshot(ctx); !errors.Is(err, ErrLimitExceeded) {
 				t.Fatalf("partial repair should remain oversized: %v", err)
 			}
-			if _, err := s.Create(ctx, CreateRequest{Path: "beads/new"}); !errors.Is(err, ErrLimitExceeded) {
+			if _, err := s.Create(ctx, CreateRequest{Title: "Fixture", Path: "beads/new"}); !errors.Is(err, ErrLimitExceeded) {
 				t.Fatalf("growth during repair: %v", err)
 			}
 			empty := ""
@@ -267,5 +267,38 @@ func TestGraphInventoryWriteCountBound(t *testing.T) {
 				t.Fatalf("count rejection left %d allocations", count)
 			}
 		})
+	}
+}
+
+// Reproduce retained state written before ordinary growth admission existed.
+// This is fixture seeding, not public authoring acceptance.
+func createLegacyMemoryFixture(t *testing.T, ctx context.Context, s *Store, request CreateRequest) (Record, error) {
+	t.Helper()
+	body := request.Body
+	request.Body = "fixture"
+	if request.Title == "" {
+		request.Title = "Legacy fixture"
+	}
+	first, err := s.Create(ctx, request)
+	if err != nil {
+		return Record{}, err
+	}
+	return replaceLegacyFixtureMemory(t, ctx, s, request.Path, first, body), nil
+}
+
+func TestAcquisitionRepairAllowsBoundedTerminalBookkeeping(t *testing.T) {
+	before := acquisitionUsage{resources: PreviewSnapshotLimit + 1, currentBytes: 1000}
+	after := acquisitionUsage{resources: PreviewSnapshotLimit, currentBytes: 2000}
+	if err := checkAcquisitionGrowth(before, after); err != nil {
+		t.Fatalf("bounded deletion bookkeeping blocked repair: %v", err)
+	}
+	after.currentBytes = PreviewCurrentReadByteLimit + 1
+	if err := checkAcquisitionGrowth(before, after); !errors.Is(err, ErrLimitExceeded) {
+		t.Fatalf("repair waived another cap: %v", err)
+	}
+	before.currentBytes = PreviewCurrentReadByteLimit + 2
+	after.currentBytes = before.currentBytes + 1
+	if err := checkAcquisitionGrowth(before, after); !errors.Is(err, ErrLimitExceeded) {
+		t.Fatalf("oversized dimension grew: %v", err)
 	}
 }

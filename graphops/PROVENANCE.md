@@ -24,6 +24,8 @@ The additional canonical-JSON dependency is `github.com/gowebpki/jcs v1.0.1`
 Experimental format limits remain explicit; upstream draft release qualification
 is not inherited by this adaptation.
 
-## Preview3 preparation subset
+## Preview3 isolated adaptation
 
-The isolated integration branch additionally adapts descriptor refinements and canonical identity helpers from [donnabox/beads PR291](https://github.com/donnabox/beads/pull/291), exact source `0c4dc1f0d68a371e56b3e461b968e828e4ea254c`. Contributor domain/catalog/query tests are retained. Public-ID constructor semantics use explicit new helpers; original constructor assertions and schema8 validation remain. The fork keeps its Go1.27-compatible UTF-8 test premise. These pure additions do not install the candidate schema11/generation12, migrate schema8 stores, replace the continuity adapter or change the qualified Dolt tuple.
+The isolated integration branch adapts provider, descriptor/catalog/query and identity work from [donnabox/beads PR291](https://github.com/donnabox/beads/pull/291), production source `0c4dc1f0d68a371e56b3e461b968e828e4ea254c`. Compatible native seams were compared with `79450c2d67ccab326b20b07cc3d66179fa148ec0`; contributor domain/catalog/query regressions remain attributed and retained.
+
+The fork preserves its native writers, qualified engine tuple and continuity adapter. Its schema11/generation13 adds the three frozen schema8 informational Types and immutable native dependency ID/thread facts; it is not the contributor's generation12. Explicit copy conversion archives original bytes and Type declarations, with current boundaries and identity mappings kept separately. Ordinary opens never migrate existing projects. Copy qualification grants neither installation nor project activation.

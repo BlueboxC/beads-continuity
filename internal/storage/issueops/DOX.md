@@ -20,6 +20,8 @@ Root DOX.md and the parent chain remain binding.
 
 - The retained Issue recorder is transaction-scoped and called only by Graph Preview adapters after a final accepted mutation. Explicit candidate adoption may seed the first boundary snapshot without replaying create or minting a journal event. Its revision bookkeeping preserves the accepted postimage's row_lock/updated_at and does not duplicate the mutation's journal event. Ordinary native writers and existing journal/security policies remain unchanged; graph-only schema prerequisites live in graphstore.
 
+- Graph-only dependency composition shares native integrity, readiness and journal seams. Recovery refuses occupied pairs and preserves the protected native ID/thread. Native caller semantics remain unchanged.
+
 - SnapshotCreateInputs restores every caller-owned field mutated by create, including nested dependency sources and comment IDs. Keep it aligned with persistence mutations.
 - Lease re-arm fences live issue state in the mutation, so a concurrent close/release cannot recreate an orphan lease. A refresh preserves provenance and mutation history.
 - Reclaim requires a nonempty live assignee matching the expired lease holder under the existing actor rules. Recheck the observed holder and assignee before deletion/release; an unrelated orphan lease cannot release or journal another claim. Preserve replica and expiry guards.

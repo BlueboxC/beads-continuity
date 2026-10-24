@@ -162,7 +162,7 @@ func TestServerConcurrentRollback(t *testing.T) {
 		}
 		return nil
 	}
-	_, err = left.Create(cancelCtx, CreateRequest{Path: "beads/cancelled"})
+	_, err = left.Create(cancelCtx, CreateRequest{Title: "Cancelled", Path: "beads/cancelled"})
 	left.afterWrite = nil
 	abort()
 	if !errors.Is(err, context.Canceled) {
@@ -180,7 +180,7 @@ func TestServerConcurrentRollback(t *testing.T) {
 			t.Fatalf("cancelled transaction has %d rows in %s", count, table)
 		}
 	}
-	if _, err := right.Create(ctx, CreateRequest{Path: "beads/successor"}); err != nil {
+	if _, err := right.Create(ctx, CreateRequest{Title: "Successor", Path: "beads/successor"}); err != nil {
 		t.Fatal(err)
 	}
 }

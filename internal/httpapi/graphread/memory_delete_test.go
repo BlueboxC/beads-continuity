@@ -63,14 +63,14 @@ func TestMemoryDeletionCurrentReadAndRetainedPages(t *testing.T) {
 					t.Fatal(err)
 				}
 			}
-			if _, err := store.CreateIssue(ctx, "beads/work", issueops.CreateRequest{Issue: &issueops.Issue{Title: "Surviving Issue", Status: "open", IssueType: "task", Priority: 2}, Actor: "human:issue-author"}); err != nil {
+			if _, err := store.CreateIssue(ctx, "beads/work", issueops.CreateRequest{ForceIDPrefix: true, Issue: &issueops.Issue{ID: "zz-surviving", Title: "Surviving Issue", Status: "open", IssueType: "task", Priority: 2}, Actor: "human:issue-author"}); err != nil {
 				t.Fatal(err)
 			}
-			owned, err := store.AddInformationalLink(ctx, graphstore.LinkCreateRequest{Path: "links/context", SourcePath: "beads/plan", TargetPath: "beads/alpha", UnconditionalSource: true, Actor: "human:link-author"})
+			owned, err := store.AddInformationalLink(ctx, graphstore.LinkCreateRequest{TypeURL: store.ScopeURL() + "types/preview-related-v2", Path: "links/context", SourcePath: "beads/plan", TargetPath: "beads/alpha", UnconditionalSource: true, Actor: "human:link-author"})
 			if err != nil {
 				t.Fatal(err)
 			}
-			if _, err := store.AddInformationalLink(ctx, graphstore.LinkCreateRequest{Path: "links/survivor", SourcePath: "beads/work", TargetPath: "beads/alpha", Actor: "human:link-author"}); err != nil {
+			if _, err := store.AddInformationalLink(ctx, graphstore.LinkCreateRequest{TypeURL: store.ScopeURL() + "types/preview-related-v2", Path: "links/survivor", SourcePath: "beads/work", TargetPath: "beads/alpha", Actor: "human:link-author"}); err != nil {
 				t.Fatal(err)
 			}
 			reader := New(store)

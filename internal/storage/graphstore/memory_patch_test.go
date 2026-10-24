@@ -17,6 +17,36 @@ import (
 
 func patchText(value string) *string { return &value }
 
+// selectedMemoryPatchFixture keeps the source-owned transition under test while
+// using the selected catalog: Memory owns Subject To, whose target is Constraint.
+// It intentionally leaves the shared disclosure/native Issue fixtures unchanged.
+func selectedMemoryPatchFixture(t *testing.T, backend string) (context.Context, Options, *Store, Record, Record, LinkMutationResult) {
+	t.Helper()
+	ctx, o := issueExperimentOptions(t, backend)
+	s, err := OpenExisting(ctx, o)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		if err := s.Close(); err != nil {
+			t.Error(err)
+		}
+	})
+	memory, err := s.Create(ctx, CreateRequest{Path: "beads/plan", Title: "Plan", Body: "original"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	target, err := s.Create(ctx, CreateRequest{Path: "beads/target", TypeURL: s.ScopeURL() + "types/constraint", Title: "Target constraint", Body: "target", Actor: "target-author"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	link, err := s.AddInformationalLink(ctx, LinkCreateRequest{Path: "links/out", TypeURL: s.ScopeURL() + "types/subject-to", SourcePath: "beads/plan", TargetPath: "beads/target", ExpectedSourceRevision: memory.Revision})
+	if err != nil {
+		t.Fatal(err)
+	}
+	return ctx, o, s, link.Source.(Record), target, link
+}
+
 func TestMemoryPatchValidation(t *testing.T) {
 	// Invalid requests must be rejected before opening any transaction.
 	var s *Store
@@ -37,7 +67,7 @@ func TestMemoryPatchValidation(t *testing.T) {
 func TestMemoryPatchLifecycle(t *testing.T) {
 	for _, backend := range []string{"embedded", "server"} {
 		t.Run(backend, func(t *testing.T) {
-			ctx, _, s, original, target, link := disclosureFixture(t, backend)
+			ctx, _, s, original, target, link := selectedMemoryPatchFixture(t, backend)
 			retained := []Record{original}
 			title := "  記憶 title\r\n"
 			titleEdit, err := s.PatchMemory(ctx, MemoryPatchRequest{Path: "beads/plan", Title: &title, Actor: "title-editor", ExpectedRevision: original.Revision})
@@ -85,14 +115,15 @@ func TestMemoryPatchLifecycle(t *testing.T) {
 				t.Fatal("owned-Link stale guard changed state")
 			}
 			clearedTitle, err := s.PatchMemory(ctx, MemoryPatchRequest{Path: "beads/plan", Title: patchText(""), Unconditional: true})
-			if err != nil || !clearedTitle.Changed || clearedTitle.Memory.Properties != (Properties{Body: body}) {
-				t.Fatalf("clear title: %+v %v", clearedTitle, err)
+			if !errors.Is(err, storage.ErrValidation) || !reflect.ValueOf(clearedTitle).IsZero() {
+				t.Fatalf("blank title must refuse: %+v %v", clearedTitle, err)
 			}
-			assertReplacedMemory(t, clearedTitle.Replaced, predecessor)
-			assertOwnedLink(t, clearedTitle.Memory, changedLink.Link)
-			retained = append(retained, clearedTitle.Memory)
-			clearedBody, err := s.PatchMemory(ctx, MemoryPatchRequest{Path: "beads/plan", Body: patchText(""), ExpectedRevision: clearedTitle.Memory.Revision})
-			if err != nil || !clearedBody.Changed || clearedBody.Replaced != nil || clearedBody.Memory.Properties != (Properties{}) {
+			if !reflect.DeepEqual(before, workflowState(t, ctx, s)) {
+				t.Fatal("blank-title refusal changed state")
+			}
+			assertOwnedLink(t, predecessor, changedLink.Link)
+			clearedBody, err := s.PatchMemory(ctx, MemoryPatchRequest{Path: "beads/plan", Body: patchText(""), ExpectedRevision: predecessor.Revision})
+			if err != nil || !clearedBody.Changed || clearedBody.Replaced != nil || clearedBody.Memory.Properties != (Properties{Title: title}) {
 				t.Fatalf("clear body: %+v %v", clearedBody, err)
 			}
 			retained = append(retained, clearedBody.Memory)
@@ -137,7 +168,7 @@ func TestMemoryPatchLifecycle(t *testing.T) {
 func TestMemoryPatchFailureAtomicity(t *testing.T) {
 	for _, backend := range []string{"embedded", "server"} {
 		t.Run(backend, func(t *testing.T) {
-			ctx, _, s, original, _, _ := disclosureFixture(t, backend)
+			ctx, _, s, original, _, _ := selectedMemoryPatchFixture(t, backend)
 			if _, err := s.CreateIssue(ctx, "beads/work", plainIssue("Work")); err != nil {
 				t.Fatal(err)
 			}
@@ -216,18 +247,19 @@ func TestMemoryPatchFailureAtomicity(t *testing.T) {
 	}
 }
 
-func TestMemoryPatchCanRepairOversizedCurrentReadBudget(t *testing.T) {
+func TestMemoryPatchIndependentOfCurrentReadBudget(t *testing.T) {
 	for _, backend := range []string{"embedded", "server"} {
 		t.Run(backend, func(t *testing.T) {
-			ctx, _, s, original, _, _ := disclosureFixture(t, backend)
+			ctx, _, s, original, _, _ := selectedMemoryPatchFixture(t, backend)
+			ctx = currentReadBudgetContext(t, ctx)
 			// Its current payload and complete retained snapshot exceed the global
 			// current-read acquisition budget, while this write's subject stays small.
 			seedUnreadableMemory(t, ctx, s, "beads/large", strings.Repeat("x", PreviewCurrentReadByteLimit/2))
 			if _, err := s.Read(ctx, "beads/plan"); !errors.Is(err, ErrLimitExceeded) {
 				t.Fatalf("global Read: %v", err)
 			}
-			got, err := s.PatchMemory(ctx, MemoryPatchRequest{Path: "beads/plan", Body: patchText(""), ExpectedRevision: original.Revision})
-			if err != nil || !got.Changed || got.Memory.Properties != (Properties{Title: original.Properties.Title, Body: ""}) || !reflect.DeepEqual(got.Memory.Owned, original.Owned) {
+			got, err := s.PatchMemory(ctx, MemoryPatchRequest{Path: "beads/plan", Title: patchText("X"), ExpectedRevision: original.Revision})
+			if err != nil || !got.Changed || got.Memory.Properties != (Properties{Title: "X", Body: original.Properties.Body}) || !reflect.DeepEqual(got.Memory.Owned, original.Owned) {
 				t.Fatalf("subject-local patch: %+v %v", got, err)
 			}
 			if old, err := s.ReadVersion(ctx, "beads/plan", original.Version); err != nil || !reflect.DeepEqual(old, original) {
@@ -238,7 +270,7 @@ func TestMemoryPatchCanRepairOversizedCurrentReadBudget(t *testing.T) {
 }
 
 func TestMemoryPatchLostCommitResponse(t *testing.T) {
-	ctx, o, direct, original, target, _ := disclosureFixture(t, "server")
+	ctx, o, direct, original, target, _ := selectedMemoryPatchFixture(t, "server")
 	proxyPort, observed := startCommitLossProxy(t, net.JoinHostPort(o.ServerHost, strconv.Itoa(o.ServerPort)))
 	proxied := o
 	proxied.ServerPort = proxyPort
@@ -297,11 +329,11 @@ func TestMemoryPatchConcurrentWriters(t *testing.T) {
 				if err != nil {
 					t.Fatal(err)
 				}
-				target, err := first.Create(ctx, CreateRequest{Path: "beads/target", Body: "target"})
+				target, err := first.Create(ctx, CreateRequest{Path: "beads/target", TypeURL: first.ScopeURL() + "types/constraint", Title: "Target constraint", Body: "target"})
 				if err != nil {
 					t.Fatal(err)
 				}
-				link, err := first.AddInformationalLink(ctx, LinkCreateRequest{Path: "links/out", SourcePath: "beads/plan", TargetPath: "beads/target", ExpectedSourceRevision: memory.Revision})
+				link, err := first.AddInformationalLink(ctx, LinkCreateRequest{Path: "links/out", TypeURL: first.ScopeURL() + "types/subject-to", SourcePath: "beads/plan", TargetPath: "beads/target", ExpectedSourceRevision: memory.Revision})
 				if err != nil {
 					t.Fatal(err)
 				}
@@ -439,7 +471,7 @@ func TestMemoryPatchConcurrentWriters(t *testing.T) {
 	for _, backend := range []string{"embedded", "server"} {
 		for _, other := range []string{"memory", "owned-link"} {
 			t.Run(backend+"/"+other+"/unconditional", func(t *testing.T) {
-				baseCtx, o, first, original, target, originalLink := disclosureFixture(t, backend)
+				baseCtx, o, first, original, target, originalLink := selectedMemoryPatchFixture(t, backend)
 				// Give omission preservation an observable value before either writer starts.
 				seeded, err := first.UpdateMemory(baseCtx, MemoryUpdateRequest{Path: "beads/plan", Properties: Properties{Title: "original title", Body: original.Properties.Body}, ExpectedRevision: original.Revision, Actor: "seed"})
 				if err != nil {

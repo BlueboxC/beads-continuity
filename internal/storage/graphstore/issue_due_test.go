@@ -96,7 +96,7 @@ func TestIssueDueLifecycle(t *testing.T) {
 	for _, backend := range []string{"embedded", "server"} {
 		t.Run(backend, func(t *testing.T) {
 			ctx, _, s, original, target, dependency := reopenFixture(t, backend)
-			memory, err := s.Create(ctx, CreateRequest{Path: "beads/context", Body: "Unchanged due context"})
+			memory, err := s.Create(ctx, CreateRequest{Title: "Context", Path: "beads/context", Body: "Unchanged due context"})
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -258,7 +258,7 @@ func TestGraphIssueListDue(t *testing.T) {
 				}
 				records[entry.name] = got
 			}
-			memory, err := s.Create(ctx, CreateRequest{Path: "beads/context", Body: "Not an Issue date match"})
+			memory, err := s.Create(ctx, CreateRequest{Title: "Context", Path: "beads/context", Body: "Not an Issue date match"})
 			if err != nil {
 				t.Fatal(err)
 			}

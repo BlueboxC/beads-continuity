@@ -28,7 +28,8 @@ func initialNotesRequest(title string) publicops.CreateRequest {
 func assertInitialNotes(t *testing.T, got IssueRecord, request publicops.CreateRequest) {
 	t.Helper()
 	assertCreateFields(t, got, request)
-	if got.Properties.Notes != request.Issue.Notes || got.Properties.Owner != request.Issue.Owner || got.Properties.CreatedBy != request.Issue.CreatedBy {
+	createdBy := request.Issue.CreatedBy
+	if got.Properties.Notes != request.Issue.Notes || got.Properties.Owner != request.Issue.Owner || got.Properties.CreatedBy != createdBy {
 		t.Fatal("initial notes/owner/creator were defaulted, normalized or lost")
 	}
 }
@@ -61,7 +62,7 @@ func TestIssueInitialNotesLifecycle(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			memory, err := s.Create(ctx, CreateRequest{Path: "beads/context", Body: "Unchanged context"})
+			memory, err := s.Create(ctx, CreateRequest{Title: "Context", Path: "beads/context", Body: "Unchanged context"})
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -250,11 +251,12 @@ func TestIssueInitialNotesPreservesCurrentReadBudget(t *testing.T) {
 	for _, backend := range []string{"embedded", "server"} {
 		t.Run(backend, func(t *testing.T) {
 			ctx, s := createFieldsStore(t, backend)
+			ctx = currentReadBudgetContext(t, ctx)
 			original, err := s.CreateIssue(ctx, "beads/existing", initialNotesRequest("Existing readable Issue"))
 			if err != nil {
 				t.Fatal(err)
 			}
-			memory, err := s.Create(ctx, CreateRequest{Path: "beads/large-context", Body: strings.Repeat("m", 7<<20)})
+			memory, err := s.Create(ctx, CreateRequest{Title: "Large context", Path: "beads/large-context", Body: strings.Repeat("m", 7<<20)})
 			if err != nil {
 				t.Fatal(err)
 			}

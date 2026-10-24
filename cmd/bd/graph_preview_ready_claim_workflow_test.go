@@ -28,9 +28,12 @@ func TestGraphPreviewReadyClaimWorkflow(t *testing.T) {
 				}
 				initArgs = append(initArgs, "--server", "--external", "--server-host", "127.0.0.1", "--server-port", port, "--server-user", "root")
 			}
+			identities := map[string]string{}
 			call := func(args ...string) string {
 				t.Helper()
-				return graphPolicyCLI(t, bd, work, home, nil, "", append(args, "--json")...)
+				output := graphPolicyCLI(t, bd, work, home, nil, "", append(args, "--json")...)
+				graphCaptureWorkflowIdentity(t, args, output, identities)
+				return output
 			}
 			call(initArgs...)
 			call("create", "Release task", "--id", "release", "--priority", "1", "--labels", "release")
@@ -41,7 +44,7 @@ func TestGraphPreviewReadyClaimWorkflow(t *testing.T) {
 			if got := graphMixedResult[[]graphstore.IssueRecord](t, call("ready", "--label", "release")); len(got) != 1 || got[0].ID != before.ID {
 				t.Fatalf("filtered ready front: %+v", got)
 			}
-			if got := graphMixedResult[[]graphstore.BlockedIssue](t, call("blocked", "--label", "release")); len(got) != 1 || got[0].Issue.ID != scope+"beads/blocked" {
+			if got := graphMixedResult[[]graphstore.BlockedIssue](t, call("blocked", "--label", "release")); len(got) != 1 || got[0].Issue.ID != graphWorkflowIdentity(identities, scope, "beads/blocked") {
 				t.Fatalf("filtered blocked front: %+v", got)
 			}
 			claimed := graphMixedResult[[]graphstore.IssueRecord](t, call("ready", "--claim", "--label", "release", "--actor", "ready-agent"))
@@ -97,7 +100,7 @@ func TestGraphPreviewReadyClaimWorkflow(t *testing.T) {
 					if outcome.code != "" {
 						continue
 					}
-					if got := graphMixedResult[[]graphstore.IssueRecord](t, outcome.stdout); len(got) == 1 && got[0].ID == scope+"beads/race" {
+					if got := graphMixedResult[[]graphstore.IssueRecord](t, outcome.stdout); len(got) == 1 && got[0].ID == graphWorkflowIdentity(identities, scope, "beads/race") {
 						winners++
 					}
 				}

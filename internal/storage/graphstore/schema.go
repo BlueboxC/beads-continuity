@@ -13,6 +13,7 @@ import (
 
 	graph "github.com/steveyegge/beads/graphops"
 	"github.com/steveyegge/beads/internal/storage/issueops"
+	"github.com/steveyegge/beads/internal/types"
 )
 
 // These tables are deliberately preview-specific. They share the standard
@@ -22,7 +23,9 @@ import (
 var previewDDL = []string{
 	`CREATE TABLE graph_preview_links (
         path VARBINARY(1024) PRIMARY KEY, source_path VARBINARY(1024) NOT NULL,
-        target_path VARBINARY(1024) NOT NULL, properties LONGBLOB NOT NULL,
+        target_path VARBINARY(1024) NOT NULL,
+        source_revision VARBINARY(4096) NOT NULL DEFAULT '',
+        target_revision VARBINARY(4096) NOT NULL DEFAULT '', properties LONGBLOB NOT NULL,
         metadata LONGBLOB NULL,
         attribution LONGBLOB NOT NULL, INDEX source_links (source_path))`,
 	`CREATE TABLE graph_preview_scope (
@@ -36,83 +39,115 @@ var previewDDL = []string{
         path VARBINARY(1024) PRIMARY KEY, resource_kind VARBINARY(16) NOT NULL,
         type_url LONGBLOB NOT NULL, revision VARBINARY(32) NOT NULL,
         allocation_state VARBINARY(16) NOT NULL, backing VARBINARY(32) NOT NULL,
-        backing_key VARBINARY(255) NULL, UNIQUE KEY one_backing (backing, backing_key))`,
+        backing_key VARBINARY(255) NULL, public_id LONGBLOB NULL, UNIQUE KEY one_backing (backing, backing_key))`,
 	`CREATE TABLE graph_preview_payloads (
         path VARBINARY(1024) PRIMARY KEY, properties LONGBLOB NOT NULL,
         metadata LONGBLOB NULL)`,
 	`CREATE TABLE graph_preview_versions (
         path VARBINARY(1024) NOT NULL, version VARBINARY(32) NOT NULL,
         snapshot LONGBLOB NOT NULL, actor LONGBLOB NOT NULL,
-        ordinal BIGINT NOT NULL, change_at DATETIME(6) NOT NULL,
+        ordinal BIGINT NOT NULL, change_at DATETIME(6) NOT NULL, native_participation_generation BIGINT NULL, native_attribution LONGBLOB NULL,
         PRIMARY KEY (path, version), UNIQUE KEY one_path_ordinal (path, ordinal))`,
 	`CREATE TABLE graph_preview_issue_versions (
         path VARBINARY(1024) NOT NULL, version VARBINARY(32) NOT NULL,
-        issue_id VARBINARY(255) NOT NULL, issue_revision BIGINT NOT NULL, owned LONGBLOB NOT NULL,
+        issue_id VARBINARY(255) NOT NULL, issue_revision BIGINT NOT NULL, owned LONGBLOB NOT NULL, revision_context LONGBLOB NULL, history_ordinal BIGINT NULL,
         PRIMARY KEY (path, version), UNIQUE KEY one_issue_version (issue_id, issue_revision))`,
 }
 
-// MemoryTypeURL is a Scope-local experimental descriptor, not the eventual
-// production Memory Type URI. Its payload is title/body and it owns outgoing Links.
-func MemoryTypeURL(scope string) string { return scope + "types/preview-memory-v2" }
+// MemoryTypeURL is the application-local identity of the selected Memory Type.
+func MemoryTypeURL(scope string) string { return scope + "types/memory" }
 
 func memoryDescriptor(scope string) (graph.TypeDescriptor, error) {
-	owns, err := graph.NewWildcardOwnedLinkDecl(PreviewOwnedLinkLimit)
-	if err != nil {
-		return graph.TypeDescriptor{}, err
-	}
-	return graph.NewTypeDescriptor(graph.TypeDescriptorSpec{
-		ID: MemoryTypeURL(scope), Name: "Experimental Memory v2", Describes: graph.KindBead,
-		Description:  "Disposable C0 preview. The installed writer accepts exactly UTF-8 title and body strings, owns up to 1000 outgoing Links, and always records a complete retained snapshot. This descriptor does not claim the complete Memory or History contract.",
-		OwnsOutgoing: []graph.OwnedLinkDecl{owns},
-	})
+	return selectedMemoryDescriptor(scope, "memory")
 }
 
-// legacyIssueTypeURL deliberately avoids settling the nominal Task/Bug discussion.
-func legacyIssueTypeURL(scope string) string { return scope + "types/preview-issue-v2" }
+// IssueTypeURL identifies the abstract native Issue family.
+func IssueTypeURL(scope string) string { return scope + "types/issue" }
 
-func legacyIssueDescriptor(scope string) (graph.TypeDescriptor, error) {
-	owns, err := graph.NewOwnedLinkDecl(legacyDependencyTypeURL(scope), "", PreviewOwnedLinkLimit)
+// DependencyTypeURL identifies the abstract native Dependency family.
+func DependencyTypeURL(scope string) string { return scope + "types/dependency" }
+
+func dependencyDescriptor(scope string) (graph.TypeDescriptor, error) {
+	endpoint, err := graph.NewEndpointConstraint([]string{IssueTypeURL(scope)}, graph.ExternalNone)
 	if err != nil {
 		return graph.TypeDescriptor{}, err
 	}
 	return graph.NewTypeDescriptor(graph.TypeDescriptorSpec{
-		ID: legacyIssueTypeURL(scope), Name: "Experimental Issue v2", Describes: graph.KindBead,
-		Description:  "Disposable specialized Issue adapter. Issue classification remains a property. Admits durable create, checked close, ready work and up to 1000 outgoing blocking Dependencies owned by their source. Complete canonical owned-Link state is retained with each Issue version. No production Type or complete History contract is established.",
-		OwnsOutgoing: []graph.OwnedLinkDecl{owns},
-	})
-}
-
-// legacyDependencyTypeURL is a registered private blocking-Dependency Type.
-func legacyDependencyTypeURL(scope string) string { return scope + "types/preview-blocks-v1" }
-
-func legacyDependencyDescriptor(scope string) (graph.TypeDescriptor, error) {
-	endpoint, err := graph.NewEndpointConstraint([]string{legacyIssueTypeURL(scope)}, graph.ExternalNone)
-	if err != nil {
-		return graph.TypeDescriptor{}, err
-	}
-	return graph.NewTypeDescriptor(graph.TypeDescriptorSpec{
-		ID: legacyDependencyTypeURL(scope), Name: "Experimental blocking Dependency v1", Describes: graph.KindLink,
-		Description: "Disposable Dependency adapter. Unpinned live local durable Issue endpoints; empty properties. The source depends on the target and owns this Link. Issue-domain pair uniqueness applies. No generic multiedge or production Dependency contract is established.",
+		ID: DependencyTypeURL(scope), Name: "Dependency", Describes: graph.KindLink,
+		Description: "Abstract native Dependency family; cannot be declared directly. Concrete kinds refine this family and use live unpinned local Issue endpoints. The required dep_type string property mirrors the native Dependency kind; common metadata is editable; no other properties are supported. One ordered Issue pair has at most one Dependency.",
 		Source:      &endpoint, Target: &endpoint,
 	})
 }
 
-// RelatedTypeURL names the private experimental informational Link descriptor.
-func RelatedTypeURL(scope string) string { return scope + "types/preview-related-v2" }
+// The abstract native Issue family supplies inherited ownership. Its concrete
+// children derive affiliation from the native writer's validated classification.
+func issueDescriptor(scope string) (graph.TypeDescriptor, error) {
+	owned := make([]graph.OwnedLinkDecl, 0, len(relationshipDependencyTypes))
+	for _, relation := range relationshipDependencyTypes {
+		link, err := graph.NewOwnedLinkDecl(scope+relation.path, "", PreviewOwnedLinkLimit)
+		if err != nil {
+			return graph.TypeDescriptor{}, err
+		}
+		owned = append(owned, link)
+	}
+	return graph.NewTypeDescriptor(graph.TypeDescriptorSpec{
+		ID: IssueTypeURL(scope), Name: "Issue", Describes: graph.KindBead,
+		Description:  "Abstract native Issue family; cannot be declared directly. Concrete native classifications refine this family and inherit source-owned Dependency Links. Native Issue writers own lifecycle and retained History; these Link Types do not define a close reason or authorize an edge-plus-close operation.",
+		OwnsOutgoing: owned,
+	})
+}
+
+type relationshipDependencyType struct {
+	native      types.DependencyType
+	installName string
+	path        string
+	name        string
+}
+
+// Kept temporarily for the old installer seam while the fresh generation's
+// Type catalog is consolidated. Every valid kind uses one nominal Type.
+var relationshipDependencyTypes = [...]relationshipDependencyType{
+	{types.DepBlocks, "dependency", "types/dependency", "Dependency"},
+}
+
+func relationshipDependencyTypeURL(scope string, native types.DependencyType) (string, bool) {
+	if !native.IsValid() {
+		return "", false
+	}
+	id, err := NativeDependencyTypeURL(scope, string(native))
+	return id, err == nil
+}
+
+// RelationshipDependencyTypeURL is an identity lookup, not admission permission.
+func RelationshipDependencyTypeURL(scope string, native types.DependencyType) (string, bool) {
+	return relationshipDependencyTypeURL(scope, native)
+}
+func RelationshipBlockingTypeURL(scope string) string {
+	id, _ := relationshipDependencyTypeURL(scope, types.DepBlocks)
+	return id
+}
+func isNativeRelationshipDependencyType(scope, id string) bool {
+	base, kind, ok := NativeTypeClassification(scope, id)
+	return ok && base == DependencyTypeURL(scope) && types.DependencyType(kind).IsValid()
+}
+func relationshipDependencyInstallName(scope, id string) (string, bool) {
+	ok := isNativeRelationshipDependencyType(scope, id)
+	return strings.TrimPrefix(id, scope+"types/"), ok
+}
+func relationshipDependencyDescriptor(scope string, native types.DependencyType) (graph.TypeDescriptor, error) {
+	id, ok := relationshipDependencyTypeURL(scope, native)
+	if !ok {
+		return graph.TypeDescriptor{}, fmt.Errorf("unsupported native relationship Dependency %q", native)
+	}
+	return nativeConcreteDescriptor(scope, id)
+}
+
+// RelatedTypeURL retains the legacy command spelling as an alias for References.
+// No separate Related Type is installed.
+func RelatedTypeURL(scope string) string { return scope + "types/references" }
 
 func relatedDescriptor(scope string) (graph.TypeDescriptor, error) {
-	// Endpoint conformsTo is a conjunction, not an alternative-Type list.
-	// The preview admits only Issue and Memory Beads; an empty requirement set
-	// truthfully accepts either without claiming it conforms to both Types.
-	endpoint, err := graph.NewEndpointConstraint(nil, graph.ExternalNone)
-	if err != nil {
-		return graph.TypeDescriptor{}, err
-	}
-	return graph.NewTypeDescriptor(graph.TypeDescriptorSpec{
-		ID: RelatedTypeURL(scope), Name: "Experimental informational Link v2", Describes: graph.KindLink,
-		Description: "Disposable informational Link with live unpinned local Issue or Memory endpoints and independent multiedge identity. Closed properties record admits only optional UTF-8 string note. Memory sources own outgoing Links; Issue sources do not own this Type. No scheduling effect or production Type contract.",
-		Source:      &endpoint, Target: &endpoint,
-	})
+	return selectedMemoryDescriptor(scope, "references")
 }
 
 func canonicalJSON(value any) ([]byte, error) {
@@ -134,7 +169,6 @@ func freshToken() (string, error) {
 func installPreview(ctx context.Context, conn *sql.Conn, o Options) error {
 	return installPreviewSchema(ctx, conn, o, true)
 }
-
 func installPreviewSchema(ctx context.Context, conn *sql.Conn, o Options, fresh bool) (err error) {
 	prefix := o.IssuePrefix
 	if prefix == "" {
@@ -143,14 +177,12 @@ func installPreviewSchema(ctx context.Context, conn *sql.Conn, o Options, fresh 
 	if !utf8.ValidString(prefix) || strings.TrimSpace(prefix) != prefix {
 		return fmt.Errorf("%w: invalid Issue prefix", ErrInvalidStore)
 	}
-	// Provision only a fresh graph database. Ordinary workspace migrations and
-	// their numbering remain unchanged.
 	for _, ddl := range graphNativeHistoryDDL {
 		if _, err = conn.ExecContext(ctx, ddl); err != nil {
 			return err
 		}
 	}
-	for _, ddl := range previewDDL {
+	for _, ddl := range append(append([]string(nil), previewDDL...), originalHistoryDDL...) {
 		if _, err = conn.ExecContext(ctx, ddl); err != nil {
 			return err
 		}
@@ -175,7 +207,7 @@ func installPreviewSchema(ctx context.Context, conn *sql.Conn, o Options, fresh 
         VALUES (1, ?, ?, ?, ?, ?)`, b.WorkspaceID, b.ScopeURL, b.AuthorityID, b.SchemaVersion, token); err != nil {
 		return err
 	}
-	for _, definition := range previewTypeDefinitions(o.Binding.SchemaVersion) {
+	for _, definition := range previewTypeDefinitions() {
 		descriptor, buildErr := definition.build(b.ScopeURL)
 		if buildErr != nil {
 			return buildErr
@@ -204,6 +236,9 @@ func installPreviewSchema(ctx context.Context, conn *sql.Conn, o Options, fresh 
 }
 
 func checkBinding(ctx context.Context, tx *sql.Tx, o Options) error {
+	if checkedReadBinding(tx, o) {
+		return nil
+	}
 	var b Binding
 	var token string
 	err := tx.QueryRowContext(ctx, `SELECT workspace, scope_url, authority_id,
@@ -216,19 +251,24 @@ func checkBinding(ctx context.Context, tx *sql.Tx, o Options) error {
 	if b != o.Binding || !authorityID.MatchString(token) {
 		return fmt.Errorf("%w: persisted binding differs from workspace", ErrInvalidStore)
 	}
-	if _, err := installedPreviewTypes(ctx, tx, b.ScopeURL, b.SchemaVersion); err != nil {
+	installed, err := installedPreviewTypes(ctx, tx, b.ScopeURL)
+	if err != nil {
 		return err
+	}
+	count := len(installed)
+	if count < len(previewTypeDefinitions()) {
+		return fmt.Errorf("%w: workspace marker and installed Type generation differ", ErrInvalidStore)
 	}
 	if _, err := issueops.ReadConfigPrefix(ctx, tx); err != nil {
 		return fmt.Errorf("%w: Issue configuration: %v", ErrInvalidStore, err)
 	}
 	// Reject incomplete bootstrap on open, even before a caller selects a row.
 	for _, query := range []string{
-		`SELECT path, resource_kind, type_url, revision, allocation_state, backing, backing_key FROM graph_preview_catalog LIMIT 0`,
+		`SELECT path, resource_kind, type_url, revision, allocation_state, backing, backing_key, public_id FROM graph_preview_catalog LIMIT 0`,
 		`SELECT path, properties, metadata FROM graph_preview_payloads LIMIT 0`,
-		`SELECT path, source_path, target_path, properties, metadata, attribution FROM graph_preview_links LIMIT 0`,
-		`SELECT path, version, snapshot, actor, ordinal, change_at FROM graph_preview_versions LIMIT 0`,
-		`SELECT path, version, issue_id, issue_revision, owned FROM graph_preview_issue_versions LIMIT 0`,
+		`SELECT path, source_path, target_path, source_revision, target_revision, properties, metadata, attribution FROM graph_preview_links LIMIT 0`,
+		`SELECT path, version, snapshot, actor, ordinal, change_at, native_participation_generation, native_attribution FROM graph_preview_versions LIMIT 0`,
+		`SELECT path, version, issue_id, issue_revision, owned, revision_context, history_ordinal FROM graph_preview_issue_versions LIMIT 0`,
 		`SELECT issue_id, revision, durable_state, attribution_status FROM issue_versions LIMIT 0`,
 	} {
 		rows, err := tx.QueryContext(ctx, query)
@@ -239,20 +279,22 @@ func checkBinding(ctx context.Context, tx *sql.Tx, o Options) error {
 			return err
 		}
 	}
+	rememberReadBinding(tx, o)
 	return nil
 }
 
-// Native retained-version prerequisites adapted from the contributor schema.
-// Init refuses existing databases; OpenExisting never executes these statements.
 var graphNativeHistoryDDL = []string{
 	`CREATE TABLE issue_versions (
 issue_id VARCHAR(255) NOT NULL, revision BIGINT NOT NULL, epoch INT NOT NULL,
 durable_state LONGBLOB, change_actor VARCHAR(255), change_agent VARCHAR(255),
 change_message TEXT, change_at DATETIME(6) NOT NULL, removed_at DATETIME(6),
-removed_reason VARCHAR(255), attribution_status VARCHAR(20) NOT NULL,
+removed_reason VARCHAR(255), removed_restriction VARCHAR(32), attribution_status VARCHAR(20) NOT NULL,
 PRIMARY KEY (issue_id, revision))`,
 	`CREATE TABLE store_epoch (id TINYINT NOT NULL DEFAULT 1, epoch INT NOT NULL DEFAULT 1,
 bumped_at DATETIME, bumped_reason VARCHAR(255), PRIMARY KEY (id), CHECK (id = 1))`,
+	`CREATE TABLE epoch_minted_addresses (address VARCHAR(255) NOT NULL, store_id VARCHAR(255) NOT NULL,
+minted_id VARCHAR(255) NOT NULL, minted_epoch INT NOT NULL, minted_at DATETIME NOT NULL,
+PRIMARY KEY (address))`,
 	`ALTER TABLE issues ADD COLUMN current_revision BIGINT NOT NULL DEFAULT 1`,
 	`ALTER TABLE issues ADD COLUMN participation_generation BIGINT NULL`,
 }

@@ -92,7 +92,7 @@ func checkStoredSelectionAndPages(t *testing.T, ctx context.Context, r *Reader) 
 			}
 			checkCollectionWire(t, "linkCollection", page, &bdpwire.LinkCollection{})
 		} else {
-			if len(rows) != 9 {
+			if len(rows) != len(graphstore.FreshTypeNames()) {
 				t.Fatal("installed Type inventory incomplete")
 			}
 			checkCollectionWire(t, "typesInventory", page, &bdpwire.TypesInventory{})

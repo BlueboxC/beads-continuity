@@ -463,29 +463,20 @@ func outputMemoriesOnlyContext(w io.Writer) error {
 func formatMemoriesForPrime(compact bool) string {
 	if graphPreviewActive {
 		var plane map[string]string
+		var observed activity.View
 		err := withGraphStoreOutput(func(ctx context.Context, st *graphstore.Store) (any, string, error) {
-			result, snapshot, err := st.ReadContinuity(ctx)
+			result, view, err := st.ReadPrimeContinuityWithActivity(ctx)
 			if err != nil {
 				return nil, "", err
 			}
 			plane = result.Memories
-			for _, entry := range snapshot.Records {
-				if record, ok := entry.(graphstore.Record); ok {
-					var metadata map[string]any
-					if json.Unmarshal(record.Metadata, &metadata) != nil {
-						return nil, "", errors.New("invalid graph memory metadata")
-					}
-					if _, managed := metadata[graphstore.ContinuityKeyMetadata]; !managed && record.Properties.Body != "" {
-						plane[record.ID] = record.Properties.Body
-					}
-				}
-			}
+			observed = view
 			return nil, "", nil
 		}, func(any, string) error { return nil })
 		if err != nil {
 			return formatPrimeMemoryUnavailable(compact, newPrimeMemoryFailure("memory_list", err))
 		}
-		return renderPrimeMemoryPlane(plane, compact)
+		return renderPrimeMemoryPlane(plane, compact) + activity.FormatContext(observed)
 	}
 	// bd-mm8wf: in a proxied-server workspace the memory read must ride the
 	// proxied plane (UOW provider), never ensureStoreActiveForPrime — the

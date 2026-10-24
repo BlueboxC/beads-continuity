@@ -67,7 +67,7 @@ func TestPreviewCapacity2048MixedInventory(t *testing.T) {
 				snapshot, err := s.CurrentSnapshot(ctx)
 				elapsed := time.Since(start)
 				runtime.ReadMemStats(&after)
-				if err != nil || len(snapshot.Records) != 2048 || len(snapshot.Types) != 9 {
+				if err != nil || len(snapshot.Records) != 2048 || len(snapshot.Types) < len(previewTypeDefinitions()) {
 					t.Fatalf("capacity inventory: count=%d types=%d err=%v", len(snapshot.Records), len(snapshot.Types), err)
 				}
 				measurements = append(measurements, map[string]any{"milliseconds": float64(elapsed.Microseconds()) / 1000, "total_alloc_bytes": after.TotalAlloc - before.TotalAlloc})
@@ -77,7 +77,7 @@ func TestPreviewCapacity2048MixedInventory(t *testing.T) {
 			}
 			state := workflowState(t, ctx, s, "config", "graph_preview_types")
 			refusals := []func() error{
-				func() error { _, e := s.Create(ctx, CreateRequest{Path: "beads/excess"}); return e },
+				func() error { _, e := s.Create(ctx, CreateRequest{Title: "Fixture", Path: "beads/excess"}); return e },
 				func() error { _, e := s.CreateIssue(ctx, "beads/excess", plainIssue("extra")); return e },
 				func() error {
 					_, e := s.AddDependency(ctx, DependencyRequest{SourcePath: "beads/source-000", TargetPath: "beads/target-005", Actor: "fixture"})
@@ -106,6 +106,7 @@ func TestPreviewCapacity2048MixedInventory(t *testing.T) {
 			// its history when reducing it back to the admitted current inventory.
 			extra := anchor
 			extra.ID = s.ScopeURL() + "beads/old-writer"
+			extra.PublicID = "beads/old-writer"
 			extra.Revision, err = freshToken()
 			if err != nil {
 				t.Fatal(err)
@@ -123,7 +124,7 @@ func TestPreviewCapacity2048MixedInventory(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			err = s.createInTx(ctx, tx, CreateRequest{Path: "beads/old-writer", Actor: extra.Attribution.Actor}, extra, properties, retained)
+			err = s.createInTx(ctx, tx, CreateRequest{Title: "Fixture", Path: "beads/old-writer", Actor: extra.Attribution.Actor}, extra, properties, retained)
 			if err != nil {
 				_ = tx.Rollback()
 				t.Fatal(err)

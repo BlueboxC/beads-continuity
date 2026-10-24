@@ -11,6 +11,7 @@ import (
 	"strings"
 	"testing"
 
+	graph "github.com/steveyegge/beads/graphops"
 	"github.com/steveyegge/beads/internal/config"
 	"github.com/steveyegge/beads/internal/storage/domain"
 	"github.com/steveyegge/beads/internal/storage/issueops"
@@ -100,13 +101,15 @@ func TestGraphIssueListResolvedConfigRealStores(t *testing.T) {
 			for _, tc := range []struct {
 				name                   string
 				statuses, kinds, infra []string
-				bad                    bool
+				bad, nativeInvalid     bool
 			}{
 				{name: "empty fallbacks"},
 				{name: "resolved entry boundary", kinds: names("kind", PreviewIssueListConfigRowLimit-len(domain.DefaultInfraTypes()))},
 				{name: "resolved entry overflow", kinds: names("kind", PreviewIssueListConfigRowLimit+1), bad: true},
-				{name: "resolved byte boundary", kinds: []string{strings.Repeat("x", PreviewIssueListConfigByteLimit-defaultBytes)}},
-				{name: "resolved byte overflow", kinds: []string{strings.Repeat("x", PreviewIssueListConfigByteLimit-defaultBytes+1)}, bad: true},
+				{name: "native classification boundary", kinds: []string{strings.Repeat("x", 32)}},
+				{name: "native classification overflow", kinds: []string{strings.Repeat("x", 33)}, nativeInvalid: true},
+				{name: "resolved byte boundary", nativeInvalid: true, kinds: []string{strings.Repeat("x", PreviewIssueListConfigByteLimit-defaultBytes)}},
+				{name: "resolved byte overflow", nativeInvalid: true, kinds: []string{strings.Repeat("x", PreviewIssueListConfigByteLimit-defaultBytes+1)}, bad: true},
 				{name: "status YAML overflow", statuses: names("status", PreviewIssueListConfigRowLimit+1), bad: true},
 				{name: "infra YAML overflow", infra: names("infra", PreviewIssueListConfigRowLimit+1), bad: true},
 				{name: "combined YAML overflow", statuses: names("status", 100), kinds: names("kind", 100), infra: names("infra", 100), bad: true},
@@ -115,8 +118,29 @@ func TestGraphIssueListResolvedConfigRealStores(t *testing.T) {
 					config.Set("status.custom", tc.statuses)
 					config.Set("types.custom", tc.kinds)
 					config.Set("types.infra", tc.infra)
+					// Effective policy byte acquisition and native classification
+					// admission are independent contracts with distinct precedence.
+					if tc.nativeInvalid {
+						var resolved workapi.ListConfig
+						err := s.withTx(ctx, false, func(tx *sql.Tx) error {
+							var err error
+							resolved, err = issueListConfigInTx(ctx, tx)
+							return err
+						})
+						if tc.bad {
+							if !errors.Is(err, ErrLimitExceeded) || !reflect.ValueOf(resolved).IsZero() {
+								t.Fatalf("effective byte bound leaked policy: %+v %v", resolved, err)
+							}
+						} else if err != nil || !reflect.DeepEqual(resolved.CustomTypes, tc.kinds) {
+							t.Fatalf("admitted policy lost exact custom names: %+v %v", resolved, err)
+						}
+					}
 					page, err := s.ListIssues(ctx, publicops.ListRequest{})
-					if tc.bad {
+					if tc.nativeInvalid {
+						if !errors.Is(err, graph.ErrValidation) || !strings.Contains(err.Error(), "native Issue classification exceeds 32 characters") || !reflect.DeepEqual(page, IssueListPage{}) {
+							t.Fatalf("native class bound leaked page/lost reason: %+v %v", page, err)
+						}
+					} else if tc.bad {
 						if !errors.Is(err, ErrLimitExceeded) || !reflect.DeepEqual(page, IssueListPage{}) {
 							t.Fatalf("expected zero-page limit refusal: %+v %v", page, err)
 						}
@@ -157,6 +181,9 @@ func TestGraphIssueListResolvedConfigRealStores(t *testing.T) {
 			setIssueListConfig(t, ctx, s, "types.custom", "table-kind")
 			want.CustomStatuses = []types.CustomStatus{{Name: "table-active", Category: types.CategoryActive}}
 			want.CustomTypes = []string{"table-kind"}
+			if got, err := s.ListCustomStatuses(ctx); err != nil || !reflect.DeepEqual(got, want.CustomStatuses) {
+				t.Fatalf("status discovery differs from Issue list policy: got=%+v err=%v", got, err)
+			}
 			// If populated normalized tables are authoritative, unsupported huge
 			// YAML fallbacks are not resolved or charged as effective policy.
 			config.Set("status.custom", names("ignoredstatus", 257))

@@ -40,7 +40,11 @@ func derivedContinuityKey(key string) bool {
 }
 
 func (m *ContinuityMemories) transaction(ctx context.Context, write bool, fn func(*sql.Tx) error) error {
-	return m.store.withTx(ctx, write, func(tx *sql.Tx) error {
+	transact := func(fn func(*sql.Tx) error) error { return m.store.withTx(ctx, false, fn) }
+	if write {
+		transact = func(fn func(*sql.Tx) error) error { return m.store.withTypeValidationTx(ctx, fn) }
+	}
+	return transact(func(tx *sql.Tx) error {
 		if err := checkBinding(ctx, tx, m.store.options); err != nil {
 			return err
 		}
@@ -49,10 +53,17 @@ func (m *ContinuityMemories) transaction(ctx context.Context, write bool, fn fun
 }
 
 func (m *ContinuityMemories) resolve(ctx context.Context, tx *sql.Tx, key string) (string, bool, error) {
+	if err := m.checkSelectionInTx(ctx, tx, memoryops.ListRequest{KeyPrefix: key}, true); err != nil {
+		return "", false, err
+	}
 	raw, found, err := txmemory.RecallInTx(ctx, tx, key)
 	if err != nil || !found || derivedContinuityKey(key) {
 		return raw, found, err
 	}
+	return m.resolveRawInTx(ctx, tx, key, raw)
+}
+
+func (m *ContinuityMemories) resolveRawInTx(ctx context.Context, tx *sql.Tx, key, raw string) (string, bool, error) {
 	path, ok := strings.CutPrefix(raw, continuityPointer)
 	if !ok {
 		return "", false, fmt.Errorf("%w: continuity key %q has no canonical pointer", ErrInvalidStore, key)
@@ -341,37 +352,7 @@ var _ memoryops.Memories = (*ContinuityMemories)(nil)
 var _ memoryops.AtomicMemories = (*ContinuityMemories)(nil)
 
 func (m *ContinuityMemories) listInTx(ctx context.Context, tx *sql.Tx, req memoryops.ListRequest) (memoryops.ListResult, error) {
-	result := memoryops.ListResult{Memories: map[string]string{}}
-	if err := checkCurrentReadBytes(ctx, tx); err != nil {
-		return result, err
-	}
-	var count uint64
-	if err := tx.QueryRowContext(ctx, "SELECT COUNT(*) FROM graph_preview_catalog WHERE allocation_state='live'").Scan(&count); err != nil {
-		return result, err
-	}
-	if count > PreviewSnapshotLimit {
-		return result, fmt.Errorf("%w: continuity exceeds %d live Resources", ErrLimitExceeded, PreviewSnapshotLimit)
-	}
-	if err := checkContinuityReadBounds(ctx, tx); err != nil {
-		return result, err
-	}
-	rows, err := txmemory.ListInTx(ctx, tx, req)
-	if err != nil {
-		return result, err
-	}
-	for key, raw := range rows {
-		if derivedContinuityKey(key) {
-			result.Memories[key] = raw
-			continue
-		}
-		value, _, err := m.resolve(ctx, tx, key)
-		if err != nil {
-			return result, err
-		}
-		result.Memories[key] = value
-	}
-	result.Memories = memoryapi.FilterMemories(result.Memories, req.Search)
-	return result, nil
+	return m.listSelectionInTx(ctx, tx, req)
 }
 
 // ReadContinuity joins the canonical graph and fork projections in one snapshot.

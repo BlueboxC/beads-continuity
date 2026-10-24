@@ -55,7 +55,7 @@ func graphListConfig(t *testing.T, work, yaml string) {
 // graphListSeedIssue creates an Issue through the controlled writer between two
 // installed processes, for a state no admitted command can author. Close it
 // before the next process opens the workspace, embedded mode included.
-func graphListSeedIssue(t *testing.T, work, path string, request publicops.CreateRequest) {
+func graphListSeedIssue(t *testing.T, work, path string, request publicops.CreateRequest) graphstore.IssueRecord {
 	t.Helper()
 	cfg, err := configfile.LoadForDiscovery(filepath.Join(work, ".beads"))
 	if err != nil || cfg == nil {
@@ -76,18 +76,27 @@ func graphListSeedIssue(t *testing.T, work, path string, request publicops.Creat
 			t.Error(err)
 		}
 	}()
-	if _, err := s.CreateIssue(ctx, path, request); err != nil {
+	created, err := s.CreateIssue(ctx, path, request)
+	if err != nil {
 		t.Fatal(err)
 	}
+	return created
 }
 
 // graphListBeads runs the structured Bead list and returns its page: the
 // canonical Bead paths, without the scope, in the order listed.
-func graphListBeads(t *testing.T, bd, work, home, scope string, extra ...string) (paths []string, more bool) {
+func graphListBeads(t *testing.T, bd, work, home, scope string, identities map[string]string, extra ...string) (paths []string, more bool) {
 	t.Helper()
 	beads, more := graphListDecode(t, graphPolicyCLI(t, bd, work, home, nil, "", append([]string{"list", "--format", "records-json"}, extra...)...))
 	for _, bead := range beads {
-		paths = append(paths, strings.TrimPrefix(bead.ID, scope))
+		path := strings.TrimPrefix(bead.ID, scope)
+		for private, public := range identities {
+			if bead.ID == public {
+				path = private
+				break
+			}
+		}
+		paths = append(paths, path)
 	}
 	return paths, more
 }
@@ -107,13 +116,16 @@ func TestGraphPreviewListHiddenIssuesWorkflow(t *testing.T) {
 		t.Run(engine, func(t *testing.T) {
 			const scope = "https://example.invalid/hidden/"
 			work, home := graphListWorkspace(t, bd, engine, scope)
+			identities := map[string]string{}
 			call := func(args ...string) string {
 				t.Helper()
-				return graphPolicyCLI(t, bd, work, home, nil, "", append(args, "--json")...)
+				output := graphPolicyCLI(t, bd, work, home, nil, "", append(args, "--json")...)
+				graphCaptureWorkflowIdentity(t, args, output, identities)
+				return output
 			}
 			list := func(extra ...string) ([]string, bool) {
 				t.Helper()
-				return graphListBeads(t, bd, work, home, scope, extra...)
+				return graphListBeads(t, bd, work, home, scope, identities, extra...)
 			}
 			human := func(extra ...string) string {
 				t.Helper()
@@ -126,10 +138,11 @@ func TestGraphPreviewListHiddenIssuesWorkflow(t *testing.T) {
 			call("create", "Open work", "--id", "beads/open", "--priority", "1")
 			call("create", "Finished work", "--id", "beads/done", "--priority", "2")
 			call("close", "beads/done")
-			graphListSeedIssue(t, work, "beads/pin", publicops.CreateRequest{Actor: "test-author", Issue: &publicops.Issue{
+			pinned := graphListSeedIssue(t, work, "beads/pin", publicops.CreateRequest{Actor: "test-author", Issue: &publicops.Issue{
 				Title: "Pinned note", Description: "kept", Status: types.StatusPinned, IssueType: types.TypeTask, Priority: 3,
 			}})
 
+			identities["beads/pin"] = pinned.ID
 			expect := func(what string, got []string, more bool, want []string, wantMore bool) {
 				t.Helper()
 				if !slices.Equal(graphListSorted(got), graphListSorted(want)) || more != wantMore {
@@ -141,14 +154,14 @@ func TestGraphPreviewListHiddenIssuesWorkflow(t *testing.T) {
 
 			got, more := list()
 			expect("bare list hides the closed and the pinned Issue", got, more, []string{"beads/open", "beads/plan"}, false)
-			got, more = list("--bead-type", "types/preview-issue-v3")
+			got, more = list("--bead-type", "types/issue")
 			expect("Issue Type hides them too", got, more, []string{"beads/open"}, false)
-			got, more = list("--bead-type", "types/preview-memory-v2")
+			got, more = list("--bead-type", "types/memory")
 			expect("a Memory is never hidden", got, more, []string{"beads/plan"}, false)
 
 			got, more = list("--all")
 			expect("--all shows them and lifts the configured default limit", got, more, everything, false)
-			got, more = list("--all", "--bead-type", "types/preview-issue-v3")
+			got, more = list("--all", "--bead-type", "types/issue")
 			expect("--all with the Issue Type", got, more, issues, false)
 			got, more = list("--all", "--limit", "3")
 			if len(got) != 3 || !more {
@@ -163,6 +176,9 @@ func TestGraphPreviewListHiddenIssuesWorkflow(t *testing.T) {
 			// offers --all only while it would still help.
 			rows := human("--all")
 			for _, want := range []string{"  beads/done  Issue   closed  P2  Finished work\n", "  beads/open  Issue   open  P1  Open work\n", "  beads/pin  Issue   pinned  P3  Pinned note\n", "  beads/plan  Memory  Plan\n"} {
+				for private, public := range identities {
+					want = strings.ReplaceAll(want, private, strings.TrimPrefix(public, scope))
+				}
 				if !strings.Contains(rows, want) {
 					t.Fatalf("human rows lack %q: %s", want, rows)
 				}

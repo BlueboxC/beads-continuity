@@ -23,6 +23,12 @@ type Snapshot struct {
 	WriterToken string
 	Records     []any
 	Types       []graph.TypeDescriptor
+	// OwnedLinkTypes captures effective selected ownership beside the checked
+	// installed Types. It is projection metadata, not a public wire descriptor.
+	OwnedLinkTypes map[string][]string
+	// OwnedLinkTypesByResource captures native observed kinds from each exact
+	// owned snapshot, avoiding unrelated empty groups from other Resources.
+	OwnedLinkTypesByResource map[string][]string
 }
 
 // CurrentSnapshot returns a complete bounded current inventory, or zero state
@@ -41,7 +47,11 @@ func (s *Store) CurrentSnapshot(ctx context.Context) (Snapshot, error) {
 }
 
 func (s *Store) currentSnapshotInTx(ctx context.Context, tx *sql.Tx) (Snapshot, error) {
-	if err := checkCurrentReadBytes(ctx, tx); err != nil {
+	return s.currentSnapshotWithBoundsInTx(ctx, tx, PreviewSnapshotLimit, PreviewCurrentReadByteLimit)
+}
+
+func (s *Store) currentSnapshotWithBoundsInTx(ctx context.Context, tx *sql.Tx, resourceLimit int, byteLimit uint64) (Snapshot, error) {
+	if err := checkCurrentReadBytesBudget(ctx, tx, 0, byteLimit); err != nil {
 		return Snapshot{}, err
 	}
 	if err := checkBinding(ctx, tx, s.options); err != nil {
@@ -50,14 +60,30 @@ func (s *Store) currentSnapshotInTx(ctx context.Context, tx *sql.Tx) (Snapshot, 
 	if err := s.checkCollectionMappingsInTx(ctx, tx); err != nil {
 		return Snapshot{}, err
 	}
-	result := Snapshot{Records: []any{}, Types: []graph.TypeDescriptor{}}
+	result := Snapshot{Records: []any{}, Types: []graph.TypeDescriptor{}, OwnedLinkTypes: map[string][]string{}, OwnedLinkTypesByResource: map[string][]string{}}
 	if err := tx.QueryRowContext(ctx, `SELECT writer_token FROM graph_preview_scope WHERE singleton=1`).Scan(&result.WriterToken); err != nil {
 		return Snapshot{}, err
 	}
 	var err error
-	result.Types, err = installedPreviewTypes(ctx, tx, s.ScopeURL(), s.options.Binding.SchemaVersion)
+	result.Types, err = s.selectedDescriptorsInTx(ctx, tx)
 	if err != nil {
 		return Snapshot{}, err
+	}
+	var linkTypes []string
+	for _, descriptor := range result.Types {
+		if descriptor.Describes() == graph.KindLink {
+			linkTypes = append(linkTypes, descriptor.ID())
+		}
+	}
+	for _, descriptor := range result.Types {
+		if descriptor.Describes() != graph.KindBead {
+			continue
+		}
+		owned, err := s.SelectedOwnedLinkTypesWithObserved(descriptor.ID(), linkTypes...)
+		if err != nil {
+			return Snapshot{}, err
+		}
+		result.OwnedLinkTypes[descriptor.ID()] = owned
 	}
 	sort.Slice(result.Types, func(i, j int) bool { return graph.CompareCodeUnits(result.Types[i].ID(), result.Types[j].ID()) < 0 })
 	var invalid int
@@ -68,7 +94,7 @@ func (s *Store) currentSnapshotInTx(ctx context.Context, tx *sql.Tx) (Snapshot, 
 	if !errors.Is(err, sql.ErrNoRows) {
 		return Snapshot{}, err
 	}
-	rows, err := tx.QueryContext(ctx, `SELECT path,backing,resource_kind FROM graph_preview_catalog WHERE allocation_state='live' LIMIT ?`, PreviewSnapshotLimit+1)
+	rows, err := tx.QueryContext(ctx, `SELECT path,backing,resource_kind FROM graph_preview_catalog WHERE allocation_state='live' LIMIT ?`, resourceLimit+1)
 	if err != nil {
 		return Snapshot{}, err
 	}
@@ -84,56 +110,10 @@ func (s *Store) currentSnapshotInTx(ctx context.Context, tx *sql.Tx) (Snapshot, 
 	if err := errors.Join(rows.Err(), rows.Close()); err != nil {
 		return Snapshot{}, err
 	}
-	if len(allocations) > PreviewSnapshotLimit {
-		return Snapshot{}, fmt.Errorf("%w: complete current inventory exceeds %d live Resources", ErrLimitExceeded, PreviewSnapshotLimit)
+	if len(allocations) > resourceLimit {
+		return Snapshot{}, fmt.Errorf("%w: complete current inventory exceeds %d live Resources", ErrLimitExceeded, resourceLimit)
 	}
 	sort.Slice(allocations, func(i, j int) bool { return graph.CompareCodeUnits(allocations[i].path, allocations[j].path) < 0 })
-	links, err := s.snapshotNativeLinksInTx(ctx, tx)
-	if err != nil {
-		return Snapshot{}, err
-	}
-	memoryOwned := map[string][]json.RawMessage{}
-	nativeOwned := map[string][]json.RawMessage{}
-	backings := map[string]string{}
-	for _, a := range allocations {
-		backings[s.ScopeURL()+a.path] = a.backing
-	}
-	for _, a := range allocations {
-		if a.backing != "dependency" && a.backing != "informational" {
-			continue
-		}
-		if a.kind != "link" || validateLinkPath(a.path) != nil {
-			return Snapshot{}, fmt.Errorf("%w: invalid Link allocation", ErrInvalidStore)
-		}
-		link, found := links[a.path]
-		if a.backing == "informational" {
-			link, err = s.showLinkInTx(ctx, tx, a.path)
-			if err != nil {
-				return Snapshot{}, err
-			}
-			links[a.path] = link
-		} else if !found {
-			return Snapshot{}, fmt.Errorf("%w: missing native Link", ErrInvalidStore)
-		}
-		if a.backing == "dependency" || backings[link.Source] == "generic" {
-			raw, err := canonicalJSON(link)
-			if err != nil {
-				return Snapshot{}, err
-			}
-			if a.backing == "dependency" {
-				nativeOwned[link.Source] = append(nativeOwned[link.Source], raw)
-			} else {
-				memoryOwned[link.Source] = append(memoryOwned[link.Source], raw)
-			}
-		}
-	}
-	// allocations are already ordered by canonical path, so owned sets keep
-	// the same code-unit order as individual record readers.
-	memories, err := s.snapshotMemoriesInTx(ctx, tx, memoryOwned)
-	if err != nil {
-		return Snapshot{}, err
-	}
-
 	for _, a := range allocations {
 		if err := validateResourcePath(a.path); err != nil {
 			return Snapshot{}, fmt.Errorf("%w: malformed catalog path: %v", ErrInvalidStore, err)
@@ -145,24 +125,39 @@ func (s *Store) currentSnapshotInTx(ctx context.Context, tx *sql.Tx) (Snapshot, 
 		var err error
 		switch a.backing {
 		case "generic":
-			var found bool
-			record, found = memories[a.path]
-			if !found {
-				err = fmt.Errorf("%w: missing current Memory", ErrInvalidStore)
-			}
+			record, err = s.showMemoryInTx(ctx, tx, a.path)
 		case "issue":
-			owned := snapshotOwned(nativeOwned, s.ScopeURL()+a.path)
-			if len(owned) > PreviewOwnedLinkLimit {
-				return Snapshot{}, fmt.Errorf("%w: owned Link limit exceeded", ErrInvalidStore)
-			}
-			record, err = s.showIssueWithOwnedInTx(ctx, tx, a.path, owned)
+			record, err = s.showIssueInTx(ctx, tx, a.path)
 		case "dependency", "informational":
-			record = links[a.path]
+			record, err = s.showLinkInTx(ctx, tx, a.path)
 		default:
 			err = fmt.Errorf("%w: unsupported backing", ErrInvalidStore)
 		}
 		if err != nil {
 			return Snapshot{}, err
+		}
+		var id, typ string
+		var owned []json.RawMessage
+		switch value := record.(type) {
+		case Record:
+			id, typ, owned = value.ID, value.Type, value.Owned
+		case IssueRecord:
+			id, typ, owned = value.ID, value.Type, value.Owned
+		}
+		if id != "" {
+			var observed []string
+			for _, raw := range owned {
+				var link LinkRecord
+				if err := json.Unmarshal(raw, &link); err != nil {
+					return Snapshot{}, fmt.Errorf("%w: malformed captured owned Link", ErrInvalidStore)
+				}
+				observed = append(observed, link.Type)
+			}
+			ownedTypes, err := s.SelectedOwnedLinkTypesWithObserved(typ, observed...)
+			if err != nil {
+				return Snapshot{}, err
+			}
+			result.OwnedLinkTypesByResource[id] = ownedTypes
 		}
 		result.Records = append(result.Records, record)
 	}
@@ -176,15 +171,24 @@ func (s *Store) checkCollectionMappingsInTx(ctx context.Context, tx *sql.Tx) err
 	if err := s.checkLinkMappingsInTx(ctx, tx); err != nil {
 		return err
 	}
+	issueType, err := installedIssueTypeURLInTx(ctx, tx, s.ScopeURL())
+	if err != nil {
+		return err
+	}
 	var deletedInvalid int
 	ids, err := s.installedInformationalTypes(ctx, tx)
 	if err != nil {
 		return err
 	}
-	placeholders, args := informationalTypeSQL(ids)
-	nativePlaceholders, nativeArgs := informationalTypeSQL(s.nativeDependencyTypeURLs())
-	args = append(args, nativeArgs...)
-	if err := tx.QueryRowContext(ctx, `SELECT COUNT(*) FROM graph_preview_catalog WHERE allocation_state='deleted' AND ((backing='informational' AND type_url NOT IN (`+placeholders+`)) OR (backing='dependency' AND type_url NOT IN (`+nativePlaceholders+`)) OR type_url IS NULL)`, args...).Scan(&deletedInvalid); err != nil {
+	infoPlaceholders, args := informationalTypeSQL(ids)
+	nativeTypes, err := s.nativeDependencyTypeIDsInTx(ctx, tx)
+	if err != nil {
+		return err
+	}
+	_ = issueType
+	depPlaceholders, depArgs := informationalTypeSQL(nativeTypes)
+	args = append(args, depArgs...)
+	if err := tx.QueryRowContext(ctx, `SELECT COUNT(*) FROM graph_preview_catalog WHERE allocation_state='deleted' AND ((backing='informational' AND type_url NOT IN (`+infoPlaceholders+`)) OR (backing='dependency' AND type_url NOT IN (`+depPlaceholders+`)) OR type_url IS NULL)`, args...).Scan(&deletedInvalid); err != nil {
 		return err
 	}
 	if deletedInvalid != 0 {
@@ -246,49 +250,4 @@ func (s *Store) checkCollectionMappingsInTx(ctx context.Context, tx *sql.Tx) err
 		}
 	}
 	return nil
-}
-
-func snapshotOwned(owned map[string][]json.RawMessage, id string) []json.RawMessage {
-	if items := owned[id]; items != nil {
-		return items
-	}
-	return []json.RawMessage{}
-}
-
-// The complete-read byte/count guards and authority mapping checks have already
-// run in this transaction. LEFT JOIN retains missing backing/history as an error.
-func (s *Store) snapshotMemoriesInTx(ctx context.Context, tx *sql.Tx, owned map[string][]json.RawMessage) (map[string]Record, error) {
-	rows, err := tx.QueryContext(ctx, `SELECT c.path,c.resource_kind,c.type_url,c.revision,p.properties,p.metadata,v.snapshot,v.actor
- FROM graph_preview_catalog c LEFT JOIN graph_preview_payloads p ON p.path=c.path
- LEFT JOIN graph_preview_versions v ON v.path=c.path AND v.version=c.revision
- WHERE c.allocation_state='live' AND c.backing='generic' LIMIT ?`, PreviewSnapshotLimit+1)
-	if err != nil {
-		return nil, err
-	}
-	defer func() { _ = rows.Close() }()
-	result := map[string]Record{}
-	for rows.Next() {
-		var path, kind, typ, revision string
-		var payload, metadata, retained []byte
-		var actor sql.NullString
-		if err := rows.Scan(&path, &kind, &typ, &revision, &payload, &metadata, &retained, &actor); err != nil {
-			return nil, err
-		}
-		if len(result) >= PreviewSnapshotLimit {
-			return nil, ErrLimitExceeded
-		}
-		if kind != "bead" || validatePath(path) != nil || !actor.Valid || payload == nil || metadata == nil || retained == nil {
-			return nil, fmt.Errorf("%w: incomplete current Memory authority", ErrInvalidStore)
-		}
-		links := snapshotOwned(owned, s.ScopeURL()+path)
-		if len(links) > PreviewOwnedLinkLimit {
-			return nil, fmt.Errorf("%w: owned Link limit exceeded", ErrInvalidStore)
-		}
-		record, err := s.validateCurrentMemory(path, typ, revision, payload, metadata, retained, actor.String, links)
-		if err != nil {
-			return nil, err
-		}
-		result[path] = record
-	}
-	return result, rows.Err()
 }

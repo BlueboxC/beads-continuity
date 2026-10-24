@@ -34,7 +34,8 @@ func TestCommonMetadataStoredAndRetainedAcrossResourceKinds(t *testing.T) {
 			if err != nil || !bytes.Equal(issue.Metadata, []byte(`{"team":"issues"}`)) || len(issue.Properties.Metadata) != 0 {
 				t.Fatalf("Issue create metadata = %s, properties=%+v, %v", issue.Metadata, issue.Properties, err)
 			}
-			link, err := s.AddInformationalLink(ctx, LinkCreateRequest{Path: "links/context", SourcePath: "beads/plan", TargetPath: "beads/work", ExpectedSourceRevision: memory.Revision, Properties: map[string]any{"note": "original"}, Metadata: json.RawMessage(`{"source":"manual"}`)})
+			createSelectedConstraintFixture(t, ctx, s, "beads/z-rule")
+			link, err := s.AddInformationalLink(ctx, LinkCreateRequest{Path: "links/context", TypeURL: s.ScopeURL() + "types/subject-to", SourcePath: "beads/plan", TargetPath: "beads/z-rule", ExpectedSourceRevision: memory.Revision, Properties: map[string]any{"note": "original"}, Metadata: json.RawMessage(`{"source":"manual"}`)})
 			if err != nil || !bytes.Equal(link.Link.Metadata, []byte(`{"source":"manual"}`)) {
 				t.Fatalf("Link create metadata = %s, %v", link.Link.Metadata, err)
 			}
@@ -136,6 +137,7 @@ func TestIssueMetadataPatchPreservesCurrentReadBudget(t *testing.T) {
 	for _, backend := range []string{"embedded", "server"} {
 		t.Run(backend, func(t *testing.T) {
 			ctx, o := issueExperimentOptions(t, backend)
+			ctx = currentReadBudgetContext(t, ctx)
 			s, err := OpenExisting(ctx, o)
 			if err != nil {
 				t.Fatal(err)
@@ -145,7 +147,7 @@ func TestIssueMetadataPatchPreservesCurrentReadBudget(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			if _, err := s.Create(ctx, CreateRequest{Path: "beads/context", Body: strings.Repeat("x", 7<<20)}); err != nil {
+			if _, err := s.Create(ctx, CreateRequest{Title: "Context", Path: "beads/context", Body: strings.Repeat("x", 7<<20)}); err != nil {
 				t.Fatal(err)
 			}
 			before := workflowState(t, ctx, s)

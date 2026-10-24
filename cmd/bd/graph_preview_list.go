@@ -44,7 +44,12 @@ func runGraphPreviewList(cmd *cobra.Command) error {
 	}
 	if !plan.issueQuery {
 		return withGraphStoreOutput(func(ctx context.Context, s *graphstore.Store) (any, string, error) {
-			page, err := s.ListBeads(ctx, graphstore.BeadListRequest{TypeURL: selectedType, All: in.AllFlag, Limit: *in.Limit, MaxRows: in.MaxRows})
+			request := graphstore.BeadListRequest{TypeURL: selectedType, All: in.AllFlag, Limit: *in.Limit, MaxRows: in.MaxRows}
+			if selectedType == graphstore.IssueTypeURL(s.ScopeURL()) {
+				request.TypeURL = ""
+				request.ConformsTo = selectedType
+			}
+			page, err := s.ListBeads(ctx, request)
 			if err != nil {
 				return nil, "", err
 			}

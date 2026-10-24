@@ -4,6 +4,7 @@ package graphstore
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"strings"
@@ -212,9 +213,9 @@ func TestVersionsMemoryAndLinkPlanes(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			// A Memory owns its outgoing Links, so linking mints a Memory version
+			// SupersededBy is owned, so linking mints a Memory version
 			// as well as the Link's own first version.
-			added, err := s.AddInformationalLink(ctx, LinkCreateRequest{Path: "links/context",
+			added, err := s.AddInformationalLink(ctx, LinkCreateRequest{Path: "links/context", TypeURL: s.ScopeURL() + "types/superseded-by",
 				SourcePath: "beads/plan", TargetPath: "beads/notes", ExpectedSourceRevision: revised.Memory.Revision,
 				Properties: map[string]any{"note": "before"}, Actor: "linker"})
 			if err != nil {
@@ -622,7 +623,7 @@ func TestVersionsOfDeletedSubjects(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			added, err := s.AddInformationalLink(ctx, LinkCreateRequest{Path: "links/context",
+			added, err := s.AddInformationalLink(ctx, LinkCreateRequest{Path: "links/context", TypeURL: s.ScopeURL() + "types/superseded-by",
 				SourcePath: "beads/plan", TargetPath: "beads/notes", ExpectedSourceRevision: plan.Revision,
 				Properties: map[string]any{"note": "before"}, Actor: "linker"})
 			if err != nil {
@@ -656,8 +657,8 @@ func TestVersionsOfDeletedSubjects(t *testing.T) {
 			if links[1].Removed {
 				t.Errorf("a resolvable Link version is flagged Removed: %+v", links[1])
 			}
-			// A deleted Memory mints no successor version, so its final live head
-			// stays its newest retained version and stays readable.
+			// A deleted Memory retains a separate terminal D while its last-live
+			// snapshot remains readable by its own token.
 			deleted, err := s.DeleteMemory(ctx, MemoryDeleteRequest{Path: "beads/notes",
 				ExpectedRevision: notes.Revision, Actor: "remover"})
 			if err != nil || !deleted.Deleted {
@@ -667,34 +668,23 @@ func TestVersionsOfDeletedSubjects(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			if kind != KindMemory || len(rows) != 1 || rows[0].Version != notes.Revision {
+			if kind != KindMemory || len(rows) != 2 || deleted.Terminal == nil || rows[0].Version != deleted.Terminal.Revision || rows[1].Version != notes.Revision {
 				t.Fatalf("deleted Memory history: kind=%q rows=%+v", kind, rows)
 			}
-			// Deletion alone does not make a row uncitable: this head still
-			// resolves, so it is not flagged.
-			if rows[0].Removed {
-				t.Errorf("a deleted Memory's resolvable head is flagged Removed: %+v", rows[0])
+			if !rows[0].Removed || rows[1].Removed {
+				t.Errorf("Memory terminal/live classification: %+v", rows)
 			}
-			checkVersionList(t, ctx, s, "beads/notes", rows, "")
+			checkVersionList(t, ctx, s, "beads/notes", rows, deleted.Terminal.Revision)
 		})
 	}
 }
 
-// TestVersionsOfExampleInformationalLinks pins that a listing accepts every
-// informational Link Type the store has installed, not only the original
-// Related one, and refuses an informational Type the store has not installed.
-//
-// This fails on the code before it: versionsInTx compared the informational
-// backing's type_url against RelatedTypeURL alone, so every Link of the
-// example-follows and example-cites Types, live or deleted, was refused as an
-// unsupported retained allocation (ErrInvalidStore) while ReadVersion resolved
-// the very tokens the list should have returned. The legacy half pins the other
-// direction: accepting the example Types must not let a four-Type installation
-// list an allocation of a Type it never installed, which ReadVersion refuses.
-func TestVersionsOfExampleInformationalLinks(t *testing.T) {
+// TestVersionsOfSelectedInformationalLinks pins owned selected Link histories
+// and a separate unowned References control, including deleted Links.
+func TestVersionsOfSelectedInformationalLinks(t *testing.T) {
 	for _, backend := range []string{"embedded", "server"} {
 		t.Run(backend, func(t *testing.T) {
-			ctx, o := issueExperimentOptionsForSchema(t, backend, LegacySchemaVersion)
+			ctx, o := issueExperimentOptions(t, backend)
 			s := openVersionsStore(t, ctx, o)
 			policy, err := s.Create(ctx, CreateRequest{Path: "beads/policy", Title: "Policy", Body: "Code flow policy", Actor: "author"})
 			if err != nil {
@@ -703,17 +693,15 @@ func TestVersionsOfExampleInformationalLinks(t *testing.T) {
 			if _, err := s.CreateIssue(ctx, "beads/work", plainIssue("Work")); err != nil {
 				t.Fatal(err)
 			}
-			// The Memory owns each Link it is the source of, so every write to
-			// such a Link also mints a Memory version that the next write guards.
+			createSelectedConstraintFixture(t, ctx, s, "beads/rule")
+			// Both selected relations here are owned, so each Link write also
+			// mints a Memory version that the next write guards.
 			source := policy.Revision
-			// Every example allocation and one of its tokens, for the legacy half.
-			type allocation struct{ path, token string }
-			var allocated []allocation
-			for _, typ := range []string{ExampleCitesTypeURL(s.ScopeURL()), ExampleFollowsTypeURL(s.ScopeURL())} {
+			for _, typ := range []string{s.ScopeURL() + "types/subject-to", s.ScopeURL() + "types/superseded-by"} {
 				name := strings.TrimPrefix(typ, s.ScopeURL()+"types/")
 				path := "links/" + name
 				added, err := s.AddInformationalLink(ctx, LinkCreateRequest{Path: path, TypeURL: typ,
-					SourcePath: "beads/policy", TargetPath: "beads/work", ExpectedSourceRevision: source,
+					SourcePath: "beads/policy", TargetPath: "beads/rule", ExpectedSourceRevision: source,
 					Properties: map[string]any{"note": "before"}, Actor: "linker"})
 				if err != nil || added.Link.Type != typ {
 					t.Fatalf("%s: add: %+v %v", name, added, err)
@@ -756,9 +744,9 @@ func TestVersionsOfExampleInformationalLinks(t *testing.T) {
 					t.Errorf("%s: only the deletion marker may be flagged Removed: %+v", name, rows)
 				}
 				checkVersionList(t, ctx, s, path, rows, removed.Link.Revision)
-				// An Issue source does not own its Links, so this one stays live
-				// without advancing the Memory's history.
-				kept, err := s.AddInformationalLink(ctx, LinkCreateRequest{Path: path + "-live", TypeURL: typ,
+				// References is unowned for this Issue-to-Memory pair; this live
+				// control does not advance either endpoint's history.
+				kept, err := s.AddInformationalLink(ctx, LinkCreateRequest{Path: path + "-live", TypeURL: RelatedTypeURL(s.ScopeURL()),
 					SourcePath: "beads/work", TargetPath: "beads/policy", Actor: "linker"})
 				if err != nil {
 					t.Fatalf("%s: add live: %v", name, err)
@@ -768,35 +756,6 @@ func TestVersionsOfExampleInformationalLinks(t *testing.T) {
 				if kind, rows, err := s.Versions(ctx, path+"-live"); err != nil || kind != KindLink || len(rows) != 1 || rows[0].Version != kept.Link.Revision {
 					t.Fatalf("%s: kept Link history: kind=%q rows=%+v err=%v", name, kind, rows, err)
 				}
-				allocated = append(allocated, allocation{path, added.Link.Version}, allocation{path + "-live", kept.Link.Version})
-			}
-			related, err := s.AddInformationalLink(ctx, LinkCreateRequest{Path: "links/related",
-				SourcePath: "beads/policy", TargetPath: "beads/work", ExpectedSourceRevision: source, Actor: "linker"})
-			if err != nil || related.Link.Type != RelatedTypeURL(s.ScopeURL()) {
-				t.Fatalf("Related Link: %+v %v", related, err)
-			}
-			// Removing both example rows leaves exactly the original four-Type
-			// installation, as in TestExampleTypesLegacyInstallation. Such a store
-			// can hold an example allocation only if it is corrupt.
-			if _, err := s.db.ExecContext(ctx, `DELETE FROM graph_preview_types WHERE name IN ('example-follows','example-cites')`); err != nil {
-				t.Fatal(err)
-			}
-			for _, subject := range allocated {
-				kind, rows, err := s.Versions(ctx, subject.path)
-				if !errors.Is(err, ErrInvalidStore) || kind != "" || rows != nil {
-					t.Fatalf("%s on a four-Type installation: kind=%q rows=%+v err=%v; want ErrInvalidStore", subject.path, kind, rows, err)
-				}
-				// Parity is the contract: the single read refuses this allocation
-				// too, and the list must not be the lenient one.
-				if _, err := s.ReadVersion(ctx, subject.path, subject.token); !errors.Is(err, ErrInvalidStore) {
-					t.Fatalf("%s single read on a four-Type installation: %v; want ErrInvalidStore", subject.path, err)
-				}
-			}
-			// The refusal belongs to the uninstalled Types, not to the informational
-			// backing: the installed Related Type still lists on the same store.
-			kind, rows, err := s.Versions(ctx, "links/related")
-			if err != nil || kind != KindLink || len(rows) != 1 || rows[0].Version != related.Link.Revision {
-				t.Fatalf("Related Link on a four-Type installation: kind=%q rows=%+v err=%v", kind, rows, err)
 			}
 		})
 	}
@@ -905,6 +864,63 @@ func TestVersionsIsAReadOnlyOperation(t *testing.T) {
 			}
 			if before != after {
 				t.Fatal("listing versions changed writer coordination state")
+			}
+		})
+	}
+}
+
+// Link terminal interpretation remains the existing current-head-only contract.
+// An unexpected root member in an older Link snapshot is a read-time corruption
+// refusal, not permission for History to hide that row as a deletion marker.
+func TestVersionsLinkTerminalClassificationBoundary(t *testing.T) {
+	for _, engine := range []string{"embedded", "server"} {
+		t.Run(engine, func(t *testing.T) {
+			ctx, _, s := memoryDeleteStore(t, engine)
+			source, err := s.Create(ctx, CreateRequest{Path: "beads/source", Title: "Source"})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if _, err := s.Create(ctx, CreateRequest{Path: "beads/target", Title: "Target"}); err != nil {
+				t.Fatal(err)
+			}
+			first, err := s.AddInformationalLink(ctx, LinkCreateRequest{Path: "links/boundary", SourcePath: "beads/source", TargetPath: "beads/target", ExpectedSourceRevision: source.Revision})
+			if err != nil {
+				t.Fatal(err)
+			}
+			second, err := s.UpdateLink(ctx, LinkUpdateRequest{Path: "links/boundary", Properties: map[string]any{"note": "second"}, ExpectedRevision: first.Link.Revision, UnconditionalSource: true})
+			if err != nil {
+				t.Fatal(err)
+			}
+			raw, err := canonicalJSON(first.Link)
+			if err != nil {
+				t.Fatal(err)
+			}
+			var fields map[string]json.RawMessage
+			if err := json.Unmarshal(raw, &fields); err != nil {
+				t.Fatal(err)
+			}
+			fields["state"] = json.RawMessage(`"deleted"`)
+			corrupt, err := canonicalJSON(fields)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if _, err := s.db.ExecContext(ctx, `UPDATE graph_preview_versions SET snapshot=? WHERE path=? AND version=?`, corrupt, "links/boundary", first.Link.Revision); err != nil {
+				t.Fatal(err)
+			}
+			_, rows, err := s.Versions(ctx, "links/boundary")
+			if err != nil || len(rows) != 2 || rows[0].Removed || !rows[1].Removed {
+				t.Fatalf("older terminal-shaped Link row was not classified separately: %+v %v", rows, err)
+			}
+			if _, err := s.ReadVersion(ctx, "links/boundary", first.Link.Revision); !errors.Is(err, ErrInvalidStore) {
+				t.Fatalf("unexpected Link member became terminal instead of corrupt: %v", err)
+			}
+			removed, err := s.Unlink(ctx, LinkDeleteRequest{Path: "links/boundary", ExpectedRevision: second.Link.Revision, UnconditionalSource: true})
+			if err != nil {
+				t.Fatal(err)
+			}
+			_, rows, err = s.Versions(ctx, "links/boundary")
+			if err != nil || len(rows) != 3 || !rows[0].Removed || rows[1].Removed || !rows[2].Removed || rows[0].Version != removed.Link.Revision {
+				t.Fatalf("all terminal-shaped Link rows must remain separate from citable snapshots: %+v %v", rows, err)
 			}
 		})
 	}

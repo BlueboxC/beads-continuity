@@ -141,7 +141,7 @@ func TestVersionComparisonJSONSemantics(t *testing.T) {
 	if got.Changes[0].Member != "gone" || !got.Changes[0].From.Present || string(got.Changes[0].From.Value) != "null" || got.Changes[0].To.Present || got.Changes[1].Member != "n" || string(got.Changes[1].From.Value) != "9007199254740993" || got.Changes[2].Member != "new" || got.Changes[2].From.Present || string(got.Changes[2].To.Value) != "null" {
 		t.Fatalf("absence/null/number: %+v", got.Changes)
 	}
-	if !reflect.DeepEqual(got.Compared, []string{"properties", "metadata"}) || len(got.Unsupported) != 0 {
+	if !reflect.DeepEqual(got.Compared, []string{"properties", "metadata", "endpoints"}) || len(got.Unsupported) != 0 {
 		t.Fatalf("Link scope: %+v", got)
 	}
 }
@@ -227,5 +227,25 @@ func TestVersionComparisonOrderingAndIdentity(t *testing.T) {
 	}
 	if _, err := compareVersionRecords(a, comparisonMemory("a", "")); !errors.Is(err, ErrInvalidStore) {
 		t.Fatal(err)
+	}
+}
+
+func TestVersionComparisonEndpointRepinAndOwnedReferences(t *testing.T) {
+	a, b := comparisonLink("a"), comparisonLink("b")
+	a.TargetRevision, b.TargetRevision = "target-old", "target-new"
+	got, err := compareVersionRecords(a, b)
+	if err != nil || len(got.Changes) != 1 || got.Changes[0].Area != "endpoints" || got.Changes[0].Member != "target" || string(got.Changes[0].From.Value) != string(comparisonRaw(t, a.TargetReference())) || string(got.Changes[0].To.Value) != string(comparisonRaw(t, b.TargetReference())) {
+		t.Fatalf("endpoint pin comparison: %+v %v", got, err)
+	}
+	ownerA, ownerB := comparisonMemory("oa", "Owner"), comparisonMemory("ob", "Owner")
+	ownerA.Owned, ownerB.Owned = []json.RawMessage{comparisonRaw(t, a)}, []json.RawMessage{comparisonRaw(t, b)}
+	got, err = compareVersionRecords(ownerA, ownerB)
+	if err != nil || len(got.Changes) != 1 || got.Changes[0].Area != "owned" || got.Changes[0].ID != a.ID {
+		t.Fatalf("owned pin comparison: %+v %v", got, err)
+	}
+	b.Target = "https://example.test/beads/other"
+	ownerB.Owned = []json.RawMessage{comparisonRaw(t, b)}
+	if _, err := compareVersionRecords(ownerA, ownerB); !errors.Is(err, ErrInvalidStore) {
+		t.Fatalf("identity retarget was allowed: %v", err)
 	}
 }

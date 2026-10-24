@@ -10,6 +10,8 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"iter"
+	"maps"
 	"path/filepath"
 	"regexp"
 	"sort"
@@ -338,13 +340,26 @@ func Read(plane map[string]string, session, turn string, limit int) View {
 }
 
 func readRecent(plane map[string]string, session, turn string, limit int, kind string) View {
+	return readRows(plane[SettingsKey], maps.All(plane), session, turn, limit, kind)
+}
+
+// ReadRows applies the same validation, counts and heap to a bounded-row iterator.
+func ReadRows(settings string, rows iter.Seq2[string, string], session, turn string, limit int, summariesOnly bool) View {
+	kind := ""
+	if summariesOnly {
+		kind = "turn_end"
+	}
+	return readRows(settings, rows, session, turn, limit, kind)
+}
+
+func readRows(settingsRaw string, rows iter.Seq2[string, string], session, turn string, limit int, kind string) View {
 	v := View{Events: []Event{}}
 	selected := recentEvents{}
 	var settings Settings
-	if json.Unmarshal([]byte(plane[SettingsKey]), &settings) == nil && settings.Version == 1 {
+	if json.Unmarshal([]byte(settingsRaw), &settings) == nil && settings.Version == 1 {
 		v.Enabled = settings.Enabled
 	}
-	for key, raw := range plane {
+	for key, raw := range rows {
 		if !strings.HasPrefix(key, Prefix+"event/") {
 			continue
 		}
@@ -376,7 +391,11 @@ func readRecent(plane map[string]string, session, turn string, limit int, kind s
 
 // Context includes only a bounded recovery pointer and reported turn summaries.
 func Context(plane map[string]string) string {
-	v := readRecent(plane, "", "", 3, "turn_end")
+	return FormatContext(readRecent(plane, "", "", 3, "turn_end"))
+}
+
+// FormatContext renders an already selected observational view without rereading history.
+func FormatContext(v View) string {
 	if !v.Enabled && v.Total == 0 {
 		return ""
 	}

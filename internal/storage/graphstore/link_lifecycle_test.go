@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/steveyegge/beads/internal/storage"
+	"github.com/steveyegge/beads/internal/types"
 )
 
 func TestLinkUnlinkAndIncidentLifecycle(t *testing.T) {
@@ -28,11 +29,11 @@ func TestLinkUnlinkAndIncidentLifecycle(t *testing.T) {
 					t.Error(err)
 				}
 			})
-			source, err := s.Create(ctx, CreateRequest{Path: "beads/source"})
+			source, err := s.Create(ctx, CreateRequest{Path: "beads/source", Title: "Fixture"})
 			if err != nil {
 				t.Fatal(err)
 			}
-			target, err := s.Create(ctx, CreateRequest{Path: "beads/target"})
+			target, err := s.Create(ctx, CreateRequest{Path: "beads/target", Title: "Fixture", TypeURL: s.ScopeURL() + "types/constraint"})
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -56,7 +57,7 @@ func TestLinkUnlinkAndIncidentLifecycle(t *testing.T) {
 			assertIncident(t, ctx, s, LinksRequest{BeadPath: "beads/work"}, dep.Link, info.Link)
 			assertIncident(t, ctx, s, LinksRequest{BeadPath: "beads/work", Direction: "in"})
 			assertIncident(t, ctx, s, LinksRequest{BeadPath: "beads/work", TypeURL: RelatedTypeURL(o.Binding.ScopeURL)}, info.Link)
-			if _, err := s.Unlink(ctx, LinkDeleteRequest{SourcePath: "beads/work", TargetPath: "beads/prereq", TypeURL: DependencyTypeURL(o.Binding.ScopeURL), Actor: "author", Unconditional: true, UnconditionalSource: true}); !errors.Is(err, ErrCapabilityUnavailable) {
+			if _, err := s.Unlink(ctx, LinkDeleteRequest{SourcePath: "beads/work", TargetPath: "beads/prereq", TypeURL: dep.Link.Type, Actor: "author", Unconditional: true, UnconditionalSource: true}); !errors.Is(err, ErrCapabilityUnavailable) {
 				t.Fatalf("blocking removal: %v", err)
 			}
 			if _, err := s.ListLinks(ctx, LinksRequest{BeadPath: "beads/work", Direction: "other"}); !errors.Is(err, storage.ErrValidation) {
@@ -67,7 +68,7 @@ func TestLinkUnlinkAndIncidentLifecycle(t *testing.T) {
 			}
 			links := []LinkRecord{}
 			for _, path := range []string{"links/a", "links/z"} {
-				added, err := s.AddInformationalLink(ctx, LinkCreateRequest{Path: path, SourcePath: "beads/source", TargetPath: "beads/target", ExpectedSourceRevision: source.Revision})
+				added, err := s.AddInformationalLink(ctx, LinkCreateRequest{TypeURL: o.Binding.ScopeURL + "types/subject-to", Path: path, SourcePath: "beads/source", TargetPath: "beads/target", ExpectedSourceRevision: source.Revision})
 				if err != nil {
 					t.Fatal(err)
 				}
@@ -75,7 +76,7 @@ func TestLinkUnlinkAndIncidentLifecycle(t *testing.T) {
 				links = append(links, added.Link)
 			}
 			before := workflowState(t, ctx, s)
-			pair := LinkDeleteRequest{SourcePath: "beads/source", TargetPath: "beads/target", TypeURL: RelatedTypeURL(o.Binding.ScopeURL), Unconditional: true, ExpectedSourceRevision: source.Revision, Actor: "deleter"}
+			pair := LinkDeleteRequest{SourcePath: "beads/source", TargetPath: "beads/target", TypeURL: o.Binding.ScopeURL + "types/subject-to", Unconditional: true, ExpectedSourceRevision: source.Revision, Actor: "deleter"}
 			var ambiguous *ErrAmbiguousLink
 			if _, err := s.Unlink(ctx, pair); !errors.As(err, &ambiguous) || !reflect.DeepEqual(ambiguous.CandidateIDs, []string{links[0].ID, links[1].ID}) {
 				t.Fatalf("ambiguity: %+v %v", ambiguous, err)
@@ -145,7 +146,7 @@ func TestLinkUnlinkAndIncidentLifecycle(t *testing.T) {
 			if _, err := s.UpdateLink(ctx, LinkUpdateRequest{Path: "links/a", Unconditional: true, UnconditionalSource: true}); !errors.Is(err, ErrGone) {
 				t.Fatalf("deleted update: %v", err)
 			}
-			if _, err := s.AddInformationalLink(ctx, LinkCreateRequest{Path: "links/a", SourcePath: "beads/source", TargetPath: "beads/target", UnconditionalSource: true}); !errors.Is(err, ErrAlreadyExists) {
+			if _, err := s.AddInformationalLink(ctx, LinkCreateRequest{TypeURL: o.Binding.ScopeURL + "types/subject-to", Path: "links/a", SourcePath: "beads/source", TargetPath: "beads/target", UnconditionalSource: true}); !errors.Is(err, ErrAlreadyExists) {
 				t.Fatalf("identity reuse: %v", err)
 			}
 			if !reflect.DeepEqual(before, workflowState(t, ctx, s)) {
@@ -195,6 +196,109 @@ func TestLinkUnlinkAndIncidentLifecycle(t *testing.T) {
 	}
 }
 
+func TestLinkCollectionEndpointPinApplicability(t *testing.T) {
+	const scope = "https://example.test/links/"
+	current := map[string]string{"beads/a": "r2", "beads/b": "r1"}
+	link := LinkRecord{Source: scope + "a", Target: scope + "b", SourceRevision: "r1"}
+	for _, tc := range []struct {
+		name string
+		pin  LinkPinSelection
+		all  bool
+		want bool
+	}{
+		{"bare admits every pin", LinkPinSelection{}, false, true},
+		{"old exact admits matching pin", LinkPinSelection{Revision: "r1", Explicit: true}, false, true},
+		{"current excludes old pin", LinkPinSelection{Current: true, Explicit: true}, false, false},
+		{"all revisions overrides applicability", LinkPinSelection{Current: true, Explicit: true}, true, true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			request := LinkCollectionRequest{IncidentPath: "beads/a", IncidentURL: scope + "a", IncidentPin: tc.pin, AllRevisions: tc.all}
+			if got := LinkCollectionMatches(link, request, current); got != tc.want {
+				t.Fatalf("matched=%t want %t", got, tc.want)
+			}
+		})
+	}
+	link.SourceRevision = ""
+	for _, pin := range []LinkPinSelection{{Current: true, Explicit: true}, {Revision: "r2", Explicit: true}} {
+		if !LinkCollectionMatches(link, LinkCollectionRequest{IncidentPath: "beads/a", IncidentURL: scope + "a", IncidentPin: pin}, current) {
+			t.Fatalf("current selection lost floating pin: %+v", pin)
+		}
+	}
+	if LinkCollectionMatches(link, LinkCollectionRequest{IncidentPath: "beads/a", IncidentURL: scope + "a", IncidentPin: LinkPinSelection{Revision: "r1", Explicit: true}}, current) {
+		t.Fatal("historical exact selection admitted floating pin")
+	}
+	for _, direction := range []string{"out", "in", "both"} {
+		request := LinkCollectionRequest{SourcePath: "beads/a", SourceURL: scope + "a", TargetPath: "beads/b", TargetURL: scope + "b", PairDirection: direction}
+		if got := LinkCollectionMatches(link, request, current); got != (direction != "in") {
+			t.Fatalf("pair %s matched=%t", direction, got)
+		}
+		link.Source, link.Target = link.Target, link.Source
+		if got := LinkCollectionMatches(link, request, current); got != (direction != "out") {
+			t.Fatalf("reverse pair %s matched=%t", direction, got)
+		}
+		link.Source, link.Target = link.Target, link.Source
+	}
+	link.Source, link.Target = scope+"a", scope+"a"
+	if !LinkCollectionMatches(link, LinkCollectionRequest{SourcePath: "beads/a", SourceURL: scope + "a", TargetPath: "beads/a", TargetURL: scope + "a", PairDirection: "both"}, current) {
+		t.Fatal("bidirectional pair dropped self-Link")
+	}
+}
+
+func TestCollectLinksSelectsCompleteCurrentLinks(t *testing.T) {
+	for _, backend := range []string{"embedded", "server"} {
+		t.Run(backend, func(t *testing.T) {
+			ctx, options := issueExperimentOptions(t, backend)
+			store, err := OpenExisting(ctx, options)
+			if err != nil {
+				t.Fatal(err)
+			}
+			t.Cleanup(func() {
+				if err := store.Close(); err != nil {
+					t.Error(err)
+				}
+			})
+			for _, path := range []string{"beads/source", "beads/target", "beads/other"} {
+				if _, err := store.Create(ctx, CreateRequest{Path: path, Title: "Fixture"}); err != nil {
+					t.Fatal(err)
+				}
+			}
+			first, err := store.AddInformationalLink(ctx, LinkCreateRequest{Path: "links/first", SourcePath: "beads/source", TargetPath: "beads/target", UnconditionalSource: true})
+			if err != nil {
+				t.Fatal(err)
+			}
+			second, err := store.AddInformationalLink(ctx, LinkCreateRequest{Path: "links/second", SourcePath: "beads/other", TargetPath: "beads/source", UnconditionalSource: true})
+			if err != nil {
+				t.Fatal(err)
+			}
+			all, err := store.CollectLinks(ctx, LinkCollectionRequest{})
+			if err != nil || len(all) != 2 || all[0].ID != first.Link.ID || all[1].ID != second.Link.ID {
+				t.Fatalf("all current Links: %+v, %v", all, err)
+			}
+			for _, tc := range []struct {
+				request LinkCollectionRequest
+				want    string
+			}{
+				{LinkCollectionRequest{SourcePath: "beads/source"}, first.Link.ID},
+				{LinkCollectionRequest{TargetPath: "beads/source"}, second.Link.ID},
+				{LinkCollectionRequest{IncidentPath: "beads/target"}, first.Link.ID},
+				{LinkCollectionRequest{TypeURL: RelatedTypeURL(options.Binding.ScopeURL), SourcePath: "beads/other"}, second.Link.ID},
+			} {
+				links, err := store.CollectLinks(ctx, tc.request)
+				if err != nil || len(links) != 1 || links[0].ID != tc.want {
+					t.Fatalf("request %+v: %+v, %v", tc.request, links, err)
+				}
+			}
+			if _, err := store.Unlink(ctx, LinkDeleteRequest{Path: "links/first", Unconditional: true, UnconditionalSource: true}); err != nil {
+				t.Fatal(err)
+			}
+			current, err := store.CollectLinks(ctx, LinkCollectionRequest{})
+			if err != nil || len(current) != 1 || current[0].ID != second.Link.ID {
+				t.Fatalf("after deletion: %+v, %v", current, err)
+			}
+		})
+	}
+}
+
 func assertIncident(t *testing.T, ctx context.Context, s *Store, request LinksRequest, want ...LinkRecord) {
 	t.Helper()
 	got, err := s.ListLinks(ctx, request)
@@ -233,16 +337,30 @@ func TestLinkUnlinkSelf(t *testing.T) {
 					t.Error(err)
 				}
 			}()
-			memory, err := s.Create(ctx, CreateRequest{Path: "beads/self"})
+			memory, err := s.Create(ctx, CreateRequest{Path: "beads/self", Title: "Fixture"})
 			if err != nil {
 				t.Fatal(err)
 			}
-			created, err := s.AddInformationalLink(ctx, LinkCreateRequest{Path: "links/self", SourcePath: "beads/self", TargetPath: "beads/self", ExpectedSourceRevision: memory.Revision})
+			beforeSelf := workflowState(t, ctx, s)
+			refused, err := s.AddInformationalLink(ctx, LinkCreateRequest{Path: "links/self", SourcePath: "beads/self", TargetPath: "beads/self", ExpectedSourceRevision: memory.Revision})
+			if !errors.Is(err, storage.ErrValidation) || !reflect.ValueOf(refused).IsZero() || !reflect.DeepEqual(beforeSelf, workflowState(t, ctx, s)) {
+				t.Fatalf("self Reference must refuse atomically: %+v %v", refused, err)
+			}
+			target, err := s.Create(ctx, CreateRequest{Path: "beads/constraint", Title: "Constraint", TypeURL: s.ScopeURL() + "types/constraint"})
 			if err != nil {
 				t.Fatal(err)
 			}
-			for _, direction := range []string{"in", "out", "both"} {
+			created, err := s.AddInformationalLink(ctx, LinkCreateRequest{TypeURL: s.ScopeURL() + "types/subject-to", Path: "links/self", SourcePath: "beads/self", TargetPath: "beads/constraint", ExpectedSourceRevision: memory.Revision})
+			if err != nil {
+				t.Fatal(err)
+			}
+			assertIncident(t, ctx, s, LinksRequest{BeadPath: "beads/self", Direction: "in"})
+			for _, direction := range []string{"out", "both"} {
 				assertIncident(t, ctx, s, LinksRequest{BeadPath: "beads/self", Direction: direction}, created.Link)
+			}
+			assertIncident(t, ctx, s, LinksRequest{BeadPath: "beads/constraint", Direction: "in"}, created.Link)
+			if got, err := s.Show(ctx, "beads/constraint"); err != nil || !reflect.DeepEqual(got, target) {
+				t.Fatalf("target changed: %v", err)
 			}
 			source := created.Source.(Record)
 			removed, err := s.Unlink(ctx, LinkDeleteRequest{Path: "links/self", ExpectedRevision: created.Link.Revision, ExpectedSourceRevision: source.Revision})
@@ -273,15 +391,15 @@ func TestLinkUnlinkConcurrentMutations(t *testing.T) {
 				if err != nil {
 					t.Fatal(err)
 				}
-				memory, err := s.Create(ctx, CreateRequest{Path: "beads/source"})
+				memory, err := s.Create(ctx, CreateRequest{Path: "beads/source", Title: "Fixture"})
 				if err != nil {
 					t.Fatal(err)
 				}
-				target, err := s.Create(ctx, CreateRequest{Path: "beads/target"})
+				target, err := s.Create(ctx, CreateRequest{Path: "beads/target", Title: "Fixture", TypeURL: s.ScopeURL() + "types/constraint"})
 				if err != nil {
 					t.Fatal(err)
 				}
-				added, err := s.AddInformationalLink(ctx, LinkCreateRequest{Path: "links/one", SourcePath: "beads/source", TargetPath: "beads/target", ExpectedSourceRevision: memory.Revision})
+				added, err := s.AddInformationalLink(ctx, LinkCreateRequest{TypeURL: o.Binding.ScopeURL + "types/subject-to", Path: "links/one", SourcePath: "beads/source", TargetPath: "beads/target", ExpectedSourceRevision: memory.Revision})
 				if err != nil {
 					t.Fatal(err)
 				}
@@ -313,9 +431,9 @@ func TestLinkUnlinkConcurrentMutations(t *testing.T) {
 						}
 						switch operation {
 						case "unlink":
-							_, err = worker.Unlink(ctx, LinkDeleteRequest{SourcePath: "beads/source", TargetPath: "beads/target", TypeURL: RelatedTypeURL(o.Binding.ScopeURL), ExpectedRevision: added.Link.Revision, ExpectedSourceRevision: source.Revision})
+							_, err = worker.Unlink(ctx, LinkDeleteRequest{SourcePath: "beads/source", TargetPath: "beads/target", TypeURL: o.Binding.ScopeURL + "types/subject-to", ExpectedRevision: added.Link.Revision, ExpectedSourceRevision: source.Revision})
 						case "create":
-							_, err = worker.AddInformationalLink(ctx, LinkCreateRequest{Path: "links/two", SourcePath: "beads/source", TargetPath: "beads/target", ExpectedSourceRevision: source.Revision})
+							_, err = worker.AddInformationalLink(ctx, LinkCreateRequest{TypeURL: o.Binding.ScopeURL + "types/subject-to", Path: "links/two", SourcePath: "beads/source", TargetPath: "beads/target", ExpectedSourceRevision: source.Revision})
 						case "update":
 							_, err = worker.UpdateLink(ctx, LinkUpdateRequest{Path: "links/one", Properties: map[string]any{"note": "raced"}, ExpectedRevision: added.Link.Revision, ExpectedSourceRevision: source.Revision})
 						}
@@ -400,7 +518,7 @@ func TestLinkUnlinkConcurrentMutations(t *testing.T) {
 
 func TestIncidentMappingCorruptionRefuses(t *testing.T) {
 	for _, backend := range []string{"embedded", "server"} {
-		for _, corruption := range []string{"informational-catalog", "informational-payload", "informational-type", "dependency-catalog", "dependency-payload"} {
+		for _, corruption := range []string{"informational-catalog", "informational-payload", "informational-type", "dependency-catalog", "dependency-payload", "dependency-type"} {
 			t.Run(backend+"/"+corruption, func(t *testing.T) {
 				ctx, o := issueExperimentOptions(t, backend)
 				s, err := OpenExisting(ctx, o)
@@ -413,14 +531,18 @@ func TestIncidentMappingCorruptionRefuses(t *testing.T) {
 					}
 				}()
 				for _, path := range []string{"beads/source", "beads/target"} {
-					if _, err := s.CreateIssue(ctx, path, plainIssue(path)); err != nil {
+					if path == "beads/target" && strings.HasPrefix(corruption, "informational") {
+						if _, err := s.Create(ctx, CreateRequest{Path: path, Title: "Target"}); err != nil {
+							t.Fatal(err)
+						}
+					} else if _, err := s.CreateIssue(ctx, path, plainIssue(path)); err != nil {
 						t.Fatal(err)
 					}
 				}
 				typ := RelatedTypeURL(o.Binding.ScopeURL)
 				if strings.HasPrefix(corruption, "dependency") {
 					_, err = s.AddDependency(ctx, DependencyRequest{Path: "links/test", SourcePath: "beads/source", TargetPath: "beads/target", Actor: "author"})
-					typ = DependencyTypeURL(o.Binding.ScopeURL)
+					typ, _ = relationshipDependencyTypeURL(o.Binding.ScopeURL, types.DepBlocks)
 				} else {
 					_, err = s.AddInformationalLink(ctx, LinkCreateRequest{Path: "links/test", SourcePath: "beads/source", TargetPath: "beads/target"})
 				}
@@ -433,6 +555,7 @@ func TestIncidentMappingCorruptionRefuses(t *testing.T) {
 					"informational-type":    `UPDATE graph_preview_catalog SET type_url='https://wrong.example/type' WHERE path='links/test'`,
 					"dependency-catalog":    `DELETE FROM graph_preview_catalog WHERE path='links/test'`,
 					"dependency-payload":    `DELETE FROM dependencies`,
+					"dependency-type":       `UPDATE graph_preview_catalog SET type_url='` + o.Binding.ScopeURL + `types/preview-parent-child' WHERE path='links/test'`,
 				}[corruption]
 				if _, err := s.db.ExecContext(ctx, query); err != nil {
 					t.Fatal(err)
@@ -444,7 +567,7 @@ func TestIncidentMappingCorruptionRefuses(t *testing.T) {
 				// Blocking pair selection is outside the preview capability and
 				// refuses before reading storage, even when that storage is corrupt.
 				wantPairError := ErrInvalidStore
-				if typ == DependencyTypeURL(o.Binding.ScopeURL) {
+				if typ != RelatedTypeURL(o.Binding.ScopeURL) {
 					wantPairError = ErrCapabilityUnavailable
 				}
 				if _, err := s.Unlink(ctx, LinkDeleteRequest{SourcePath: "beads/source", TargetPath: "beads/target", TypeURL: typ, Unconditional: true, UnconditionalSource: true}); !errors.Is(err, wantPairError) {
@@ -480,7 +603,7 @@ func TestIncidentLinkBudgetAndExactPair(t *testing.T) {
 				t.Fatal(err)
 			}
 			for _, path := range []string{"beads/common", "beads/unique"} {
-				if _, err := s.Create(ctx, CreateRequest{Path: path}); err != nil {
+				if _, err := s.Create(ctx, CreateRequest{Path: path, Title: "Fixture"}); err != nil {
 					t.Fatal(err)
 				}
 			}
@@ -550,7 +673,7 @@ func TestDeletedLinkPriorStateIntegrity(t *testing.T) {
 			if _, err := s.CreateIssue(ctx, "beads/source", plainIssue("Source")); err != nil {
 				t.Fatal(err)
 			}
-			if _, err := s.Create(ctx, CreateRequest{Path: "beads/target"}); err != nil {
+			if _, err := s.Create(ctx, CreateRequest{Path: "beads/target", Title: "Fixture"}); err != nil {
 				t.Fatal(err)
 			}
 			added, err := s.AddInformationalLink(ctx, LinkCreateRequest{Path: "links/prior", SourcePath: "beads/source", TargetPath: "beads/target", Actor: "author"})
@@ -560,15 +683,15 @@ func TestDeletedLinkPriorStateIntegrity(t *testing.T) {
 			if _, err := s.Unlink(ctx, LinkDeleteRequest{Path: "links/prior", ExpectedRevision: added.Link.Revision}); err != nil {
 				t.Fatal(err)
 			}
-			for _, corruption := range []string{"missing-endpoint", "invalid-property", "invalid-attribution", "actor-mismatch"} {
+			for _, corruption := range []string{"missing-endpoint", "nonobject-properties", "invalid-attribution", "actor-mismatch"} {
 				t.Run(corruption, func(t *testing.T) {
 					link := added.Link
 					actor := link.Attribution.Actor
 					switch corruption {
 					case "missing-endpoint":
 						link.Source = ""
-					case "invalid-property":
-						link.Properties = map[string]any{"note": 42}
+					case "nonobject-properties":
+						link.Properties = nil // null is not a properties object; numeric extension values are valid.
 					case "invalid-attribution":
 						link.Attribution.Status = "verified"
 					case "actor-mismatch":
@@ -599,7 +722,9 @@ func TestLinkUnlinkDefaultSourceReadBudget(t *testing.T) {
 			for _, selection := range []string{"id-default", "pair-default", "id-explicit"} {
 				t.Run(selection, func(t *testing.T) {
 					ctx, _, s, original, target, link := disclosureFixture(t, backend)
-					filler, err := s.Create(ctx, CreateRequest{Path: "beads/filler", Body: strings.Repeat("f", 6<<20)})
+					ctx = currentReadBudgetContext(t, ctx)
+					fillerBody := strings.Repeat("f", PreviewCurrentReadByteLimit/2-(512<<10))
+					filler, err := s.Create(ctx, CreateRequest{Path: "beads/filler", Title: "Fixture", Body: "small"})
 					if err != nil {
 						t.Fatal(err)
 					}
@@ -610,16 +735,15 @@ func TestLinkUnlinkDefaultSourceReadBudget(t *testing.T) {
 					if err != nil || !replacement.Changed {
 						t.Fatalf("oversized replacement: changed=%t err=%v", replacement.Changed, err)
 					}
+					_ = replaceLegacyFixtureMemory(t, ctx, s, "beads/filler", filler, fillerBody)
 					source := replacement.Source.(Record)
-					// Model oversized state left by a writer predating the budget guard.
-					replaceLegacyFixtureMemory(t, ctx, s, "beads/filler", filler, strings.Repeat("f", PreviewCurrentReadByteLimit/2-(512<<10)))
 					if _, err := s.Read(ctx, "links/out"); !errors.Is(err, ErrLimitExceeded) {
 						t.Fatalf("fixture must exceed current-read budget: %v", err)
 					}
 					request := LinkDeleteRequest{Path: "links/out", ExpectedRevision: replacement.Link.Revision, DefaultInformationalSource: true, Actor: "recovery"}
 					if selection == "pair-default" {
 						request.Path = ""
-						request.SourcePath, request.TargetPath, request.TypeURL = "beads/plan", "beads/target", RelatedTypeURL(s.ScopeURL())
+						request.SourcePath, request.TargetPath, request.TypeURL = "beads/plan", "beads/target", s.ScopeURL()+"types/subject-to"
 					} else if selection == "id-explicit" {
 						request.DefaultInformationalSource, request.UnconditionalSource = false, true
 					}

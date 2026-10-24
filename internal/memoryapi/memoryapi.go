@@ -171,3 +171,16 @@ func SelectMemories(all map[string]string, req memoryops.ListRequest) map[string
 	}
 	return FilterMemories(selected, req.Search)
 }
+
+func TitleFromBody(body string) string {
+	line, _, _ := strings.Cut(strings.TrimSpace(body), "\n")
+	title := []rune(strings.Join(strings.Fields(line), " "))
+	if len(title) == 0 {
+		return "Untitled memory"
+	}
+	const maxRunes = 80
+	if len(title) > maxRunes {
+		return string(title[:maxRunes-1]) + "…"
+	}
+	return string(title)
+}

@@ -108,6 +108,15 @@ func RemoveDependencyCommitMessage(issueID, dependsOnID string) string {
 // tables. That is why the phase loop and the gate are over the whole request
 // and the plane is decided per edge, one level down.
 func ExecuteAddDependencies(ctx context.Context, tx *sql.Tx, request publicops.AddDependenciesRequest) (publicops.AddDependenciesResult, ChangedTables, error) {
+	return executeAddDependencies(ctx, tx, request, false)
+}
+
+// ExecuteAddDependenciesCheckedLocal requires targets already resolved in this transaction.
+func ExecuteAddDependenciesCheckedLocal(ctx context.Context, tx *sql.Tx, request publicops.AddDependenciesRequest) (publicops.AddDependenciesResult, ChangedTables, error) {
+	return executeAddDependencies(ctx, tx, request, true)
+}
+
+func executeAddDependencies(ctx context.Context, tx *sql.Tx, request publicops.AddDependenciesRequest, checkedLocal bool) (publicops.AddDependenciesResult, ChangedTables, error) {
 	// One scoped query for the whole request instead of a probe per edge: a
 	// bulk `bd dep add --file` against a remote Dolt pays WAN latency per
 	// round-trip (GH#3414). Nothing an edge write does moves a source between
@@ -129,7 +138,7 @@ func ExecuteAddDependencies(ctx context.Context, tx *sql.Tx, request publicops.A
 				continue
 			}
 			_, sourceIsWisp := wispSources[edge.IssueID]
-			edgeTables, err := addDependencyEdgeInTx(ctx, tx, request, edge, sourceIsWisp)
+			edgeTables, err := addDependencyEdgeInTx(ctx, tx, request, edge, sourceIsWisp, checkedLocal)
 			if err != nil {
 				return publicops.AddDependenciesResult{}, nil, err
 			}
@@ -159,20 +168,37 @@ func ExecuteAddDependencies(ctx context.Context, tx *sql.Tx, request publicops.A
 // *DependencyTypeConflictError, *DependencyHierarchyConflictError,
 // ErrDependencyCycle, a missing endpoint — is already a complete sentence, and
 // the store's own dependency verb has always surfaced them verbatim.
-func addDependencyEdgeInTx(ctx context.Context, tx *sql.Tx, request publicops.AddDependenciesRequest, edge publicops.DependencyEdge, sourceIsWisp bool) (ChangedTables, error) {
+func addDependencyEdgeInTx(ctx context.Context, tx *sql.Tx, request publicops.AddDependenciesRequest, edge publicops.DependencyEdge, sourceIsWisp, checkedLocal bool) (ChangedTables, error) {
 	sourceTable, _, eventTable, depTable := WispTableRouting(sourceIsWisp)
+	var targetKind *DepTargetKind
+	var checkedTarget *DepTargetPrecheck
+	if checkedLocal {
+		localIssue := DepTargetIssue
+		targetKind = &localIssue
+		checkedTarget = &DepTargetPrecheck{}
+		if err := tx.QueryRowContext(ctx, `SELECT issue_type, status FROM issues WHERE id=?`, edge.DependsOnID).Scan(&checkedTarget.IssueType, &checkedTarget.Status); err != nil {
+			return nil, err
+		}
+	}
 
 	dep := &types.Dependency{IssueID: edge.IssueID, DependsOnID: edge.DependsOnID, Type: edge.Type}
 	eventWritten, err := AddDependencyInTx(ctx, tx, dep, request.Actor, AddDependencyOpts{
-		SourceTable:    sourceTable,
-		WriteTable:     depTable,
-		IsCrossPrefix:  types.ExtractPrefix(edge.IssueID) != types.ExtractPrefix(edge.DependsOnID),
-		SkipCycleCheck: request.SkipPerEdgeCycleCheck,
-		EmitEvent:      true,
+		SourceTable:      sourceTable,
+		WriteTable:       depTable,
+		IsCrossPrefix:    !checkedLocal && types.ExtractPrefix(edge.IssueID) != types.ExtractPrefix(edge.DependsOnID),
+		TargetKind:       targetKind,
+		PrecheckedTarget: checkedTarget,
+		SkipCycleCheck:   request.SkipPerEdgeCycleCheck,
+		EmitEvent:        true,
 	})
 	if err != nil {
 		return nil, err
 	}
+	// The edge's referencing (source) issue is versioned by AddDependencyInTx
+	// itself, at the row write — once, and only for a genuinely inserted row
+	// (the idempotent re-add mints nothing, the same exemption eventWritten
+	// draws for the events table below) — so every leg that reaches that
+	// helper versions identically and this role adds no second mint.
 	// Stage the source's dependency table always and its events table only
 	// when a row was recorded — the same selective staging the stores' own
 	// AddDependencyWithOptions does, so an idempotent re-add cannot sweep

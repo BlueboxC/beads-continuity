@@ -51,13 +51,15 @@ func TestGraphConversionOversizedCodePruneIsCandidateOnly(t *testing.T) {
 	root := t.TempDir()
 	planFile := filepath.Join(root, "plan.json")
 	rehearsal := filepath.Join(root, "rehearsal")
-	out, _, exit := graphGenerationRun(t, bd, work, home, "graph-convert", "plan", "--workspace", beadsDir, "--scope-url", "https://example.invalid/oversized-converter/", "--out", planFile)
-	if exit == 0 || out != "" {
-		t.Fatal("ordinary plan admitted an oversized plane")
+	out, stderr, exit := graphGenerationRun(t, bd, work, home, "graph-convert", "plan", "--workspace", beadsDir, "--scope-url", "https://example.invalid/oversized-converter/", "--out", planFile)
+	if exit != 0 || out == "" {
+		t.Fatalf("retained derived history plan: %s", stderr)
 	}
-	if _, err := os.Lstat(planFile); !os.IsNotExist(err) {
-		t.Fatal("refused plan published an artifact")
+	var retained graphConversionPlan
+	if err := json.Unmarshal([]byte(out), &retained); err != nil || retained.Store.PruneObsoleteCode {
+		t.Fatalf("ordinary plan changed pruning policy: %v", err)
 	}
+	prunePlanFile := filepath.Join(root, "prune-plan.json")
 	run := func(args ...string) string {
 		t.Helper()
 		out, stderr, exit := graphGenerationRun(t, bd, work, home, args...)
@@ -67,11 +69,11 @@ func TestGraphConversionOversizedCodePruneIsCandidateOnly(t *testing.T) {
 		return out
 	}
 	var plan graphConversionPlan
-	if err := json.Unmarshal([]byte(run("graph-convert", "plan", "--workspace", beadsDir, "--scope-url", "https://example.invalid/oversized-converter/", "--out", planFile, "--prune-obsolete-code")), &plan); err != nil {
+	if err := json.Unmarshal([]byte(run("graph-convert", "plan", "--workspace", beadsDir, "--scope-url", "https://example.invalid/oversized-converter/", "--out", prunePlanFile, "--prune-obsolete-code")), &plan); err != nil {
 		t.Fatal(err)
 	}
 	var receipt graphConversionReceipt
-	if err := json.Unmarshal([]byte(run("graph-convert", "prepare", "--plan", planFile, "--out", rehearsal, "--actor", "owner", "--writers-stopped")), &receipt); err != nil {
+	if err := json.Unmarshal([]byte(run("graph-convert", "prepare", "--plan", prunePlanFile, "--out", rehearsal, "--actor", "owner", "--writers-stopped")), &receipt); err != nil {
 		t.Fatal(err)
 	}
 	if len(receipt.PrunedCode) < 1500 || receipt.AdoptionPlan == nil {

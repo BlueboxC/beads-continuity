@@ -4,22 +4,173 @@ import (
 	"bytes"
 	"context"
 	"database/sql"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"sort"
-	"strings"
 	"time"
 	"unicode/utf8"
 
 	graph "github.com/steveyegge/beads/graphops"
 	"github.com/steveyegge/beads/internal/storage"
+	"github.com/steveyegge/beads/internal/types"
 )
 
 var (
 	ErrCapabilityUnavailable = errors.New("graph preview capability is unavailable")
 	ErrLimitExceeded         = errors.New("graph preview result limit exceeded")
 )
+
+// CollectLinks returns every matching current Link from one bounded,
+// authority-checked snapshot. The bound applies before filtering: a caller
+// cannot mistake a truncated workspace scan for a complete answer. Unlike
+// ListLinks, this is not a per-Bead incident walk.
+func (s *Store) CollectLinks(ctx context.Context, request LinkCollectionRequest) ([]LinkRecord, error) {
+	if err := s.validateLinkType(request.TypeURL, true); err != nil {
+		return nil, err
+	}
+	if request.PairDirection != "" && (request.PairDirection != "out" && request.PairDirection != "in" && request.PairDirection != "both" ||
+		request.SourcePath == "" || request.TargetPath == "") {
+		return nil, fmt.Errorf("%w: pair selection requires two Beads and direction out, in, or both", storage.ErrValidation)
+	}
+	if request.IncidentDirection != "" && (request.IncidentPath == "" || request.IncidentDirection != "in" && request.IncidentDirection != "out" && request.IncidentDirection != "both") {
+		return nil, fmt.Errorf("%w: incident direction requires a Bead and direction in, out, or both", storage.ErrValidation)
+	}
+	for _, path := range []string{request.SourcePath, request.TargetPath, request.IncidentPath} {
+		if path != "" {
+			if err := validatePath(path); err != nil {
+				return nil, err
+			}
+		}
+	}
+	var result []LinkRecord
+	err := s.withTx(ctx, false, func(tx *sql.Tx) error {
+		if err := checkCurrentReadBytes(ctx, tx); err != nil {
+			return err
+		}
+		if err := checkBinding(ctx, tx, s.options); err != nil {
+			return err
+		}
+		if err := s.checkLinkMappingsInTx(ctx, tx); err != nil {
+			return err
+		}
+		if request.TypeURL != "" {
+			if err := s.selectedLinkTypeInTx(ctx, tx, request.TypeURL); err != nil {
+				return err
+			}
+		}
+		family, err := s.selectedFamilyIDsInTx(ctx, tx, request.ConformsTo, graph.KindLink)
+		if err != nil {
+			return err
+		}
+		// Resolve selected public identities and live endpoint revisions in the
+		// same read transaction as the Link snapshot. A historical token is
+		// stable, but floating-pin applicability depends on current revision.
+		currentRevisions := make(map[string]string)
+		for _, endpoint := range []struct {
+			path string
+			url  *string
+		}{{request.SourcePath, &request.SourceURL}, {request.TargetPath, &request.TargetURL}, {request.IncidentPath, &request.IncidentURL}} {
+			if endpoint.path == "" {
+				continue
+			}
+			publicURL, err := s.publicResourceURLInTx(ctx, tx, endpoint.path)
+			if err != nil {
+				return err
+			}
+			*endpoint.url = publicURL
+			if _, exists := currentRevisions[endpoint.path]; exists {
+				continue
+			}
+			_, revision, err := s.beadEndpointInTx(ctx, tx, endpoint.path)
+			if err != nil {
+				return err
+			}
+			currentRevisions[endpoint.path] = revision
+		}
+		rows, err := tx.QueryContext(ctx, `SELECT path FROM graph_preview_catalog
+ WHERE allocation_state='live' AND resource_kind='link' LIMIT ?`, PreviewSnapshotLimit+1)
+		if err != nil {
+			return err
+		}
+		paths := []string{}
+		for rows.Next() {
+			var path string
+			if err := rows.Scan(&path); err != nil {
+				return errors.Join(err, rows.Close())
+			}
+			paths = append(paths, path)
+		}
+		if err := errors.Join(rows.Err(), rows.Close()); err != nil {
+			return err
+		}
+		if len(paths) > PreviewSnapshotLimit {
+			return fmt.Errorf("%w: complete Link collection exceeds %d live Links; pagination is unavailable", ErrLimitExceeded, PreviewSnapshotLimit)
+		}
+		sort.Slice(paths, func(i, j int) bool { return graph.CompareCodeUnits(paths[i], paths[j]) < 0 })
+		result = make([]LinkRecord, 0, len(paths))
+		for _, path := range paths {
+			link, err := s.showLinkInTx(ctx, tx, path)
+			if err != nil {
+				return err
+			}
+			if family != nil && !family[link.Type] || request.TypeURL != "" && link.Type != request.TypeURL ||
+				!LinkCollectionMatches(link, request, currentRevisions) {
+				continue
+			}
+			result = append(result, link)
+		}
+		return nil
+	})
+	if err != nil {
+		return nil, err
+	}
+	return result, nil
+}
+
+// LinkPinApplies is shared by legacy and canonical CLI collection readers.
+// A selection of the current revision includes floating Links; an older exact
+// revision admits only an exact stored pin. Bare IDs and --all-revisions leave
+// pin applicability unconstrained, without admitting historical Links.
+func LinkPinApplies(pin string, selected LinkPinSelection, current string, allRevisions bool) bool {
+	if allRevisions || !selected.Explicit {
+		return true
+	}
+	wanted := selected.Revision
+	if selected.Current {
+		wanted = current
+	}
+	return pin == wanted || pin == "" && wanted == current
+}
+
+// LinkCollectionMatches applies the CLI's endpoint and pin predicates to one
+// captured current Link. Callers supply revisions from the same read snapshot.
+func LinkCollectionMatches(link LinkRecord, request LinkCollectionRequest, current map[string]string) bool {
+	endpoint := func(uri, pin, path, selectedURL string, selected LinkPinSelection) bool {
+		return path != "" && selectedURL != "" && uri == selectedURL &&
+			LinkPinApplies(pin, selected, current[path], request.AllRevisions)
+	}
+	if request.PairDirection != "" {
+		forward := endpoint(link.Source, link.SourceRevision, request.SourcePath, request.SourceURL, request.SourcePin) &&
+			endpoint(link.Target, link.TargetRevision, request.TargetPath, request.TargetURL, request.TargetPin)
+		reverse := endpoint(link.Source, link.SourceRevision, request.TargetPath, request.TargetURL, request.TargetPin) &&
+			endpoint(link.Target, link.TargetRevision, request.SourcePath, request.SourceURL, request.SourcePin)
+		pair := request.PairDirection != "in" && forward || request.PairDirection != "out" && reverse
+		return pair && linkIncidentMatches(link, request, endpoint)
+	}
+	if request.SourcePath != "" && !endpoint(link.Source, link.SourceRevision, request.SourcePath, request.SourceURL, request.SourcePin) ||
+		request.TargetPath != "" && !endpoint(link.Target, link.TargetRevision, request.TargetPath, request.TargetURL, request.TargetPin) {
+		return false
+	}
+	return linkIncidentMatches(link, request, endpoint)
+}
+
+func linkIncidentMatches(link LinkRecord, request LinkCollectionRequest, endpoint func(string, string, string, string, LinkPinSelection) bool) bool {
+	if request.IncidentPath == "" {
+		return true
+	}
+	return request.IncidentDirection != "in" && endpoint(link.Source, link.SourceRevision, request.IncidentPath, request.IncidentURL, request.IncidentPin) ||
+		request.IncidentDirection != "out" && endpoint(link.Target, link.TargetRevision, request.IncidentPath, request.IncidentURL, request.IncidentPin)
+}
 
 // ListLinks returns complete, canonically ordered live incident state, or an
 // explicit limit error. It performs no endpoint resolution outside this Scope.
@@ -46,12 +197,28 @@ func (s *Store) ListLinks(ctx context.Context, request LinksRequest) ([]LinkReco
 				return err
 			}
 		}
-		if _, _, _, err := s.beadEndpointInTx(ctx, tx, request.BeadPath); err != nil {
+		if _, _, err := s.beadEndpointInTx(ctx, tx, request.BeadPath); err != nil {
 			return err
 		}
 		var err error
 		links, err = s.incidentLinksInTx(ctx, tx, request, "")
-		return err
+		if err != nil {
+			return err
+		}
+		family, err := s.selectedFamilyIDsInTx(ctx, tx, request.ConformsTo, graph.KindLink)
+		if err != nil {
+			return err
+		}
+		if family != nil {
+			filtered := make([]LinkRecord, 0, len(links))
+			for _, link := range links {
+				if family[link.Type] {
+					filtered = append(filtered, link)
+				}
+			}
+			links = filtered
+		}
+		return nil
 	})
 	if err != nil {
 		return nil, err
@@ -60,8 +227,11 @@ func (s *Store) ListLinks(ctx context.Context, request LinksRequest) ([]LinkReco
 }
 
 func (s *Store) validateLinkType(typ string, allowEmpty bool) error {
-	if (allowEmpty && typ == "") || IsInformationalTypeURL(s.ScopeURL(), typ) || s.isNativeDependencyType(typ) {
+	if (allowEmpty && typ == "") || IsInformationalTypeURL(s.ScopeURL(), typ) || typ == DependencyTypeURL(s.options.Binding.ScopeURL) {
 		return nil
+	}
+	if isNativeRelationshipDependencyType(s.ScopeURL(), typ) {
+		return nil // The transaction also checks the installed Type.
 	}
 	return fmt.Errorf("%w: Link Type is not installed in this preview", storage.ErrValidation)
 }
@@ -128,7 +298,7 @@ func (s *Store) Unlink(ctx context.Context, request LinkDeleteRequest) (LinkDele
 		if err := validateLinkPath(request.Path); err != nil {
 			return LinkDeleteResult{}, err
 		}
-		if request.SourcePath != "" || request.TargetPath != "" || request.TypeURL != "" {
+		if request.SourcePath != "" || request.TargetPath != "" || request.TypeURL != "" || request.SourceLocalID != "" || request.TargetLocalID != "" {
 			return LinkDeleteResult{}, fmt.Errorf("%w: select a Link ID or an exact typed endpoint pair", storage.ErrValidation)
 		}
 	} else {
@@ -137,88 +307,32 @@ func (s *Store) Unlink(ctx context.Context, request LinkDeleteRequest) (LinkDele
 				return LinkDeleteResult{}, err
 			}
 		}
+		if request.SourceLocalID != "" && request.SourcePath != "beads/"+request.SourceLocalID ||
+			request.TargetLocalID != "" && request.TargetPath != "beads/"+request.TargetLocalID {
+			return LinkDeleteResult{}, fmt.Errorf("%w: local Bead ID does not match its candidate path", storage.ErrValidation)
+		}
 		if err := s.validateLinkType(request.TypeURL, false); err != nil {
 			return LinkDeleteResult{}, err
 		}
-		if s.isNativeDependencyType(request.TypeURL) {
-			return LinkDeleteResult{}, fmt.Errorf("%w: blocking Dependency unlink requires its canonical Link ID", ErrCapabilityUnavailable)
+		if request.TypeURL == DependencyTypeURL(s.options.Binding.ScopeURL) || !IsInformationalTypeURL(s.ScopeURL(), request.TypeURL) {
+			return LinkDeleteResult{}, fmt.Errorf("%w: native Dependency unlink requires its canonical Link ID", ErrCapabilityUnavailable)
 		}
 	}
 	var result LinkDeleteResult
-	err := s.withTx(ctx, true, func(tx *sql.Tx) error {
-		if err := checkBinding(ctx, tx, s.options); err != nil {
-			return err
-		}
-		if request.TypeURL != "" {
-			if err := s.selectedLinkTypeInTx(ctx, tx, request.TypeURL); err != nil {
+	err := s.withTypeValidationTx(ctx, func(tx *sql.Tx) error {
+		var err error
+		if request.Path == "" {
+			request.SourcePath, err = s.resolveLiveBeadWriteSelectorInTx(ctx, tx, request.SourcePath, request.SourceLocalID)
+			if err != nil {
+				return err
+			}
+			request.TargetPath, err = s.resolveLiveBeadWriteSelectorInTx(ctx, tx, request.TargetPath, request.TargetLocalID)
+			if err != nil {
 				return err
 			}
 		}
-		path, err := s.selectUnlinkPathInTx(ctx, tx, request)
-		if err != nil {
-			return err
-		}
-		link, err := s.showLinkInTx(ctx, tx, path)
-		if err != nil {
-			return err
-		}
-		if s.isNativeDependencyType(link.Type) {
-			result, err = s.unlinkDependencyInTx(ctx, tx, path, link, request)
-			return err
-		}
-		// Only informational Links reach this point. Resolve the CLI default
-		// here, after transactional selection, without a whole-workspace read.
-		if request.DefaultInformationalSource {
-			request.UnconditionalSource = true
-		}
-		if err := checkRevisionGuard(request.ExpectedRevision, request.Unconditional, link.Revision, true, "Link"); err != nil {
-			return err
-		}
-		sourcePath := strings.TrimPrefix(link.Source, s.options.Binding.ScopeURL)
-		source, revision, owned, err := s.beadEndpointInTx(ctx, tx, sourcePath)
-		if err != nil {
-			return err
-		}
-		if err := checkRevisionGuard(request.ExpectedSourceRevision, request.UnconditionalSource, revision, owned, "source"); err != nil {
-			return err
-		}
-		if err := s.touchCoordination(ctx, tx); err != nil {
-			return err
-		}
-		deletionRevision, err := freshToken()
-		if err != nil {
-			return err
-		}
-		tombstone := LinkTombstone{ID: link.ID, Type: link.Type, Revision: deletionRevision, Version: deletionRevision, State: "deleted", PreviousVersion: link.Version, Attribution: writeAttribution(request.Actor)}
-		if _, err := tx.ExecContext(ctx, `UPDATE graph_preview_catalog SET allocation_state='deleted',revision=? WHERE path=?`, deletionRevision, path); err != nil {
-			return err
-		}
-		if err := s.afterStage("link-catalog"); err != nil {
-			return err
-		}
-		if _, err := tx.ExecContext(ctx, `DELETE FROM graph_preview_links WHERE path=?`, path); err != nil {
-			return err
-		}
-		if err := s.afterStage("link-payload"); err != nil {
-			return err
-		}
-		snapshot, err := canonicalJSON(tombstone)
-		if err != nil {
-			return err
-		}
-		if err := insertPreviewVersionInTx(ctx, tx, path, deletionRevision, snapshot, request.Actor); err != nil {
-			return err
-		}
-		if err := s.afterStage("link-retained"); err != nil {
-			return err
-		}
-		replacedSource := replacedMemory(source, request.UnconditionalSource)
-		source, err = s.recordOwnedMemoryInTx(ctx, tx, sourcePath, request.Actor, source)
-		if err != nil {
-			return err
-		}
-		result = LinkDeleteResult{Link: tombstone, Source: source, Changed: true, ReplacedSource: replacedSource}
-		return nil
+		result, err = s.unlinkInTx(ctx, tx, request)
+		return err
 	})
 	if err != nil {
 		return LinkDeleteResult{}, err
@@ -226,12 +340,109 @@ func (s *Store) Unlink(ctx context.Context, request LinkDeleteRequest) (LinkDele
 	return result, nil
 }
 
+// unlinkInTx performs the canonical Link deletion inside its caller's checked
+// transaction. Keep the public Unlink and composed Issue mutations on this
+// single path so native edges, graph tombstones, owners, and History agree.
+func (s *Store) unlinkInTx(ctx context.Context, tx *sql.Tx, request LinkDeleteRequest) (LinkDeleteResult, error) {
+	if err := checkBinding(ctx, tx, s.options); err != nil {
+		return LinkDeleteResult{}, err
+	}
+	if request.TypeURL != "" {
+		if err := s.selectedLinkTypeInTx(ctx, tx, request.TypeURL); err != nil {
+			return LinkDeleteResult{}, err
+		}
+	}
+	path, err := s.selectUnlinkPathInTx(ctx, tx, request)
+	if err != nil {
+		return LinkDeleteResult{}, err
+	}
+	link, err := s.showLinkInTx(ctx, tx, path)
+	if err != nil {
+		return LinkDeleteResult{}, err
+	}
+	issueType, err := installedIssueTypeURLInTx(ctx, tx, s.ScopeURL())
+	if err != nil {
+		return LinkDeleteResult{}, err
+	}
+	if isNativeDependencyLinkType(s.ScopeURL(), issueType, link.Type) {
+		return s.unlinkDependencyInTx(ctx, tx, path, link, request)
+	}
+	if !IsInformationalTypeURL(s.ScopeURL(), link.Type) {
+		return LinkDeleteResult{}, fmt.Errorf("%w: native relationship Link unlink is not admitted in this preview", ErrCapabilityUnavailable)
+	}
+	// Only informational Links reach this point. Resolve the CLI default
+	// here, after transactional selection, without a whole-workspace read.
+	if request.DefaultInformationalSource {
+		request.UnconditionalSource = true
+	}
+	if err := checkRevisionGuard(request.ExpectedRevision, request.Unconditional, link.Revision, true, "Link"); err != nil {
+		return LinkDeleteResult{}, err
+	}
+	sourcePath, err := s.publicResourcePathInTx(ctx, tx, link.Source, graph.KindBead)
+	if err != nil {
+		return LinkDeleteResult{}, err
+	}
+	source, revision, err := s.beadEndpointInTx(ctx, tx, sourcePath)
+	if err != nil {
+		return LinkDeleteResult{}, err
+	}
+	owned, err := s.ownsLink(source, link.Type)
+	if err != nil {
+		return LinkDeleteResult{}, err
+	}
+	if err := checkRevisionGuard(request.ExpectedSourceRevision, request.UnconditionalSource, revision, owned, "source"); err != nil {
+		return LinkDeleteResult{}, err
+	}
+	if err := s.touchCoordination(ctx, tx); err != nil {
+		return LinkDeleteResult{}, err
+	}
+	deletionRevision, err := freshToken()
+	if err != nil {
+		return LinkDeleteResult{}, err
+	}
+	attribution := writeAttribution(request.Actor)
+	attribution.Inception = link.Attribution.Inception
+	tombstone := LinkTombstone{ID: link.ID, Type: link.Type, Revision: deletionRevision, Version: deletionRevision, State: "deleted", PreviousVersion: link.Version, Attribution: attribution}
+	if _, err := tx.ExecContext(ctx, `UPDATE graph_preview_catalog SET allocation_state='deleted',revision=? WHERE path=?`, deletionRevision, path); err != nil {
+		return LinkDeleteResult{}, err
+	}
+	if err := s.afterStage("link-catalog"); err != nil {
+		return LinkDeleteResult{}, err
+	}
+	if _, err := tx.ExecContext(ctx, `DELETE FROM graph_preview_links WHERE path=?`, path); err != nil {
+		return LinkDeleteResult{}, err
+	}
+	if err := s.afterStage("link-payload"); err != nil {
+		return LinkDeleteResult{}, err
+	}
+	snapshot, err := canonicalJSON(tombstone)
+	if err != nil {
+		return LinkDeleteResult{}, err
+	}
+	if err := insertPreviewVersionInTx(ctx, tx, path, deletionRevision, snapshot, request.Actor); err != nil {
+		return LinkDeleteResult{}, err
+	}
+	if err := s.afterStage("link-retained"); err != nil {
+		return LinkDeleteResult{}, err
+	}
+	replacedSource := replacedMemory(source, request.UnconditionalSource)
+	if owned {
+		source, err = s.recordOwnedMemoryInTx(ctx, tx, sourcePath, request.Actor, source)
+	} else {
+		replacedSource = nil
+	}
+	if err != nil {
+		return LinkDeleteResult{}, err
+	}
+	return LinkDeleteResult{Link: tombstone, Source: source, Changed: true, ReplacedSource: replacedSource}, nil
+}
+
 func (s *Store) selectUnlinkPathInTx(ctx context.Context, tx *sql.Tx, request LinkDeleteRequest) (string, error) {
 	if request.Path != "" {
 		return request.Path, nil
 	}
 	for _, path := range []string{request.SourcePath, request.TargetPath} {
-		if _, _, _, err := s.beadEndpointInTx(ctx, tx, path); err != nil {
+		if _, _, err := s.beadEndpointInTx(ctx, tx, path); err != nil {
 			return "", err
 		}
 	}
@@ -239,9 +450,13 @@ func (s *Store) selectUnlinkPathInTx(ctx context.Context, tx *sql.Tx, request Li
 	if err != nil {
 		return "", err
 	}
+	targetURL, err := s.publicResourceURLInTx(ctx, tx, request.TargetPath)
+	if err != nil {
+		return "", err
+	}
 	candidates := []string{}
 	for _, link := range links {
-		if link.Target == graph.CanonicalURL(s.options.Binding.ScopeURL, request.TargetPath) {
+		if link.Target == targetURL {
 			candidates = append(candidates, link.ID)
 		}
 	}
@@ -251,52 +466,15 @@ func (s *Store) selectUnlinkPathInTx(ctx context.Context, tx *sql.Tx, request Li
 	if len(candidates) > 1 {
 		return "", &ErrAmbiguousLink{CandidateIDs: candidates}
 	}
-	return strings.TrimPrefix(candidates[0], s.options.Binding.ScopeURL), nil
+	return s.publicResourcePathInTx(ctx, tx, candidates[0], graph.KindLink)
 }
 
 // A valid tombstone is distinct from missing or corrupt state. Missing retained
 // deletion/previous state must not be disguised as ordinary gone.
 func (s *Store) deletedLinkErrorInTx(ctx context.Context, tx *sql.Tx, path string) error {
-	var kind, typ, revision, backing string
-	var key sql.NullString
-	if err := tx.QueryRowContext(ctx, `SELECT resource_kind,type_url,revision,backing,backing_key FROM graph_preview_catalog WHERE path=?`, path).Scan(&kind, &typ, &revision, &backing, &key); err != nil {
+	_, _, err := s.deletedLinkStateInTx(ctx, tx, path)
+	if err != nil {
 		return err
-	}
-	if !s.validDeletedLinkAllocation(kind, typ, backing, key) || !authorityID.MatchString(revision) {
-		return fmt.Errorf("%w: invalid deleted allocation", ErrInvalidStore)
-	}
-	var snapshot []byte
-	var actor string
-	if err := tx.QueryRowContext(ctx, `SELECT snapshot,actor FROM graph_preview_versions WHERE path=? AND version=?`, path, revision).Scan(&snapshot, &actor); err != nil {
-		return fmt.Errorf("%w: missing deletion state: %v", ErrInvalidStore, err)
-	}
-	var tombstone LinkTombstone
-	if err := json.Unmarshal(snapshot, &tombstone); err != nil {
-		return fmt.Errorf("%w: malformed deletion state", ErrInvalidStore)
-	}
-	canonical, err := canonicalJSON(tombstone)
-	at, timeErr := time.Parse(time.RFC3339Nano, tombstone.Attribution.RecordedAt)
-	if err != nil || !bytes.Equal(snapshot, canonical) || tombstone.ID != graph.CanonicalURL(s.options.Binding.ScopeURL, path) || tombstone.Type != typ || tombstone.State != "deleted" || tombstone.Revision != revision || tombstone.Version != revision || !authorityID.MatchString(tombstone.PreviousVersion) || tombstone.PreviousVersion == revision || actor != tombstone.Attribution.Actor || !utf8.ValidString(actor) || timeErr != nil || at.UTC().Format(time.RFC3339Nano) != tombstone.Attribution.RecordedAt || (actor == "" && tombstone.Attribution.Status != "unknown") || (actor != "" && tombstone.Attribution.Status != "claimed") {
-		return fmt.Errorf("%w: inconsistent deletion state", ErrInvalidStore)
-	}
-	var previous []byte
-	var previousActor string
-	if err := tx.QueryRowContext(ctx, `SELECT snapshot,actor FROM graph_preview_versions WHERE path=? AND version=?`, path, tombstone.PreviousVersion).Scan(&previous, &previousActor); err != nil {
-		return fmt.Errorf("%w: missing previous Link state: %v", ErrInvalidStore, err)
-	}
-	var link LinkRecord
-	if json.Unmarshal(previous, &link) != nil || link.ID != tombstone.ID || link.Type != typ || link.Revision != tombstone.PreviousVersion || link.Version != tombstone.PreviousVersion {
-		return fmt.Errorf("%w: invalid previous Link state", ErrInvalidStore)
-	}
-	if err := s.validateVersionLink(ctx, tx, link, previous, previousActor); err != nil {
-		return err
-	}
-	var count int
-	if err := tx.QueryRowContext(ctx, `SELECT (SELECT COUNT(*) FROM graph_preview_links WHERE path=?) + (SELECT COUNT(*) FROM graph_preview_payloads WHERE path=?)`, path, path).Scan(&count); err != nil {
-		return err
-	}
-	if count != 0 {
-		return fmt.Errorf("%w: deleted Link has current payload", ErrInvalidStore)
 	}
 	return ErrGone
 }
@@ -305,18 +483,37 @@ func (s *Store) deletedLinkErrorInTx(ctx context.Context, tx *sql.Tx, path strin
 // mappings before a join can hide them as an apparently complete collection.
 func (s *Store) checkLinkMappingsInTx(ctx context.Context, tx *sql.Tx) error {
 	var invalidTypes int
+	issueType, err := installedIssueTypeURLInTx(ctx, tx, s.ScopeURL())
+	if err != nil {
+		return err
+	}
 	ids, err := s.installedInformationalTypes(ctx, tx)
 	if err != nil {
 		return err
 	}
-	placeholders, args := informationalTypeSQL(ids)
-	nativePlaceholders, nativeArgs := informationalTypeSQL(s.nativeDependencyTypeURLs())
-	args = append(args, nativeArgs...)
-	if err := tx.QueryRowContext(ctx, `SELECT COUNT(*) FROM graph_preview_catalog WHERE resource_kind='link' AND allocation_state='live' AND ((backing='informational' AND type_url NOT IN (`+placeholders+`)) OR (backing='dependency' AND type_url NOT IN (`+nativePlaceholders+`)))`, args...).Scan(&invalidTypes); err != nil {
+	infoPlaceholders, args := informationalTypeSQL(ids)
+	dependencyTypes, err := s.nativeDependencyTypeIDsInTx(ctx, tx)
+	if err != nil {
+		return err
+	}
+	_ = issueType
+	depPlaceholders, depArgs := informationalTypeSQL(dependencyTypes)
+	args = append(args, depArgs...)
+	if err := tx.QueryRowContext(ctx, `SELECT COUNT(*) FROM graph_preview_catalog WHERE resource_kind='link' AND allocation_state='live' AND ((backing='informational' AND type_url NOT IN (`+infoPlaceholders+`)) OR (backing='dependency' AND type_url NOT IN (`+depPlaceholders+`)))`, args...).Scan(&invalidTypes); err != nil {
 		return err
 	}
 	if invalidTypes != 0 {
 		return fmt.Errorf("%w: Link Type differs from its authority", ErrInvalidStore)
+	}
+	// The one Link Type cannot identify a native kind. Reject malformed native
+	// kinds here; currentLinkInTx also checks this before projecting dep_type.
+	if err := tx.QueryRowContext(ctx, `SELECT COUNT(*) FROM graph_preview_catalog c JOIN dependencies d ON d.id=c.backing_key
+ WHERE c.backing='dependency' AND c.allocation_state='live' AND (d.type='' OR OCTET_LENGTH(d.type)>? OR c.type_url<>CONCAT(?,LOWER(HEX(d.type))))`,
+		types.MaxDependencyTypeLen, s.ScopeURL()+"types/native-dependency/").Scan(&invalidTypes); err != nil {
+		return err
+	}
+	if invalidTypes != 0 {
+		return fmt.Errorf("%w: invalid native Dependency kind", ErrInvalidStore)
 	}
 	for _, query := range []string{
 		`SELECT COUNT(*) FROM graph_preview_catalog c LEFT JOIN graph_preview_links l ON l.path=c.path LEFT JOIN dependencies d ON d.id=c.backing_key
@@ -345,19 +542,26 @@ func (s *Store) checkLinkMappingsInTx(ctx context.Context, tx *sql.Tx) error {
 
 // Retained references are validated as stored selectors, never by joining live
 // endpoints. A deleted Link's historical evidence must remain independently readable.
-func (s *Store) validateRetainedInformational(link LinkRecord, snapshot []byte, actor string) error {
+func (s *Store) validateRetainedInformational(ctx context.Context, tx *sql.Tx, link LinkRecord, snapshot []byte, actor string) error {
 	canonical, err := canonicalJSON(link)
 	if err != nil || !bytes.Equal(canonical, snapshot) || link.Properties == nil {
 		return fmt.Errorf("%w: noncanonical retained Link", ErrInvalidStore)
 	}
 	for _, endpoint := range []string{link.Source, link.Target} {
-		path := strings.TrimPrefix(endpoint, s.options.Binding.ScopeURL)
-		if validatePath(path) != nil || graph.CanonicalURL(s.options.Binding.ScopeURL, path) != endpoint {
+		if _, err := s.publicResourcePathInTx(ctx, tx, endpoint, graph.KindBead); err != nil {
 			return fmt.Errorf("%w: invalid retained Link endpoint", ErrInvalidStore)
 		}
 	}
-	if _, err := informationalProperties(link.Properties); err != nil {
+	properties, err := informationalProperties(link.Properties)
+	if err != nil {
 		return fmt.Errorf("%w: invalid retained Link properties", ErrInvalidStore)
+	}
+	catalog, err := s.selectedTypes()
+	if err != nil {
+		return err
+	}
+	if err := catalog.validateProperties(link.Type, properties, graph.KindLink); err != nil {
+		return fmt.Errorf("%w: invalid retained Link Type payload: %v", ErrInvalidStore, err)
 	}
 	at, err := time.Parse(time.RFC3339Nano, link.Attribution.RecordedAt)
 	if err != nil || at.UTC().Format(time.RFC3339Nano) != link.Attribution.RecordedAt || actor != link.Attribution.Actor || !utf8.ValidString(actor) || (actor == "" && link.Attribution.Status != "unknown") || (actor != "" && link.Attribution.Status != "claimed") {

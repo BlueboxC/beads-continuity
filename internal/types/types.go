@@ -1137,6 +1137,7 @@ type IssueWithDependencyMetadata struct {
 
 // IssueWithCounts extends Issue with dependency relationship counts
 type IssueWithCounts struct {
+	CommentsOmitted *bool `json:"comments_omitted,omitempty"`
 	*Issue
 	DependencyCount int     `json:"dependency_count"`
 	DependentCount  int     `json:"dependent_count"`
@@ -2346,4 +2347,16 @@ func (i *Issue) IsCompound() bool {
 // Returns nil for non-compound issues.
 func (i *Issue) GetConstituents() []BondRef {
 	return i.BondedFrom
+}
+
+func (i *Issue) NormalizeOptionalTimestampsToUTC() {
+	for _, ts := range []**time.Time{
+		&i.StartedAt, &i.ClosedAt, &i.CompactedAt,
+		&i.DueAt, &i.DeferUntil, &i.LeaseExpiresAt, &i.HeartbeatAt,
+	} {
+		if *ts != nil {
+			utc := (*ts).UTC()
+			*ts = &utc
+		}
+	}
 }

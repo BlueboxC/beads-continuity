@@ -31,7 +31,13 @@ func TestReadInstalledTypes(t *testing.T) {
 			if err := s.db.QueryRowContext(ctx, `SELECT writer_token FROM graph_preview_scope WHERE singleton=1`).Scan(&writerBefore); err != nil {
 				t.Fatal(err)
 			}
-			for name, id := range map[string]string{"memory": MemoryTypeURL(o.Binding.ScopeURL), "issue": IssueTypeURL(o.Binding.ScopeURL), "dependency": DependencyTypeURL(o.Binding.ScopeURL), "related": RelatedTypeURL(o.Binding.ScopeURL), "example-follows": ExampleFollowsTypeURL(o.Binding.ScopeURL), "example-cites": ExampleCitesTypeURL(o.Binding.ScopeURL)} {
+			for _, definition := range previewTypeDefinitions() {
+				name := definition.name
+				expected, err := definition.build(o.Binding.ScopeURL)
+				if err != nil {
+					t.Fatal(err)
+				}
+				id := expected.ID()
 				got, err := s.ReadType(ctx, strings.TrimPrefix(id, o.Binding.ScopeURL))
 				if err != nil {
 					t.Fatal(err)
@@ -48,7 +54,7 @@ func TestReadInstalledTypes(t *testing.T) {
 			if _, err := s.ReadType(ctx, "types/not-installed"); !errors.Is(err, ErrNotFound) {
 				t.Fatalf("missing Type: %v", err)
 			}
-			for _, path := range []string{"beads/plan", "types/" + strings.Repeat("x", 1024), "types/", "types/../preview-memory-v2", "types//preview-memory-v2", "types/preview-memory-v2?version=old", o.Binding.ScopeURL + "types/preview-memory-v2"} {
+			for _, path := range []string{"beads/plan", "types/" + strings.Repeat("x", 1024), "types/", "types/../preview-memory", "types//preview-memory", "types/preview-memory?version=old", o.Binding.ScopeURL + "types/preview-memory"} {
 				if _, err := s.ReadType(ctx, path); !errors.Is(err, graph.ErrValidation) {
 					t.Fatalf("invalid selector %q: %v", path, err)
 				}
@@ -74,7 +80,7 @@ func TestReadInstalledTypes(t *testing.T) {
 }
 
 func TestListInstalledTypesReflectsPersistedInstallation(t *testing.T) {
-	ctx, options := issueExperimentOptionsForSchema(t, "embedded", LegacySchemaVersion)
+	ctx, options := issueExperimentOptions(t, "embedded")
 	store, err := OpenExisting(ctx, options)
 	if err != nil {
 		t.Fatal(err)
@@ -89,7 +95,7 @@ func TestListInstalledTypesReflectsPersistedInstallation(t *testing.T) {
 		t.Fatal(err)
 	}
 	installed, err := store.ListInstalledTypes(ctx)
-	if err != nil || len(installed) != 6 {
+	if err != nil || len(installed) != len(FreshTypeNames()) {
 		t.Fatalf("fresh installed Types: %d %v", len(installed), err)
 	}
 	rows, err := store.db.QueryContext(ctx, `SELECT descriptor FROM graph_preview_types`)
@@ -119,17 +125,12 @@ func TestListInstalledTypesReflectsPersistedInstallation(t *testing.T) {
 			t.Fatalf("%s did not return its persisted descriptor", descriptor.ID())
 		}
 	}
-	if _, err := store.db.ExecContext(ctx, `DELETE FROM graph_preview_types WHERE name IN ('example-follows','example-cites')`); err != nil {
+	if _, err := store.db.ExecContext(ctx, `DELETE FROM graph_preview_types WHERE name='evaluation'`); err != nil {
 		t.Fatal(err)
 	}
 	installed, err = store.ListInstalledTypes(ctx)
-	if err != nil || len(installed) != 4 {
-		t.Fatalf("older four-Type installation: %d %v", len(installed), err)
-	}
-	for _, descriptor := range installed {
-		if strings.Contains(descriptor.ID(), "example-") {
-			t.Fatalf("uninstalled example advertised: %s", descriptor.ID())
-		}
+	if !errors.Is(err, ErrInvalidStore) || installed != nil {
+		t.Fatalf("partial Type installation admitted: %d %v", len(installed), err)
 	}
 	if err := store.db.QueryRowContext(ctx, `SELECT writer_token FROM graph_preview_scope WHERE singleton=1`).Scan(&tokenAfter); err != nil || tokenAfter != tokenBefore {
 		t.Fatalf("Type listing changed writer state: %q → %q, %v", tokenBefore, tokenAfter, err)
@@ -154,11 +155,15 @@ func TestReadTypeRefusesInvalidInstallation(t *testing.T) {
 			if err := s.db.QueryRowContext(ctx, `SELECT descriptor,fingerprint FROM graph_preview_types WHERE name='memory'`).Scan(&raw, &fingerprint); err != nil {
 				t.Fatal(err)
 			}
-			for _, corruption := range []string{"malformed", "fingerprint", "missing", "changed-contract", "binding"} {
+			for _, corruption := range []string{"malformed", "fingerprint", "missing", "changed-contract", "oversized", "noncanonical", "binding"} {
 				t.Run(corruption, func(t *testing.T) {
 					switch corruption {
 					case "malformed":
 						_, err = s.db.ExecContext(ctx, `UPDATE graph_preview_types SET descriptor='{' WHERE name='memory'`)
+					case "oversized":
+						_, err = s.db.ExecContext(ctx, `UPDATE graph_preview_types SET descriptor=? WHERE name='memory'`, strings.Repeat("x", len(raw)+1))
+					case "noncanonical":
+						_, err = s.db.ExecContext(ctx, `UPDATE graph_preview_types SET descriptor=? WHERE name='memory'`, append([]byte(" "), raw...))
 					case "fingerprint":
 						_, err = s.db.ExecContext(ctx, `UPDATE graph_preview_types SET fingerprint='bad' WHERE name='memory'`)
 					case "missing":

@@ -13,13 +13,15 @@ import (
 )
 
 // MemoryPropertiesPatchRequest applies ordered property operations to the
-// actual guarded predecessor. This private preview still stores exactly title
-// and body strings; it does not expose the public BDP Update profile.
+// actual guarded predecessor. All authored properties survive unless explicitly
+// edited; the complete resulting object is validated for the selected Type.
 type MemoryPropertiesPatchRequest struct {
+	TypeURL          string
 	Path             string
 	Patch            []byte
 	Actor            string
 	ExpectedRevision string
+	FromRevision     string
 	Unconditional    bool
 	Metadata         publicops.MetadataPatch
 }
@@ -30,8 +32,9 @@ func (s *Store) PatchMemoryProperties(ctx context.Context, request MemoryPropert
 		return MemoryMutationResult{}, memoryPropertiesPatchError(err)
 	}
 	return s.writeMemory(ctx, memoryWriteRequest{
-		path: request.Path, actor: request.Actor, expectedRevision: request.ExpectedRevision,
-		unconditional: request.Unconditional, propertiesPatch: patch, metadataPatch: request.Metadata,
+		typeURL: request.TypeURL,
+		path:    request.Path, actor: request.Actor, expectedRevision: request.ExpectedRevision,
+		unconditional: request.Unconditional, fromRevision: request.FromRevision, propertiesPatch: patch, metadataPatch: request.Metadata,
 	})
 }
 
@@ -45,7 +48,7 @@ func memoryPropertiesPatchError(err error) error {
 func applyMemoryPropertiesPatch(patch *graphpatch.Patch, before Properties) (Properties, error) {
 	// Refuse obvious oversized subjects before allocating their JSON form. The
 	// evaluator also charges canonical escaping and the complete object framing.
-	if len(before.Title) > graphpatch.MaxInputBytes || len(before.Body) > graphpatch.MaxInputBytes-len(before.Title) {
+	if len(before.Title) > graphpatch.MaxInputBytes || len(before.Body) > graphpatch.MaxInputBytes-len(before.Title) || len(before.extra) > graphpatch.MaxInputBytes-len(before.Title)-len(before.Body) {
 		return Properties{}, fmt.Errorf("%w: Memory properties exceed the patch working-document limit", ErrLimitExceeded)
 	}
 	raw, err := canonicalJSON(before)
@@ -60,20 +63,9 @@ func applyMemoryPropertiesPatch(patch *graphpatch.Patch, before Properties) (Pro
 	if err != nil {
 		return Properties{}, memoryPropertiesPatchError(err)
 	}
-	var fields map[string]json.RawMessage
-	if err := json.Unmarshal(after.Bytes(), &fields); err != nil {
+	var result Properties
+	if err := json.Unmarshal(after.Bytes(), &result); err != nil {
 		return Properties{}, memoryPropertiesPatchError(err)
 	}
-	var title, body string
-	// JSON null must not be confused with the empty string by Unmarshal.
-	if len(fields) != 2 || len(fields["title"]) == 0 || fields["title"][0] != '"' || len(fields["body"]) == 0 || fields["body"][0] != '"' {
-		return Properties{}, fmt.Errorf("%w: final preview Memory properties require exactly title and body strings", storage.ErrValidation)
-	}
-	if err := json.Unmarshal(fields["title"], &title); err != nil {
-		return Properties{}, memoryPropertiesPatchError(err)
-	}
-	if err := json.Unmarshal(fields["body"], &body); err != nil {
-		return Properties{}, memoryPropertiesPatchError(err)
-	}
-	return Properties{Title: title, Body: body}, nil
+	return result, nil
 }

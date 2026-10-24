@@ -25,10 +25,13 @@ func TestNativeDependenciesPreserveFieldsAndWorkflow(t *testing.T) {
 		t.Run(backend, func(t *testing.T) {
 			ctx, o := issueExperimentOptions(t, backend)
 			s := openVersionsStore(t, ctx, o)
+			identities := map[string]string{}
 			for _, name := range []string{"parent", "child", "gate", "source"} {
-				if _, err := s.CreateIssue(ctx, "beads/"+name, plainIssue(name)); err != nil {
+				created, err := s.CreateIssue(ctx, "beads/"+name, plainIssue(name))
+				if err != nil {
 					t.Fatal(err)
 				}
+				identities[name] = created.ID
 			}
 			var links []LinkRecord
 			for i, req := range []DependencyRequest{
@@ -75,7 +78,7 @@ func TestNativeDependenciesPreserveFieldsAndWorkflow(t *testing.T) {
 				}
 				state = workflowState(t, ctx, s)
 				noop, err := s.AddDependency(ctx, req)
-				if err != nil || noop.Changed || !reflect.DeepEqual(added, DependencyResult{Link: noop.Link, Source: noop.Source, Changed: true}) || !reflect.DeepEqual(state, workflowState(t, ctx, s)) {
+				if err != nil || noop.Changed || !reflect.DeepEqual(added, DependencyResult{Link: noop.Link, Source: noop.Source, Target: noop.Target, Changed: true}) || !reflect.DeepEqual(state, workflowState(t, ctx, s)) {
 					t.Fatalf("same native intent was not a no-op: %+v %v", noop, err)
 				}
 				for _, changed := range []DependencyRequest{
@@ -106,7 +109,7 @@ func TestNativeDependenciesPreserveFieldsAndWorkflow(t *testing.T) {
 				}
 				links = append(links, added.Link)
 			}
-			assertReadyIDs(t, ctx, s, s.ScopeURL()+"beads/gate", s.ScopeURL()+"beads/source")
+			assertReadyIDs(t, ctx, s, identities["gate"], identities["source"])
 			assertNativeWorkParity(t, ctx, s)
 			blocked, err := s.BlockedIssues(ctx)
 			if err != nil || len(blocked) != 2 {
@@ -121,12 +124,12 @@ func TestNativeDependenciesPreserveFieldsAndWorkflow(t *testing.T) {
 			if _, err := s.CloseIssue(ctx, "beads/gate", "verified", "owner"); err != nil {
 				t.Fatal(err)
 			}
-			assertReadyIDs(t, ctx, s, s.ScopeURL()+"beads/source")
+			assertReadyIDs(t, ctx, s, identities["source"])
 			assertNativeWorkParity(t, ctx, s)
 			if _, err := s.SetIssueDeferred(ctx, IssueDeferralRequest{Path: "beads/parent", Actor: "owner", Unconditional: true}); err != nil {
 				t.Fatal(err)
 			}
-			assertReadyIDs(t, ctx, s, s.ScopeURL()+"beads/child", s.ScopeURL()+"beads/parent", s.ScopeURL()+"beads/source")
+			assertReadyIDs(t, ctx, s, identities["child"], identities["parent"], identities["source"])
 			state := workflowState(t, ctx, s)
 			if _, err := s.CloseIssue(ctx, "beads/parent", "premature", "owner"); err == nil || !reflect.DeepEqual(state, workflowState(t, ctx, s)) {
 				t.Fatalf("parent closed over open child: %v", err)
@@ -148,9 +151,13 @@ func TestNativeDependenciesPreserveFieldsAndWorkflow(t *testing.T) {
 				if err != nil || !reflect.DeepEqual(current, link) {
 					t.Fatalf("reopen lost native Link: %v", err)
 				}
-				source, err := s.ShowIssue(ctx, strings.TrimPrefix(link.Source, s.ScopeURL()))
+				sourceRecord, err := s.Read(ctx, link.Source)
 				if err != nil {
 					t.Fatal(err)
+				}
+				source, ok := sourceRecord.(IssueRecord)
+				if !ok {
+					t.Fatalf("native source: %T", sourceRecord)
 				}
 				removed, err := s.Unlink(ctx, LinkDeleteRequest{Path: path, ExpectedRevision: link.Revision, ExpectedSourceRevision: source.Revision, Actor: "remover"})
 				if err != nil || removed.Link.Type != link.Type {
@@ -198,9 +205,9 @@ func assertNativeWorkParity(t *testing.T, ctx context.Context, s *Store) {
 }
 
 func TestNativeDependenciesRefuseUnsupportedWithoutMutation(t *testing.T) {
-	for _, version := range []int{LegacySchemaVersion, SchemaVersion} {
+	for _, version := range []int{SchemaVersion} {
 		t.Run(string(rune('0'+version)), func(t *testing.T) {
-			ctx, o := issueExperimentOptionsForSchema(t, "embedded", version)
+			ctx, o := issueExperimentOptions(t, "embedded")
 			s := openVersionsStore(t, ctx, o)
 			for _, name := range []string{"source", "target"} {
 				if _, err := s.CreateIssue(ctx, "beads/"+name, plainIssue(name)); err != nil {
@@ -209,7 +216,11 @@ func TestNativeDependenciesRefuseUnsupportedWithoutMutation(t *testing.T) {
 			}
 			base := DependencyRequest{SourcePath: "beads/source", TargetPath: "beads/target", Actor: "owner"}
 			requests := []DependencyRequest{
-				func() DependencyRequest { r := base; r.Type = "unknown-native-type"; return r }(),
+				func() DependencyRequest {
+					r := base
+					r.Type = types.DependencyType(strings.Repeat("x", types.MaxDependencyTypeLen+1))
+					return r
+				}(),
 				func() DependencyRequest { r := base; r.Metadata = json.RawMessage(`[]`); return r }(),
 				func() DependencyRequest { r := base; r.ThreadID = strings.Repeat("x", 256); return r }(),
 			}
@@ -226,7 +237,7 @@ func TestNativeDependenciesRefuseUnsupportedWithoutMutation(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			if version == LegacySchemaVersion && (added.Link.Type != legacyDependencyTypeURL(s.ScopeURL()) || len(added.Link.Properties) != 0) {
+			if version == LegacySchemaVersion && (added.Link.Type != DependencyTypeURL(s.ScopeURL()) || len(added.Link.Properties) != 0) {
 				t.Fatalf("legacy Link upgraded: %+v", added.Link)
 			}
 			if _, err := s.CurrentSnapshot(ctx); err != nil {

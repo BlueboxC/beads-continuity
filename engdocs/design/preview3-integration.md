@@ -1,76 +1,122 @@
 # Preview3 integration and preservation contract
 
-This is isolated preparation, not an installed upgrade. The fixed source is
-donnabox/beads PR291 `0c4dc1f0d68a371e56b3e461b968e828e4ea254c`, schema11 and
-Type generation12. The fork baseline is `173568d48e16e992b19c3ec21a227ca95347573b`,
-with native workspaces and explicitly activated schema8 graphs.
+This is an isolated integration, with no installed upgrade or real database
+activation. Production provider source is donnabox/beads PR291
+`0c4dc1f0d68a371e56b3e461b968e828e4ea254c`; compatible native seams were checked
+against `79450c2d67ccab326b20b07cc3d66179fa148ec0`. The fork baseline is
+`173568d48e16e992b19c3ec21a227ca95347573b`.
 
-## Integration boundary
+## Format and runtime boundary
 
-Pure descriptor/catalog/query packages can be prepared independently. The
-remaining provider, CLI, HTTP and continuity adaptation must preserve the
-existing public native API, all verified fork corrections, the qualified Dolt
-tuple, telemetry removal, capacities, indexing, reviewed knowledge, activity,
-Codex recovery and viewer behavior. Do not transplant an upstream provider over
-the fork adapter or silently omit its transactional helpers.
+The candidate uses schema11/generation13. The fork adds the three frozen schema8
+informational Types and protected native dependency ID/thread facts to the
+Preview3 catalog. Upstream generation12 is a different contract. No ordinary
+open, discovery, hook or maintenance route converts an existing workspace.
 
-Existing workspace discovery must refuse unsupported generations without DDL,
-selector replacement, Type registration or graph activation. No preparation
-command may initialize a real project, run its code, reindex sources, accept
-proposals, or change global hooks/trust.
+Keep the ordinary v1.3.1 native API, verified fork corrections, qualified Dolt
+engine/analyzer/driver tuple, telemetry removal, supervised knowledge, indexing,
+activity, Codex recovery and viewer. Graph-only retained/version authorization
+must not become ordinary native policy. Neither conversion nor a historical
+restore re-verifies learning or grants project execution authority.
 
 ## Preservation dimensions
 
-Conservation is checked by identity, canonical bytes and references, not counts
-alone. Preserve:
+Check identities, canonical bytes and references, not counts alone:
 
-- tasks, completed states, dependencies, native identities and scheduling;
-- exact human-memory keys/bodies, accepted and pending learning envelopes,
-  reviews, evidence scopes, attribution and historical validity;
-- retained graph revisions, deletion evidence, owned sets and immutable pins;
-- all original table definitions/rows, Dolt branch/tag/commit references and
-  working/staged roots outside explicitly documented conversion writes;
-- current derived code/catalog manifests, fragments and activity rows, or an
-  explicit regenerable projection with its preserved source generation;
-- workspace identity, format and binary/engine provenance, with a matched
-  recovery set and a complete mapping for any deliberately changed identity.
+- native tasks, completed states, fields, scheduling and dependency facts;
+- exact human keys/bodies, accepted and pending envelopes, reviews, metadata,
+  evidence scopes and attribution;
+- original graph revisions, deletion evidence, frozen Types and owned sets;
+- Dolt branch/tag/commit references and staged roots, with source working roots
+  retained in the checkpoint and only documented candidate writes;
+- every unaffected table/config row, current code/catalog generations and all
+  retained derived blobs and activity envelopes;
+- workspace identity, format, binary/engine provenance and explicit public-ID
+  mappings at the format boundary.
 
-Historical snapshots must not be rewritten under their original revision
-tokens. A newer Type catalog does not retrospectively verify a stored solution.
-Ordinary export/import omits retained revisions and Dolt history and is not an
-admissible substitute for this contract. Fork code/catalog/activity keys must
-remain derived or observed projections in the same database; importing every
-key as a human Memory changes their meaning and can exceed graph budgets.
-Native datasets can exceed the preview live-Resource limit as well as the
-continuity row/byte budgets. Admission must inventory each plane before any
-DDL. Do not silently raise limits, truncate results, or turn all derived keys
-into human Memories. Select the complete current index without unbounded
-acquisition of obsolete generations. Any candidate-only cleanup must use the existing guarded plan,
-preserve human records and history, and be recorded explicitly.
+Schema8 conversion keeps original revisions under their original tokens in a
+separate exact archive, preserves source-format preimages and appends new current
+boundaries. `ReadOriginalVersion` returns original canonical bytes, SHA-256 and
+Type; `ReadVersion` returns the original typed representation. Terminal tokens
+remain terminal. Checked original content can feed guarded historical
+composition while current protected identity/membership remains authoritative.
+A comparison across changed immutable identity/Type refuses; it does not silently
+reinterpret the original representation.
 
-## Rehearsal and recovery gates
+Native adoption preserves original Dolt history and tables, then seeds an
+explicit graph boundary. Unsupported pre-existing native retained-history
+schemas refuse rather than being truncated or relabelled. Ordinary JSONL
+interchange is not a full-history conversion or recovery format.
 
-Capture coherent project copies under existing workspace/physical-root gates;
-pause only operator-owned readers when necessary and restore their previous
-state from permanent environments. Compare source/copy hashes before release.
-All subsequent engine opens, conversions, fault injection and restoration use
-owned copies. Use the Projects disk-budget launcher, finite limits and automatic
-retirement of disposable copies after verification.
+## Continuity and capacity
 
-A candidate must pass both native-to-Preview3 and schema8-to-Preview3 rehearsals,
-including exact current/historical reads, reviewed and pending proposals,
-guarded concurrent writes, interruption/refusal and fresh-process recovery.
-Prove the target's new pin/re-pin/revert/retyping semantics separately. Existing
-upstream receipts do not qualify the fork tuple or its personalizations.
+Human bodies use canonical retained Memories with private keyed pointers.
+Derived catalogs/code and observed activity remain in the existing config plane;
+they are not promoted to human learning. Prime selects non-code context and the
+current code manifest, plus three handoffs from a full validated activity scan.
+The project profile selects the complete current code generation and graph,
+plus at most 1,000 recent validated events. Stored history is not deleted.
 
-An unsupported source format, missing retained record, changed evidence scope,
-partial write or incomplete result withholds activation. Native-backup recovery
-alone qualifies recovery, not conversion. The source remains authoritative until
-the complete conversion and continuity gates pass on the same candidate.
+Ordinary snapshots retain 2,048 live Resources/16 MiB; selected continuity reads
+retain 65,536 rows/64 MiB. The explicit compound project profile separately caps
+both graph and current-code acquisition at 65,536 rows/64 MiB. Event iteration
+has a 12 KiB per-envelope transfer cap and full total/invalid counts. These are
+acquisition budgets, not Go heap or SQL-engine memory limits.
 
-## Delivery
+Preserving a larger source does not increase ordinary write capacity. Existing
+oversized state may shrink or remain unchanged, but no oversized dimension may grow.
+General full-plane List can refuse while selected current-context reads succeed.
+Any later cleanup/capacity policy requires its own reviewed plan; conversion
+never prunes retained generations to make an evidence claim pass.
 
-Keep source changes reviewable on `codex/preview3-integration-20261024`.
-Track execution and remaining work in the operator Beads workspace. Keep project data,
-capture manifests, test logs and recovery material private. Installation and
-activation are separate from this preparation request.
+## Copy-only rehearsal
+
+Capture coherent copies under existing workspace/physical-root gates. Pause only
+operator-owned readers when necessary and restore their prior state. Compare
+source/copy file hashes before releasing the capture gate. All subsequent engine
+opens, conversions, fault injection and recovery use owned copies. Use the
+Projects disk-budget launcher, finite space/time bounds and inventoried cleanup.
+
+For a copied embedded schema8 engine and its copied original metadata:
+
+```sh
+bd --sandbox graph-convert schema8-copy \
+  --source /private/rehearsal/source-engine \
+  --metadata /private/rehearsal/original-metadata.json \
+  --out /private/rehearsal/new-candidate
+bd --sandbox graph-convert verify \
+  --receipt /private/rehearsal/new-candidate/receipt.json
+```
+
+The source must be canonical and outside its bound project workspace. Output is
+a new private directory outside the source/workspace; it contains a native full
+backup, independently restored converted candidate and verification receipt.
+No source selector, real database, installed binary, hooks or project code is
+changed. Schema8 copy receipts refuse `activate` and `rollback`; restore their
+native checkpoint into another fresh isolated destination for recovery.
+
+Planning binds exact table/view definitions, source roots, branch/tag commits,
+workspace identity and every human key/body hash. Changed plans, malformed or
+missing human pointers, unsupported formats and dirty non-main branches refuse.
+Conversion faults may leave additive DDL only in the discardable candidate;
+source authority and the full native checkpoint remain intact.
+
+## Qualification and delivery
+
+Require native-to-Preview3 and schema8-to-Preview3 rehearsals on the same fork
+source, original-token/current reads, accepted/pending knowledge preservation,
+mutation guards/rollback, pin/re-pin/retype behavior and interrupted-conversion
+refusal. Restore each converted full native backup into a fresh engine/process;
+compare every table hash, root, branch/tag/log reference and continuity profile.
+Independent old-format reads anchor historical byte comparisons.
+
+The synthetic schema8 fixture under `internal/storage/graphstore/testdata` was
+produced with the qualified old provider and contains no project records. Its
+regressions cover exact original reads, historical composition, source
+preservation and pre-commit failure. Run normal affected-package tests and the
+repository test/lint gates; upstream receipts do not qualify the fork tuple.
+
+Keep source reviewable on `codex/preview3-integration-20261024`. Execution state
+belongs in operator Beads; project captures, hashes, logs and recovery material
+stay private. Installation and real activation are separate work, requiring a
+fresh coherent capture and resolution of any capacity/admission limits.

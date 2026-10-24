@@ -5,6 +5,7 @@ import (
 	"time"
 
 	"github.com/steveyegge/beads/internal/storage"
+	"github.com/steveyegge/beads/internal/types"
 )
 
 // normalizeIssueDue captures the existing DATETIME(0) representation before
@@ -15,7 +16,11 @@ func normalizeIssueDue(value *time.Time) (*time.Time, error) {
 	if value == nil {
 		return nil, nil
 	}
-	result := value.UTC().Round(time.Second)
+	// Reuse the shared optional-date UTC fix from upstream #5771. It copies
+	// the pointer so caller-owned times are never mutated.
+	issue := types.Issue{DueAt: value}
+	issue.NormalizeOptionalTimestampsToUTC()
+	result := issue.DueAt.Round(time.Second)
 	// Year zero cannot cross the ordinary MySQL driver; rounding may also
 	// overflow the maximum year. Refuse before any graph/domain write.
 	if result.Year() < 1 || result.Year() > 9999 {

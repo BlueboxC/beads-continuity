@@ -90,7 +90,8 @@ func runGraphPreviewVersions(cmd *cobra.Command, args []string) error {
 		return graphFailure("invalid_selector", err.Error(), 2)
 	}
 	return withGraphStore(func(ctx context.Context, store *graphstore.Store) (any, string, error) {
-		kind, rows, err := store.Versions(ctx, path)
+		history, err := store.History(ctx, path)
+		kind, rows := history.Kind, history.Versions
 		switch {
 		case errors.Is(err, graphstore.ErrNotFound):
 			// graphStorageError already maps ErrNotFound to not_found, so this
@@ -112,12 +113,14 @@ func runGraphPreviewVersions(cmd *cobra.Command, args []string) error {
 		// removal notice outside the version rows.
 		citable := make([]graphstore.VersionRow, 0, len(rows))
 		removed := false
+		terminals := make([]graphstore.VersionRow, 0)
 		for _, row := range rows {
 			if row.Removed {
-				if kind != graphstore.KindLink || removed {
+				if kind != graphstore.KindLink && kind != graphstore.KindMemory && kind != graphstore.KindIssue {
 					return nil, "", fmt.Errorf("%w: invalid deletion marker in version history", graphstore.ErrInvalidStore)
 				}
 				removed = true
+				terminals = append(terminals, row)
 				continue
 			}
 			citable = append(citable, row)
@@ -126,11 +129,21 @@ func runGraphPreviewVersions(cmd *cobra.Command, args []string) error {
 			return nil, "", fmt.Errorf("%w: allocated Resource has no citable versions", graphstore.ErrInvalidStore)
 		}
 		result := map[string]any{
-			"resource": path,
+			"resource": history.PublicID,
 			"kind":     string(kind),
 			"versions": graphVersionRowsJSON(citable),
 		}
-		return result, renderGraphVersions(args[0], kind, citable, removed), nil
+		if len(terminals) != 0 {
+			result["terminal_versions"] = graphVersionRowsJSON(terminals)
+		}
+		if history.CurrentState != nil {
+			result["currentState"] = history.CurrentState
+		}
+		human := renderGraphVersions(args[0], kind, citable, removed && history.CurrentState != nil)
+		if history.CurrentState != nil {
+			human += fmt.Sprintf("\nCurrent state: deleted\nDeletion revision: %s\n", history.CurrentState.Revision)
+		}
+		return result, human, nil
 	})
 }
 
@@ -187,8 +200,8 @@ func renderGraphVersions(selector string, kind graphstore.ResourceKind, rows []g
 	fmt.Fprintf(&b, "  bd show %s --version <token>\n", selector)
 	fmt.Fprintf(&b, "  bd compare %s --from <token> --to <token>\n", selector)
 	if removed {
-		b.WriteString("\nThis Link has been removed. Its prior versions remain citable; deletion\n")
-		b.WriteString("did not create a Link version.\n")
+		b.WriteString("\nThis Resource has been removed. Its prior versions remain citable; deletion\n")
+		b.WriteString("retains terminal evidence separately from live Resource versions.\n")
 	}
 	return b.String()
 }

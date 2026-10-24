@@ -16,11 +16,12 @@ func TestGraphPreviewGenerationMarkerClassification(t *testing.T) {
 		supported bool
 		newer     bool
 	}{
-		{"legacy generation", "link-preview-v5\n", true, false},
-		{"current generation", "link-preview-v6\n", true, false},
-		{"native generation", "link-preview-v7\n", true, false},
-		{"next generation", "link-preview-v8\n", false, true},
-		{"numeric not lexical order", "link-preview-v10\n", false, true},
+		{"legacy generation", "link-preview-v5\n", false, false},
+		{"current generation", "link-preview-v6\n", false, false},
+		{"native generation", "link-preview-v7\n", false, false},
+		{"qualified fork generation", "link-preview-v13\n", true, false},
+		{"next generation", "link-preview-v8\n", false, false},
+		{"numeric not lexical order", "link-preview-v10\n", false, false},
 		{"two digits above current", "link-preview-v99\n", false, true},
 		{"largest uint64", "link-preview-v18446744073709551615\n", false, true},
 		{"overflows uint64", "link-preview-v18446744073709551616\n", false, true},
@@ -63,16 +64,16 @@ func TestGraphPreviewGenerationMarkerClassification(t *testing.T) {
 		})
 	}
 
-	// Exactly generations 5, 6 and 7 are accepted and exactly those above 7 are
+	// Exactly generation 13 is accepted; only higher canonical generations are
 	// newer, however the numbers are written in the ordinary decimal form.
 	for generation := range 300 {
 		marker := []byte("link-preview-v" + strconv.Itoa(generation) + "\n")
-		wantSupported := generation == 5 || generation == 6 || generation == 7
+		wantSupported := generation == 13
 		if got := graphPreviewGenerationSupported(marker); got != wantSupported {
 			t.Errorf("supported(generation %d) = %t, want %t", generation, got, wantSupported)
 		}
-		if got := graphPreviewGenerationNewer(marker); got != (generation > 7) {
-			t.Errorf("newer(generation %d) = %t, want %t", generation, got, generation > 7)
+		if got := graphPreviewGenerationNewer(marker); got != (generation > 13) {
+			t.Errorf("newer(generation %d) = %t, want %t", generation, got, generation > 13)
 		}
 	}
 

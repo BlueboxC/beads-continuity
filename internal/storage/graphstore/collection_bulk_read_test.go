@@ -6,7 +6,6 @@ import (
 	"errors"
 	"fmt"
 	"reflect"
-	"strings"
 	"testing"
 
 	"github.com/steveyegge/beads/internal/types"
@@ -14,11 +13,11 @@ import (
 
 func TestSnapshotBulkMatchesIndividualReads(t *testing.T) {
 	for _, backend := range []string{"embedded", "server"} {
-		for _, version := range []int{LegacySchemaVersion, SchemaVersion} {
+		for _, version := range []int{SchemaVersion} {
 			t.Run(fmt.Sprintf("%s/%d", backend, version), func(t *testing.T) {
-				ctx, o := issueExperimentOptionsForSchema(t, backend, version)
+				ctx, o := issueExperimentOptions(t, backend)
 				s := openVersionsStore(t, ctx, o)
-				memory, err := s.Create(ctx, CreateRequest{Path: "beads/memory", Body: "prior solution"})
+				memory, err := s.Create(ctx, CreateRequest{Title: "Memory", Path: "beads/memory", Body: "prior solution"})
 				if err != nil {
 					t.Fatal(err)
 				}
@@ -38,10 +37,10 @@ func TestSnapshotBulkMatchesIndividualReads(t *testing.T) {
 						t.Fatal(err)
 					}
 				}
-				if _, err := s.AddInformationalLink(ctx, LinkCreateRequest{Path: "links/memory-owned", SourcePath: "beads/memory", TargetPath: "beads/source", ExpectedSourceRevision: memory.Revision, Actor: "fixture"}); err != nil {
+				if _, err := s.AddInformationalLink(ctx, LinkCreateRequest{TypeURL: s.ScopeURL() + "types/preview-related-v2", Path: "links/memory-owned", SourcePath: "beads/memory", TargetPath: "beads/source", ExpectedSourceRevision: memory.Revision, Actor: "fixture"}); err != nil {
 					t.Fatal(err)
 				}
-				if _, err := s.AddInformationalLink(ctx, LinkCreateRequest{Path: "links/issue-independent", SourcePath: "beads/source", TargetPath: "beads/memory", Actor: "fixture"}); err != nil {
+				if _, err := s.AddInformationalLink(ctx, LinkCreateRequest{TypeURL: s.ScopeURL() + "types/preview-related-v2", Path: "links/issue-independent", SourcePath: "beads/source", TargetPath: "beads/memory", Actor: "fixture"}); err != nil {
 					t.Fatal(err)
 				}
 				snap, err := s.CurrentSnapshot(ctx)
@@ -60,7 +59,7 @@ func TestSnapshotBulkMatchesIndividualReads(t *testing.T) {
 					default:
 						t.Fatalf("unexpected %T", record)
 					}
-					single, err := s.Read(ctx, strings.TrimPrefix(id, s.ScopeURL()))
+					single, err := s.Read(ctx, id)
 					if err != nil || !reflect.DeepEqual(single, record) {
 						t.Fatalf("bulk and individual disagree for %s: %v", id, err)
 					}

@@ -126,7 +126,7 @@ func TestGraphPreviewCompatibilityDefaultsWorkflow(t *testing.T) {
 				t.Fatal("default informational Link changed or disclosed its Issue source")
 			}
 			human := graphPolicyCLI(t, bd, work, home, nil, "", "links", issue.ID)
-			if !strings.Contains(human, "types/preview-related-v2  "+strings.TrimPrefix(unowned.Link.ID, scope)+"  "+strings.TrimPrefix(issue.ID, scope)+" → "+strings.TrimPrefix(memory.ID, scope)) {
+			if !strings.Contains(human, "types/preview-related-v2  "+unowned.Link.ID+"  "+issue.ID+" → "+strings.TrimPrefix(memory.ID, scope)) {
 				t.Fatalf("links omitted type-first local display: %q", human)
 			}
 			call("unlink", unowned.Link.ID, "--if-revision", unowned.Link.Revision)

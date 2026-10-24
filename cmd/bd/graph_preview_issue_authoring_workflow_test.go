@@ -25,9 +25,12 @@ func TestGraphPreviewIssueAuthoringWorkflow(t *testing.T) {
 				}
 				args = append(args, "--server", "--external", "--server-host", "127.0.0.1", "--server-port", port, "--server-user", "root")
 			}
+			identities := map[string]string{}
 			call := func(args ...string) string {
 				t.Helper()
-				return graphPolicyCLI(t, bd, work, home, nil, "", append(args, "--json")...)
+				output := graphPolicyCLI(t, bd, work, home, nil, "", append(args, "--json")...)
+				graphCaptureWorkflowIdentity(t, args, output, identities)
+				return output
 			}
 			exact := func(record graphstore.IssueRecord) {
 				t.Helper()
@@ -44,7 +47,7 @@ func TestGraphPreviewIssueAuthoringWorkflow(t *testing.T) {
 			selected := func(want bool, filters ...string) {
 				t.Helper()
 				page := graphMixedResult[graphstore.IssueListPage](t, graphPolicyCLI(t, bd, work, home, nil, "", append([]string{"list", "--format=records-json", "--all", "--limit=10"}, filters...)...))
-				if page.HasMore || (want && (len(page.Items) != 1 || page.Items[0].ID != scope+"beads/work")) || (!want && len(page.Items) != 0) {
+				if page.HasMore || (want && (len(page.Items) != 1 || page.Items[0].ID != graphWorkflowIdentity(identities, scope, "beads/work"))) || (!want && len(page.Items) != 0) {
 					t.Fatalf("due selection %v: %+v", filters, page)
 				}
 			}
@@ -142,9 +145,12 @@ func TestGraphPreviewIssueDatelessDeferralWorkflow(t *testing.T) {
 				}
 				args = append(args, "--server", "--external", "--server-host", "127.0.0.1", "--server-port", port, "--server-user", "root")
 			}
+			identities := map[string]string{}
 			call := func(args ...string) string {
 				t.Helper()
-				return graphPolicyCLI(t, bd, work, home, nil, "", append(args, "--json")...)
+				output := graphPolicyCLI(t, bd, work, home, nil, "", append(args, "--json")...)
+				graphCaptureWorkflowIdentity(t, args, output, identities)
+				return output
 			}
 			refuse := func(code string, args ...string) {
 				t.Helper()

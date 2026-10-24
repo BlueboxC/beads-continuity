@@ -20,6 +20,8 @@ Root DOX.md and the parent chain remain binding.
 
 - `fmt-check` and `fmt` share the Git source inventory: existing regular tracked Go files (including ignored paths) and nonignored untracked Go files. Exclude private ignored artifacts, deleted files and symlinks; inventory/gofmt failures remain fatal. Preserve historical evidence bytes.
 
+- The normal test runner uses a 45-minute per-package hang backstop: the Preview3 graphstore coverage suite exceeds the previous 25-minute CLI allowance. This changes no assertion, acquisition cap or operation deadline. TEST_TIMEOUT remains the explicit diagnostic override.
+
 ## Work Guidance
 
 Generated CLI freshness checks compare generated pages while excluding DOX.md work contracts; DOX reachability is checked separately.

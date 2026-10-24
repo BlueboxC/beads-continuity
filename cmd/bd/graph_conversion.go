@@ -18,7 +18,6 @@ import (
 
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
-	"github.com/steveyegge/beads/internal/codeindex"
 	"github.com/steveyegge/beads/internal/configfile"
 	"github.com/steveyegge/beads/internal/knowledge"
 	"github.com/steveyegge/beads/internal/migration"
@@ -55,7 +54,7 @@ Initial support requires current embedded native schema and main as the only dir
 		initCommandContext()
 		setRootContext(setupGracefulShutdown())
 		applyNoColorFlag()
-		allowed := map[string]bool{"json": true, "actor": true, "quiet": true, "no-color": true, "readonly": true, "sandbox": true, "workspace": true, "scope-url": true, "out": true, "plan": true, "receipt": true, "writers-stopped": true, "prune-obsolete-code": true}
+		allowed := map[string]bool{"json": true, "actor": true, "quiet": true, "no-color": true, "readonly": true, "sandbox": true, "workspace": true, "scope-url": true, "out": true, "plan": true, "receipt": true, "writers-stopped": true, "prune-obsolete-code": true, "source": true, "metadata": true}
 		var bad string
 		cmd.Flags().Visit(func(f *pflag.Flag) {
 			if !allowed[f.Name] && bad == "" {
@@ -110,7 +109,7 @@ func init() {
 			return json.NewEncoder(cmd.OutOrStdout()).Encode(result)
 		}}
 	verify.Flags().String("receipt", "", "Private rehearsal receipt JSON")
-	graphConvertCmd.AddCommand(plan, prepare, verify, graphConversionPublicationCommand(false), graphConversionPublicationCommand(true))
+	graphConvertCmd.AddCommand(plan, prepare, verify, graphConversionSchema8CopyCommand(), graphConversionPublicationCommand(false), graphConversionPublicationCommand(true))
 	rootCmd.AddCommand(graphConvertCmd)
 }
 
@@ -447,7 +446,7 @@ func loadGraphConversionReceipt(cmd *cobra.Command) (receipt graphConversionRece
 	if err := graphConversionReadJSON(file, &receipt); err != nil {
 		return receipt, err
 	}
-	if receipt.Version != 1 || receipt.Phase != "prepared" || receipt.Plan.Version != 1 {
+	if receipt.Version != 1 || (receipt.Phase != "prepared" && receipt.Phase != "prepared-schema8-copy") || receipt.Plan.Version != 1 {
 		return receipt, errors.New("receipt is not a completed rehearsal")
 	}
 	dir, err := graphConversionCanonicalPath(filepath.Dir(file))
@@ -506,14 +505,12 @@ func graphConversionValidateProjections(ctx context.Context, o graphstore.Option
 		return err
 	}
 	defer func() { err = errors.Join(err, s.Close()) }()
-	plane, _, err := s.ReadContinuity(ctx)
+	snapshot, err := s.ReadProjectContinuity(ctx)
 	if err != nil {
 		return err
 	}
-	if _, err := codeindex.Load(plane.Memories); err != nil {
-		return fmt.Errorf("conversion code index: %w", err)
-	}
-	if _, err := knowledge.LoadCatalog(plane.Memories); err != nil {
+
+	if _, err := knowledge.LoadCatalog(snapshot.Memories.Memories); err != nil {
 		return fmt.Errorf("conversion document catalog: %w", err)
 	}
 	return nil
@@ -544,6 +541,32 @@ func cloneStringMap(in map[string]string) map[string]string {
 }
 
 func graphConversionVerifyReceipt(ctx context.Context, receipt graphConversionReceipt) (result map[string]any, err error) {
+	if receipt.Plan.Store.SourceSchema == 8 {
+		if receipt.Phase != "prepared-schema8-copy" {
+			return nil, errors.New("schema8 copy receipt phase differs")
+		}
+		hash, err := graphConversionDirectoryHash(filepath.Join(receipt.Directory, "backup"))
+		if err != nil || hash != receipt.BackupSHA256 {
+			return nil, errors.New("schema8 checkpoint changed")
+		}
+		hash, err = graphConversionFileHash(filepath.Join(receipt.Directory, "original-metadata.json"))
+		if err != nil || hash != receipt.Plan.MetadataSHA256 {
+			return nil, errors.New("copied schema8 selector changed")
+		}
+		o := graphConversionOptions(receipt.Plan)
+		o.DataDir = filepath.Join(receipt.Directory, "candidate")
+		state, err := graphstore.VerifySchema8Candidate(ctx, o, receipt.Plan.Store)
+		if err != nil {
+			return nil, err
+		}
+		if !reflect.DeepEqual(state, receipt.CandidateState) {
+			return nil, errors.New("schema8 candidate changed since rehearsal")
+		}
+		if err = graphConversionValidateProjections(ctx, o); err != nil {
+			return nil, err
+		}
+		return map[string]any{"phase": receipt.Phase, "verified": true}, nil
+	}
 	if err := graphConversionRecoveryArtifacts(receipt); err != nil {
 		return nil, err
 	}

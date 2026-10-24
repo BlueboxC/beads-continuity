@@ -33,7 +33,7 @@ func TestMemoryUpdateLifecycle(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			incoming, err := s.Create(ctx, CreateRequest{Path: "beads/incoming", Body: "Cites plan"})
+			incoming, err := s.Create(ctx, CreateRequest{Path: "beads/incoming", Title: "Incoming", Body: "Cites plan"})
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -41,7 +41,15 @@ func TestMemoryUpdateLifecycle(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			added, err := s.AddInformationalLink(ctx, LinkCreateRequest{Path: "links/out", SourcePath: "beads/plan", TargetPath: "beads/work", ExpectedSourceRevision: original.Revision, Properties: map[string]any{"note": "before"}})
+			// Direct References remains unowned, including this Memory-to-Issue edge.
+			reference, err := s.AddInformationalLink(ctx, LinkCreateRequest{Path: "links/work-reference", SourcePath: "beads/plan", TargetPath: "beads/work"})
+			if err != nil || !reflect.DeepEqual(reference.Source, original) {
+				t.Fatalf("unowned reference revised source: %+v %v", reference, err)
+			}
+			if _, err := s.Create(ctx, CreateRequest{Path: "beads/constraint", TypeURL: s.ScopeURL() + "types/constraint", Title: "Constraint"}); err != nil {
+				t.Fatal(err)
+			}
+			added, err := s.AddInformationalLink(ctx, LinkCreateRequest{Path: "links/out", TypeURL: s.ScopeURL() + "types/subject-to", SourcePath: "beads/plan", TargetPath: "beads/constraint", ExpectedSourceRevision: original.Revision, Properties: map[string]any{"note": "before"}})
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -87,9 +95,16 @@ func TestMemoryUpdateLifecycle(t *testing.T) {
 			if _, err := s.UpdateMemory(ctx, request); !errors.Is(err, ErrConflict) {
 				t.Fatalf("owned-Link change did not invalidate content guard: %v", err)
 			}
-			cleared, err := s.UpdateMemory(ctx, MemoryUpdateRequest{Path: "beads/plan", Properties: Properties{}, Unconditional: true})
-			if err != nil || !cleared.Changed || cleared.Memory.Properties != (Properties{}) || cleared.Memory.Attribution.Actor != "" || cleared.Memory.Attribution.Status != "unknown" {
-				t.Fatalf("clear title/body: %+v %v", cleared, err)
+			before = workflowState(t, ctx, s)
+			if got, err := s.UpdateMemory(ctx, MemoryUpdateRequest{Path: "beads/plan", Properties: Properties{}, Unconditional: true}); !errors.Is(err, storage.ErrValidation) || !reflect.ValueOf(got).IsZero() {
+				t.Fatalf("blank title must refuse: %+v %v", got, err)
+			}
+			if !reflect.DeepEqual(before, workflowState(t, ctx, s)) {
+				t.Fatal("blank-title refusal changed state")
+			}
+			cleared, err := s.UpdateMemory(ctx, MemoryUpdateRequest{Path: "beads/plan", Properties: Properties{Title: "Revised 記憶"}, Unconditional: true})
+			if err != nil || !cleared.Changed || cleared.Memory.Properties != (Properties{Title: "Revised 記憶"}) || cleared.Memory.Attribution.Actor != "" || cleared.Memory.Attribution.Status != "unknown" {
+				t.Fatalf("clear body: %+v %v", cleared, err)
 			}
 			assertOwnedLink(t, cleared.Memory, changedLink.Link)
 			if err := s.Close(); err != nil {
@@ -137,7 +152,8 @@ func TestMemoryUpdateRefusalAndRollback(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			added, err := s.AddInformationalLink(ctx, LinkCreateRequest{Path: "links/out", SourcePath: "beads/plan", TargetPath: "beads/work", ExpectedSourceRevision: memory.Revision})
+			createSelectedConstraintFixture(t, ctx, s, "beads/constraint")
+			added, err := s.AddInformationalLink(ctx, LinkCreateRequest{Path: "links/out", TypeURL: s.ScopeURL() + "types/subject-to", SourcePath: "beads/plan", TargetPath: "beads/constraint", ExpectedSourceRevision: memory.Revision})
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -236,15 +252,15 @@ func TestMemoryUpdateConcurrentWriters(t *testing.T) {
 						t.Error(err)
 					}
 				}()
-				memory, err := first.Create(ctx, CreateRequest{Path: "beads/plan", Body: "original"})
+				memory, err := first.Create(ctx, CreateRequest{Path: "beads/plan", Title: "Plan", Body: "original"})
 				if err != nil {
 					t.Fatal(err)
 				}
-				target, err := first.Create(ctx, CreateRequest{Path: "beads/target", Body: "target"})
+				target, err := first.Create(ctx, CreateRequest{Path: "beads/target", TypeURL: first.ScopeURL() + "types/constraint", Title: "Target constraint", Body: "target"})
 				if err != nil {
 					t.Fatal(err)
 				}
-				link, err := first.AddInformationalLink(ctx, LinkCreateRequest{Path: "links/out", SourcePath: "beads/plan", TargetPath: "beads/target", ExpectedSourceRevision: memory.Revision})
+				link, err := first.AddInformationalLink(ctx, LinkCreateRequest{Path: "links/out", TypeURL: first.ScopeURL() + "types/subject-to", SourcePath: "beads/plan", TargetPath: "beads/target", ExpectedSourceRevision: memory.Revision})
 				if err != nil {
 					t.Fatal(err)
 				}
@@ -290,14 +306,14 @@ func TestMemoryUpdateConcurrentWriters(t *testing.T) {
 				}()
 				go func() {
 					defer writers.Done()
-					_, err := first.UpdateMemory(ctx, MemoryUpdateRequest{Path: "beads/plan", Properties: Properties{Body: "writer-one"}, ExpectedRevision: source.Revision})
+					_, err := first.UpdateMemory(ctx, MemoryUpdateRequest{Path: "beads/plan", Properties: Properties{Title: "Plan", Body: "writer-one"}, ExpectedRevision: source.Revision})
 					results <- err
 				}()
 				go func() {
 					defer writers.Done()
 					var err error
 					if other == "memory" {
-						_, err = second.UpdateMemory(ctx, MemoryUpdateRequest{Path: "beads/plan", Properties: Properties{Body: "writer-two"}, ExpectedRevision: source.Revision})
+						_, err = second.UpdateMemory(ctx, MemoryUpdateRequest{Path: "beads/plan", Properties: Properties{Title: "Plan", Body: "writer-two"}, ExpectedRevision: source.Revision})
 					} else {
 						_, err = second.UpdateLink(ctx, LinkUpdateRequest{Path: "links/out", Properties: map[string]any{"note": "writer-two"}, ExpectedRevision: link.Link.Revision, ExpectedSourceRevision: source.Revision})
 					}

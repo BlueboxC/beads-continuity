@@ -3,6 +3,7 @@ package graphread
 import (
 	"context"
 	"fmt"
+	"sort"
 
 	graph "github.com/steveyegge/beads/graphops"
 	"github.com/steveyegge/beads/internal/httpapi/bdpwire"
@@ -51,13 +52,13 @@ func projectInventory(snapshot graphstore.Snapshot) (Inventory, error) {
 	for _, record := range snapshot.Records {
 		switch v := record.(type) {
 		case graphstore.Record:
-			projected, err := bead(descriptors[v.Type], v.ID, v.Type, v.Revision, v.Properties, v.Metadata, v.Owned, v.Attribution)
+			projected, err := bead(descriptors[v.Type], v.ID, v.Type, v.Revision, v.Properties, v.Metadata, v.Owned, v.Attribution, capturedOwnershipTypes(snapshot, v.ID, v.Type))
 			if err != nil {
 				return Inventory{}, err
 			}
 			result.Beads = append(result.Beads, projected)
 		case graphstore.IssueRecord:
-			projected, err := bead(descriptors[v.Type], v.ID, v.Type, v.Revision, v.Properties, v.Metadata, v.Owned, v.Attribution)
+			projected, err := bead(descriptors[v.Type], v.ID, v.Type, v.Revision, v.Properties, v.Metadata, v.Owned, v.Attribution, capturedOwnershipTypes(snapshot, v.ID, v.Type))
 			if err != nil {
 				return Inventory{}, err
 			}
@@ -76,5 +77,17 @@ func projectInventory(snapshot graphstore.Snapshot) (Inventory, error) {
 			return Inventory{}, fmt.Errorf("%w: unsupported Resource projection", graphstore.ErrInvalidStore)
 		}
 	}
+	// Public ordering follows canonical identities after private-locator projection.
+	sort.Slice(result.Beads, func(i, j int) bool { return graph.CompareCodeUnits(result.Beads[i].ID, result.Beads[j].ID) < 0 })
+	sort.Slice(result.Links, func(i, j int) bool { return graph.CompareCodeUnits(result.Links[i].ID, result.Links[j].ID) < 0 })
+	sort.Slice(result.Types, func(i, j int) bool { return graph.CompareCodeUnits(result.Types[i].ID, result.Types[j].ID) < 0 })
 	return result, nil
+}
+
+func capturedOwnershipTypes(snapshot graphstore.Snapshot, id, typ string) []string {
+	if snapshot.OwnedLinkTypesByResource != nil {
+		return snapshot.OwnedLinkTypesByResource[id]
+	}
+	// Pure legacy snapshot fixtures predate the per-Resource native sidecar.
+	return snapshot.OwnedLinkTypes[typ]
 }

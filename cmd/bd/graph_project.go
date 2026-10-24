@@ -45,6 +45,7 @@ func runProjectGraph(cmd *cobra.Command, args []string) error {
 	}
 	defer func() { _ = reader.Close() }()
 	var snapshot graphstore.Snapshot
+	var previewActivity activity.View
 	var plane memoryops.ListResult
 	var index codeindex.Index
 	var issues []*types.Issue
@@ -57,21 +58,19 @@ func runProjectGraph(cmd *cobra.Command, args []string) error {
 		plane, index, issues, deps = result.plane, result.index, result.issues, result.deps
 	} else {
 		err = withGraphStoreOutput(func(ctx context.Context, st *graphstore.Store) (any, string, error) {
-			var readErr error
-			plane, snapshot, readErr = st.ReadContinuity(ctx)
-			return nil, "", readErr
+			context, readErr := st.ReadProjectContinuity(ctx)
+			if readErr != nil {
+				return nil, "", readErr
+			}
+			plane, snapshot, index, previewActivity = context.Memories, context.Graph, context.Code, context.Activity
+			return nil, "", nil
 		}, func(any, string) error { return nil })
 		if err != nil {
 			return err
 		}
 	}
 	state := reader.Refresh(knowledge.Decode(plane.Memories))
-	if graphPreviewActive {
-		index, err = codeindex.Load(plane.Memories)
-		if err != nil {
-			return err
-		}
-	}
+
 	workspace := filepath.Dir(beads.FindBeadsDir())
 	if index.Version != 0 {
 		codeReader, err := codeindex.Open(workspace)
@@ -105,6 +104,9 @@ func runProjectGraph(cmd *cobra.Command, args []string) error {
 		mergePreviewGraph(&page, snapshot)
 	}
 	journal := activity.Read(plane.Memories, "", "", 1000)
+	if graphPreviewActive {
+		journal = previewActivity
+	}
 	page.Activity = &journal
 	if graphHTML {
 		return graphview.WriteHTML(cmd.OutOrStdout(), page)

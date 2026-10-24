@@ -27,7 +27,7 @@ func TestIssueAssigneeLifecycle(t *testing.T) {
 	for _, backend := range []string{"embedded", "server"} {
 		t.Run(backend, func(t *testing.T) {
 			ctx, _, s, current, target, dependency := reopenFixture(t, backend)
-			memory, err := s.Create(ctx, CreateRequest{Path: "beads/context", Body: "Unrelated Memory"})
+			memory, err := s.Create(ctx, CreateRequest{Title: "Context", Path: "beads/context", Body: "Unrelated Memory"})
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -191,7 +191,7 @@ func seedAssigneeClaim(t *testing.T, ctx context.Context, s *Store, source Issue
 			return err
 		}
 		// Jim's native claim writer owns the one retained version.
-		return s.recordIssueMappingInTx(ctx, tx, "beads/work", source.Properties.ID, holder)
+		return s.recordIssueMappingInTx(ctx, tx, "beads/work", source.Properties.ID)
 	})
 	if err != nil {
 		t.Fatal(err)

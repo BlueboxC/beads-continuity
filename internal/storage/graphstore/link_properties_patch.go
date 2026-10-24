@@ -12,11 +12,13 @@ import (
 	publicops "github.com/steveyegge/beads/issueops"
 )
 
-// LinkPropertiesPatchRequest changes only informational Link properties. The
-// current private Type admits an optional string note. Memory-owned Links also
-// require a source guard; an Issue source remains unchanged by this writer.
+// LinkPropertiesPatchRequest combines Link property operations, optional
+// metadata edits and independent informational endpoint pin intents. Each Type
+// validates its final properties. Owned Links require a separate source guard;
+// native Dependency edits use the Issue-domain writer and version their source.
 // This preview does not expose the public BDP Update profile.
 type LinkPropertiesPatchRequest struct {
+	FromRevision           string
 	Path                   string
 	Patch                  []byte
 	Actor                  string
@@ -25,6 +27,7 @@ type LinkPropertiesPatchRequest struct {
 	ExpectedSourceRevision string
 	UnconditionalSource    bool
 	Metadata               publicops.MetadataPatch
+	SourcePin, TargetPin   *EndpointPin
 }
 
 func (s *Store) PatchLinkProperties(ctx context.Context, request LinkPropertiesPatchRequest) (LinkMutationResult, error) {
@@ -34,14 +37,19 @@ func (s *Store) PatchLinkProperties(ctx context.Context, request LinkPropertiesP
 	if !utf8.ValidString(request.Actor) {
 		return LinkMutationResult{}, fmt.Errorf("%w: actor must be UTF-8", storage.ErrValidation)
 	}
+	if request.FromRevision != "" {
+		if err := validateVersionToken(request.FromRevision); err != nil {
+			return LinkMutationResult{}, err
+		}
+	}
 	patch, err := graphpatch.Parse(request.Patch)
 	if err != nil {
 		return LinkMutationResult{}, memoryPropertiesPatchError(err)
 	}
 	return s.writeLinkProperties(ctx, LinkUpdateRequest{
-		Path: request.Path, Actor: request.Actor, ExpectedRevision: request.ExpectedRevision,
+		Path: request.Path, FromRevision: request.FromRevision, Actor: request.Actor, ExpectedRevision: request.ExpectedRevision,
 		Unconditional: request.Unconditional, ExpectedSourceRevision: request.ExpectedSourceRevision,
-		UnconditionalSource: request.UnconditionalSource, Metadata: request.Metadata,
+		UnconditionalSource: request.UnconditionalSource, Metadata: request.Metadata, SourcePin: request.SourcePin, TargetPin: request.TargetPin,
 	}, nil, patch)
 }
 

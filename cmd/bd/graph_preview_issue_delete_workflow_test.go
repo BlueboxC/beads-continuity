@@ -3,6 +3,7 @@
 package main
 
 import (
+	"encoding/json"
 	"os"
 	"reflect"
 	"testing"
@@ -59,8 +60,15 @@ func TestGraphPreviewIssueDeleteWorkflow(t *testing.T) {
 			refuse("gone", "show", "work")
 			refuse("gone", "delete", "work", "--force", "--unconditional")
 			refuse("identity_reserved", "create", "Replacement", "--id", "beads/work")
-			if after := call("versions", "work"); after != before {
-				t.Fatal("deletion invented or lost an Issue version")
+			after := call("versions", "work")
+			_, _, beforeRows, _ := graphVersionsListed(t, before)
+			_, _, afterRows, _ := graphVersionsListed(t, after)
+			var state struct {
+				CurrentState *graphstore.ResourceTerminalState `json:"currentState"`
+				Terminals    []graphVersionsRow                `json:"terminal_versions"`
+			}
+			if !reflect.DeepEqual(beforeRows, afterRows) || json.Unmarshal(graphMixedResult[json.RawMessage](t, after), &state) != nil || state.CurrentState == nil || deleted.Terminal == nil || len(state.Terminals) != 1 || state.CurrentState.Revision != deleted.Terminal.Revision || state.Terminals[0].Version != deleted.Terminal.Revision {
+				t.Fatal("deletion lost live versions or its distinct recovery guard")
 			}
 			if old := graphMixedResult[graphstore.IssueRecord](t, call("show", "work", "--version", final.Revision)); old.ID != final.ID || old.Revision != final.Revision {
 				t.Fatal("final live snapshot unavailable")

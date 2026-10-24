@@ -29,11 +29,11 @@ func TestInformationalLinkLifecycle(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			source, err := s.Create(ctx, CreateRequest{Path: "beads/plan", Body: "Plan"})
+			source, err := s.Create(ctx, CreateRequest{Path: "beads/plan", Title: "Fixture", Body: "Plan"})
 			if err != nil {
 				t.Fatal(err)
 			}
-			target, err := s.Create(ctx, CreateRequest{Path: "beads/notes", Body: "Notes"})
+			target, err := s.Create(ctx, CreateRequest{Path: "beads/notes", Title: "Fixture", TypeURL: s.ScopeURL() + "types/constraint", Body: "Notes"})
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -56,7 +56,7 @@ func TestInformationalLinkLifecycle(t *testing.T) {
 				t.Fatal("unowned source refusal changed state")
 			}
 			assertReadyIDs(t, ctx, s, issue.ID)
-			req := LinkCreateRequest{SourcePath: "beads/plan", TargetPath: "beads/notes", Path: "links/evidence", Properties: map[string]any{"note": "first"}, ExpectedSourceRevision: source.Revision, Actor: "author"}
+			req := LinkCreateRequest{TypeURL: s.ScopeURL() + "types/subject-to", SourcePath: "beads/plan", TargetPath: "beads/notes", Path: "links/evidence", Properties: map[string]any{"note": "first", "gunk": true}, ExpectedSourceRevision: source.Revision, Actor: "author"}
 			before := workflowState(t, ctx, s)
 			missing := req
 			missing.ExpectedSourceRevision = ""
@@ -64,9 +64,10 @@ func TestInformationalLinkLifecycle(t *testing.T) {
 				t.Fatalf("missing source guard: %v", err)
 			}
 			bad := req
-			bad.Properties = map[string]any{"gunk": true}
-			if _, err := s.AddInformationalLink(ctx, bad); !errors.Is(err, storage.ErrValidation) {
-				t.Fatalf("unknown property: %v", err)
+			bad.Properties = map[string]any{"unserializable": make(chan int)}
+			var unsupported *json.UnsupportedTypeError
+			if got, err := s.AddInformationalLink(ctx, bad); !errors.As(err, &unsupported) || !reflect.ValueOf(got).IsZero() {
+				t.Fatalf("unserializable property: %+v %v", got, err)
 			}
 			for _, stage := range []string{"coordination", "link-catalog", "link-payload", "link-retained", "source-catalog", "source-retained"} {
 				fault := errors.New("injected failure")
@@ -90,7 +91,7 @@ func TestInformationalLinkLifecycle(t *testing.T) {
 				t.Fatal(err)
 			}
 			owned := added.Source.(Record)
-			if !added.Changed || owned.Version == source.Version || len(owned.Owned) != 1 {
+			if !added.Changed || owned.Version == source.Version || len(owned.Owned) != 1 || added.Link.Properties["gunk"] != true {
 				t.Fatalf("wrong owned result: %+v", added)
 			}
 			assertOwnedLink(t, owned, added.Link)
@@ -217,6 +218,8 @@ func assertRetainedMemory(t *testing.T, ctx context.Context, s *Store, path stri
 	if err := s.db.QueryRowContext(ctx, `SELECT snapshot FROM graph_preview_versions WHERE path=? AND version=?`, path, want.Version).Scan(&raw); err != nil {
 		t.Fatal(err)
 	}
+	// PublicID is an internal catalog projection, absent from retained wire snapshots.
+	want.PublicID = ""
 	var got Record
 	if err := json.Unmarshal(raw, &got); err != nil || !reflect.DeepEqual(got, want) {
 		t.Fatalf("retained Memory changed: %v", err)
@@ -234,17 +237,17 @@ func TestInformationalOwnedConcurrentMutations(t *testing.T) {
 				if err != nil {
 					t.Fatal(err)
 				}
-				source, err := initial.Create(ctx, CreateRequest{Path: "beads/source"})
+				source, err := initial.Create(ctx, CreateRequest{Path: "beads/source", Title: "Fixture"})
 				if err != nil {
 					t.Fatal(err)
 				}
-				if _, err := initial.Create(ctx, CreateRequest{Path: "beads/target"}); err != nil {
+				if _, err := initial.Create(ctx, CreateRequest{Path: "beads/target", Title: "Fixture", TypeURL: initial.ScopeURL() + "types/constraint"}); err != nil {
 					t.Fatal(err)
 				}
 				links := map[string]LinkRecord{}
 				if mutation == "update" {
 					for _, path := range []string{"links/one", "links/two"} {
-						added, err := initial.AddInformationalLink(ctx, LinkCreateRequest{Path: path, SourcePath: "beads/source", TargetPath: "beads/target", ExpectedSourceRevision: source.Revision})
+						added, err := initial.AddInformationalLink(ctx, LinkCreateRequest{TypeURL: o.Binding.ScopeURL + "types/subject-to", Path: path, SourcePath: "beads/source", TargetPath: "beads/target", ExpectedSourceRevision: source.Revision})
 						if err != nil {
 							t.Fatal(err)
 						}
@@ -278,7 +281,7 @@ func TestInformationalOwnedConcurrentMutations(t *testing.T) {
 							}
 						}
 						if mutation == "create" {
-							_, err = s.AddInformationalLink(ctx, LinkCreateRequest{Path: path, SourcePath: "beads/source", TargetPath: "beads/target", ExpectedSourceRevision: source.Revision})
+							_, err = s.AddInformationalLink(ctx, LinkCreateRequest{TypeURL: o.Binding.ScopeURL + "types/subject-to", Path: path, SourcePath: "beads/source", TargetPath: "beads/target", ExpectedSourceRevision: source.Revision})
 						} else {
 							_, err = s.UpdateLink(ctx, LinkUpdateRequest{Path: path, Properties: map[string]any{"note": "changed"}, ExpectedRevision: links[path].Revision, ExpectedSourceRevision: source.Revision})
 						}
@@ -340,8 +343,8 @@ func TestInformationalOwnedConcurrentMutations(t *testing.T) {
 	}
 }
 
-// Self-links own one source snapshot, even though that source is also target.
-// Endpoint validation must not recursively follow the owned Link back to itself.
+// Self-References refuse atomically. A distinct Constraint endpoint exercises
+// owned SubjectTo history, updates and no-ops under the selected catalog.
 func TestInformationalMemorySelfLink(t *testing.T) {
 	for _, backend := range []string{"embedded", "server"} {
 		t.Run(backend, func(t *testing.T) {
@@ -355,16 +358,25 @@ func TestInformationalMemorySelfLink(t *testing.T) {
 					t.Error(err)
 				}
 			}()
-			memory, err := s.Create(ctx, CreateRequest{Path: "beads/self", Body: "Self reference"})
+			memory, err := s.Create(ctx, CreateRequest{Path: "beads/self", Title: "Fixture", Body: "Self reference"})
 			if err != nil {
 				t.Fatal(err)
 			}
-			created, err := s.AddInformationalLink(ctx, LinkCreateRequest{Path: "links/self", SourcePath: "beads/self", TargetPath: "beads/self", ExpectedSourceRevision: memory.Revision})
+			beforeSelf := workflowState(t, ctx, s)
+			refused, err := s.AddInformationalLink(ctx, LinkCreateRequest{Path: "links/self", SourcePath: "beads/self", TargetPath: "beads/self", ExpectedSourceRevision: memory.Revision})
+			if !errors.Is(err, storage.ErrValidation) || !reflect.ValueOf(refused).IsZero() || !reflect.DeepEqual(beforeSelf, workflowState(t, ctx, s)) {
+				t.Fatalf("self Reference must refuse atomically: %+v %v", refused, err)
+			}
+			target, err := s.Create(ctx, CreateRequest{Path: "beads/constraint", Title: "Constraint", TypeURL: s.ScopeURL() + "types/constraint"})
+			if err != nil {
+				t.Fatal(err)
+			}
+			created, err := s.AddInformationalLink(ctx, LinkCreateRequest{TypeURL: s.ScopeURL() + "types/subject-to", Path: "links/self", SourcePath: "beads/self", TargetPath: "beads/constraint", ExpectedSourceRevision: memory.Revision})
 			if err != nil {
 				t.Fatal(err)
 			}
 			source := created.Source.(Record)
-			if !created.Changed || source.Version == memory.Version || created.Link.Source != memory.ID || created.Link.Target != memory.ID {
+			if !created.Changed || source.Version == memory.Version || created.Link.Source != memory.ID || created.Link.Target != target.ID {
 				t.Fatalf("self create: %+v", created)
 			}
 			assertOwnedLink(t, source, created.Link)
@@ -405,5 +417,127 @@ func TestInformationalMemorySelfLink(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+// Open Link properties follow the existing graph JSON number admission law:
+// representable values survive canonical reads, while rounded values refuse.
+func TestInformationalLinkNumericAdmission(t *testing.T) {
+	for _, backend := range []string{"embedded", "server"} {
+		t.Run(backend, func(t *testing.T) {
+			ctx, _, s := memoryDeleteStore(t, backend)
+			for _, path := range []string{"beads/source", "beads/target"} {
+				if _, err := s.Create(ctx, CreateRequest{Path: path, Title: path}); err != nil {
+					t.Fatal(err)
+				}
+			}
+			created, err := s.AddInformationalLink(ctx, LinkCreateRequest{Path: "links/numeric", SourcePath: "beads/source", TargetPath: "beads/target", Properties: map[string]any{"seq": json.Number("9007199254740994"), "ratio": json.Number("1.0")}})
+			if err != nil {
+				t.Fatal(err)
+			}
+			assertProperties := func(link LinkRecord, want string) {
+				t.Helper()
+				got, err := canonicalJSON(link.Properties)
+				if err != nil || string(got) != want {
+					t.Fatalf("numeric properties=%s want=%s: %v", got, want, err)
+				}
+			}
+			assertProperties(created.Link, `{"ratio":1,"seq":9007199254740994}`)
+			before := workflowState(t, ctx, s)
+			for name, apply := range map[string]func() (LinkMutationResult, error){
+				"create": func() (LinkMutationResult, error) {
+					return s.AddInformationalLink(ctx, LinkCreateRequest{Path: "links/rounded", SourcePath: "beads/source", TargetPath: "beads/target", Properties: map[string]any{"seq": json.Number("10000000000000000001")}})
+				},
+				"merge": func() (LinkMutationResult, error) {
+					return s.UpdateLink(ctx, LinkUpdateRequest{Path: "links/numeric", ExpectedRevision: created.Link.Revision, MergeProperties: true, Properties: map[string]any{"seq": json.Number("10000000000000000001")}})
+				},
+				"patch": func() (LinkMutationResult, error) {
+					return s.PatchLinkProperties(ctx, LinkPropertiesPatchRequest{Path: "links/numeric", ExpectedRevision: created.Link.Revision, Patch: []byte(`[{"op":"add","path":"/seq","value":10000000000000000001}]`)})
+				},
+			} {
+				got, err := apply()
+				if err == nil || !reflect.ValueOf(got).IsZero() || !reflect.DeepEqual(before, workflowState(t, ctx, s)) {
+					t.Fatalf("%s rounded number must refuse atomically: %+v %v", name, got, err)
+				}
+			}
+			merged, err := s.UpdateLink(ctx, LinkUpdateRequest{Path: "links/numeric", ExpectedRevision: created.Link.Revision, MergeProperties: true, Properties: map[string]any{"seq": json.Number("9007199254740996")}})
+			if err != nil || !merged.Changed {
+				t.Fatalf("numeric merge: %+v %v", merged, err)
+			}
+			assertProperties(merged.Link, `{"ratio":1,"seq":9007199254740996}`)
+			patched, err := s.PatchLinkProperties(ctx, LinkPropertiesPatchRequest{Path: "links/numeric", ExpectedRevision: merged.Link.Revision, Patch: []byte(`[{"op":"add","path":"/extension","value":null}]`)})
+			if err != nil || !patched.Changed {
+				t.Fatalf("numeric preserving patch: %+v %v", patched, err)
+			}
+			assertProperties(patched.Link, `{"extension":null,"ratio":1,"seq":9007199254740996}`)
+			for _, want := range []LinkRecord{created.Link, merged.Link, patched.Link} {
+				got, err := s.ReadVersion(ctx, "links/numeric", want.Revision)
+				if err != nil || !reflect.DeepEqual(got, want) {
+					t.Fatalf("numeric retained revision: %+v %v", got, err)
+				}
+			}
+			current, err := s.ShowLink(ctx, "links/numeric")
+			if err != nil || !reflect.DeepEqual(current, patched.Link) {
+				t.Fatalf("numeric current revision: %+v %v", current, err)
+			}
+		})
+	}
+}
+
+// Native Dependencies and selected owned Links share one globally ordered set,
+// independent of which family was authored first.
+func TestInformationalIssueMixedOwnedRetainedOrder(t *testing.T) {
+	for _, backend := range []string{"embedded", "server"} {
+		for _, order := range []string{"dependency-first", "subject-to-first"} {
+			t.Run(backend+"/"+order, func(t *testing.T) {
+				ctx, _, s := memoryDeleteStore(t, backend)
+				for _, path := range []string{"beads/work", "beads/prerequisite"} {
+					if _, err := s.CreateIssue(ctx, path, plainIssue(path)); err != nil {
+						t.Fatal(err)
+					}
+				}
+				if _, err := s.Create(ctx, CreateRequest{Path: "beads/constraint", Title: "Constraint", TypeURL: s.ScopeURL() + "types/constraint"}); err != nil {
+					t.Fatal(err)
+				}
+				addDependency := func() {
+					t.Helper()
+					if _, err := s.AddDependency(ctx, DependencyRequest{Path: "links/z-native", SourcePath: "beads/work", TargetPath: "beads/prerequisite", Actor: "test"}); err != nil {
+						t.Fatal(err)
+					}
+				}
+				addSubjectTo := func() {
+					t.Helper()
+					if _, err := s.AddInformationalLink(ctx, LinkCreateRequest{Path: "links/a-selected", SourcePath: "beads/work", TargetPath: "beads/constraint", TypeURL: s.ScopeURL() + "types/subject-to", UnconditionalSource: true}); err != nil {
+						t.Fatal(err)
+					}
+				}
+				if order == "dependency-first" {
+					addDependency()
+					addSubjectTo()
+				} else {
+					addSubjectTo()
+					addDependency()
+				}
+				current, err := s.ShowIssue(ctx, "beads/work")
+				if err != nil || len(current.Owned) != 2 {
+					t.Fatalf("mixed current owned set: %+v %v", current, err)
+				}
+				for i, path := range []string{"links/a-selected", "links/z-native"} {
+					var link LinkRecord
+					if err := json.Unmarshal(current.Owned[i], &link); err != nil || link.ID != s.ScopeURL()+path {
+						t.Fatalf("owned order %d: %+v %v", i, link, err)
+					}
+				}
+				kind, versions, err := s.Versions(ctx, "beads/work")
+				if err != nil || kind != KindIssue || len(versions) != 3 {
+					t.Fatalf("mixed retained versions: %s %+v %v", kind, versions, err)
+				}
+				retained, err := s.ReadVersion(ctx, "beads/work", current.Revision)
+				issue, ok := retained.(IssueRecord)
+				if err != nil || !ok || !reflect.DeepEqual(issue.Owned, current.Owned) {
+					t.Fatalf("mixed retained owned set: %+v %v", retained, err)
+				}
+			})
+		}
 	}
 }

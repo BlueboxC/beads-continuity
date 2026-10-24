@@ -28,10 +28,10 @@ func TestCurrentSnapshotLifecycle(t *testing.T) {
 				}
 			})
 			empty, err := s.CurrentSnapshot(ctx)
-			if err != nil || len(empty.Records) != 0 || len(empty.Types) != 9 || !authorityID.MatchString(empty.WriterToken) {
+			if err != nil || len(empty.Records) != 0 || len(empty.Types) != len(FreshTypeNames()) || !authorityID.MatchString(empty.WriterToken) {
 				t.Fatalf("empty inventory: %+v %v", empty, err)
 			}
-			memory, err := s.Create(ctx, CreateRequest{Path: "beads/plan", Body: "Plan"})
+			memory, err := s.Create(ctx, CreateRequest{Title: "Plan", Path: "beads/plan", Body: "Plan"})
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -44,7 +44,8 @@ func TestCurrentSnapshotLifecycle(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			related, err := s.AddInformationalLink(ctx, LinkCreateRequest{Path: "links/context", SourcePath: "beads/plan", TargetPath: "beads/work", ExpectedSourceRevision: memory.Revision})
+			createSelectedConstraintFixture(t, ctx, s, "beads/z-rule")
+			related, err := s.AddInformationalLink(ctx, LinkCreateRequest{Path: "links/context", TypeURL: s.ScopeURL() + "types/subject-to", SourcePath: "beads/plan", TargetPath: "beads/z-rule", ExpectedSourceRevision: memory.Revision})
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -55,7 +56,7 @@ func TestCurrentSnapshotLifecycle(t *testing.T) {
 			if current.WriterToken == empty.WriterToken {
 				t.Fatal("write did not change token")
 			}
-			paths := []string{"beads/plan", "beads/prereq", "beads/work", "links/block", "links/context"}
+			paths := []string{"beads/plan", "beads/prereq", "beads/work", "beads/z-rule", "links/block", "links/context"}
 			if len(current.Records) != len(paths) {
 				t.Fatalf("inventory length: %d", len(current.Records))
 			}
@@ -93,7 +94,7 @@ func TestCurrentSnapshotLifecycle(t *testing.T) {
 				t.Fatal(err)
 			}
 			after, err := s.CurrentSnapshot(ctx)
-			if err != nil || len(after.Records) != 4 || after.WriterToken == current.WriterToken {
+			if err != nil || len(after.Records) != 5 || after.WriterToken == current.WriterToken {
 				t.Fatalf("post-unlink inventory: %+v %v", after, err)
 			}
 			if !reflect.DeepEqual(after.Records[0], removed.Source) {
@@ -116,7 +117,7 @@ func TestCurrentSnapshotRefusesCorruption(t *testing.T) {
 					t.Error(err)
 				}
 			}()
-			if _, err := s.Create(ctx, CreateRequest{Path: "beads/plan", Body: "Plan"}); err != nil {
+			if _, err := s.Create(ctx, CreateRequest{Title: "Plan", Path: "beads/plan", Body: "Plan"}); err != nil {
 				t.Fatal(err)
 			}
 			if _, err := s.CreateIssue(ctx, "beads/work", plainIssue("Work")); err != nil {
@@ -179,19 +180,14 @@ func TestCurrentSnapshotLimit(t *testing.T) {
 			}()
 			// A synthetic oversized catalog proves refusal happens before backing
 			// hydration. This is a bound test, not a seeded user demonstration.
-			tx, err := s.db.BeginTx(ctx, nil)
-			if err != nil {
-				t.Fatal(err)
-			}
-			defer func() { _ = tx.Rollback() }()
-			err = func() error {
+			err = s.withTxPolicy(ctx, txPolicy{mayWrite: true, commit: true, conversion: true}, func(tx *sql.Tx) error {
 				for i := 0; i <= PreviewSnapshotLimit; i++ {
 					if _, err := tx.ExecContext(ctx, `INSERT INTO graph_preview_catalog(path,resource_kind,type_url,revision,allocation_state,backing) VALUES (?,'bead',?,'00000000000000000000000000000000','live','generic')`, fmt.Sprintf("beads/limit%d", i), MemoryTypeURL(o.Binding.ScopeURL)); err != nil {
 						return err
 					}
 				}
-				return tx.Commit()
-			}()
+				return nil
+			})
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -202,7 +198,7 @@ func TestCurrentSnapshotLimit(t *testing.T) {
 			if _, err := s.db.ExecContext(ctx, `DELETE FROM graph_preview_catalog WHERE path=?`, fmt.Sprintf("beads/limit%d", PreviewSnapshotLimit)); err != nil {
 				t.Fatal(err)
 			}
-			// At-limit allocations proceed to backing validation; the
+			// Exactly 1000 allocations proceed to backing validation; the
 			// deliberately missing payload now fails as corruption, not limit.
 			got, err = s.CurrentSnapshot(ctx)
 			if !errors.Is(err, ErrInvalidStore) || errors.Is(err, ErrLimitExceeded) || !reflect.DeepEqual(got, Snapshot{}) {
@@ -255,7 +251,7 @@ func TestCurrentSnapshotTransactionConsistency(t *testing.T) {
 				if err := checkBinding(ctx, tx, o); err != nil {
 					return err
 				}
-				if _, err := writer.Create(ctx, CreateRequest{Path: "beads/arriving", Body: "After reader began"}); err != nil {
+				if _, err := writer.Create(ctx, CreateRequest{Title: "Arriving", Path: "beads/arriving", Body: "After reader began"}); err != nil {
 					return err
 				}
 				during, err := reader.currentSnapshotInTx(ctx, tx)

@@ -14,7 +14,7 @@ Root DOX.md and the parent chain remain binding.
 
 - Cross-project prerequisite guidance documents closed provides capabilities, conservative unresolved blocking, optional API context resolution and the existing explicit manual-claim boundary. Embedded readonly guidance distinguishes mutation guards from driver filesystem access and permanent permission diagnostics.
 
-- reference/graph-preview.md owns this fork’s experimental format, actual supported commands, source attribution and compatibility limits; ordinary onboarding remains in fork-continuity.md.
+- reference/graph-preview.md owns this fork’s experimental format, actual supported commands, source attribution and compatibility limits; ordinary onboarding remains in fork-continuity.md. Distinguish the isolated schema11/generation13 copy candidate from the matched schema8 baseline; no user guide may imply real activation or Preview3 HTTP qualification.
 
 - Dolt guidance distinguishes the qualified embedded dependency, standalone CLI policy and database storage-format compatibility. Attribute upstream cross-version measurements; neither a read-only success nor the advisory minimum qualifies writes to newer storage.
 

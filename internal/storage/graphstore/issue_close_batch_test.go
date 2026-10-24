@@ -54,6 +54,20 @@ func TestGraphIssueCloseBatchClaimNextNoop(t *testing.T) {
 			if after := reopenState(t, ctx, s); !reflect.DeepEqual(after, before) {
 				t.Fatal("all-refused batch changed current authority, lease, History or retained state")
 			}
+			if _, err := s.CreateIssue(ctx, "beads/preflight", plainIssue("Preflight target")); err != nil {
+				t.Fatal(err)
+			}
+			beforeMissing := reopenState(t, ctx, s)
+			_, err = s.CloseIssues(ctx, IssueCloseBatchRequest{
+				Paths: []string{"beads/preflight", "beads/missing"}, Reasons: []string{"done", "done"},
+				Actor: "fixture", ClaimNext: true, RequireAllPaths: true,
+			})
+			if !errors.Is(err, ErrNotFound) {
+				t.Fatalf("missing selector did not abort checked batch: %v", err)
+			}
+			if after := reopenState(t, ctx, s); !reflect.DeepEqual(after, beforeMissing) {
+				t.Fatal("missing selector changed a sibling Issue, claim, History or retained state")
+			}
 			if _, err := s.CreateIssue(ctx, "beads/duplicate", plainIssue("Duplicate batch target")); err != nil {
 				t.Fatal(err)
 			}
@@ -103,6 +117,39 @@ func TestGraphIssueCloseBatchClaimNextRollback(t *testing.T) {
 			}
 			if after := reopenState(t, ctx, s); !reflect.DeepEqual(after, before) {
 				t.Fatal("failed close-and-claim left an Issue, lease, History or graph version behind")
+			}
+		})
+	}
+}
+
+func TestGraphIssueCloseBatchCheckedSelectorsKeepPerItemPolicy(t *testing.T) {
+	for _, backend := range []string{"embedded", "server"} {
+		t.Run(backend, func(t *testing.T) {
+			ctx, o := issueExperimentOptions(t, backend)
+			s, err := OpenExisting(ctx, o)
+			if err != nil {
+				t.Fatal(err)
+			}
+			t.Cleanup(func() { _ = s.Close() })
+			assigned := plainIssue("Assigned elsewhere")
+			assigned.Issue.Assignee = "other-actor"
+			if _, err := s.CreateIssue(ctx, "beads/assigned", assigned); err != nil {
+				t.Fatal(err)
+			}
+			if _, err := s.CreateIssue(ctx, "beads/free", plainIssue("Free to close")); err != nil {
+				t.Fatal(err)
+			}
+			result, err := s.CloseIssues(ctx, IssueCloseBatchRequest{
+				Paths: []string{"beads/assigned", "beads/free"}, Reasons: []string{"done", "done"},
+				Actor: "fixture", RequireAllPaths: true,
+			})
+			if err != nil || len(result.Outcomes) != 2 || result.Outcomes[0].Err == nil ||
+				result.Outcomes[1].Err != nil || !result.Outcomes[1].Changed {
+				t.Fatalf("checked selectors changed per-item policy: %+v %v", result, err)
+			}
+			stillOpen, err := s.ShowIssue(ctx, "beads/assigned")
+			if err != nil || stillOpen.Properties.Status != types.StatusOpen {
+				t.Fatalf("policy-refused Issue changed: %+v %v", stillOpen, err)
 			}
 		})
 	}

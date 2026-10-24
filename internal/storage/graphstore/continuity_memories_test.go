@@ -131,7 +131,11 @@ func TestContinuityMemoriesGraphPersistenceAndAtomicity(t *testing.T) {
 			if _, err := m.Forget(ctx, memoryops.ForgetRequest{Key: key}); !errors.Is(err, ErrIncidentLinkConstraint) {
 				t.Fatalf("forget bypassed incident Links: %v", err)
 			}
-			if _, err := s.Unlink(ctx, LinkDeleteRequest{Path: strings.TrimPrefix(link.Link.ID, s.ScopeURL()), ExpectedRevision: link.Link.Revision, UnconditionalSource: true}); err != nil {
+			linkPath, err := s.ResolveExactAllocatedResourcePath(ctx, strings.TrimPrefix(link.Link.ID, s.ScopeURL()))
+			if err != nil {
+				t.Fatal(err)
+			}
+			if _, err := s.Unlink(ctx, LinkDeleteRequest{Path: linkPath, ExpectedRevision: link.Link.Revision, UnconditionalSource: true}); err != nil {
 				t.Fatal(err)
 			}
 			if _, err := s.DeleteMemory(ctx, MemoryDeleteRequest{Path: "beads/target", ExpectedRevision: target.Revision}); err != nil {

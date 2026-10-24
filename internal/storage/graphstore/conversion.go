@@ -22,7 +22,6 @@ import (
 	txmemory "github.com/steveyegge/beads/internal/storage/memoryops"
 	"github.com/steveyegge/beads/internal/storage/schema"
 	"github.com/steveyegge/beads/internal/storage/sqlbuild"
-	publicops "github.com/steveyegge/beads/issueops"
 )
 
 // ConversionState includes all current tables, branches and working/staged roots.
@@ -37,6 +36,8 @@ type ConversionState struct {
 
 // ConversionPlan contains identities and hashes, never memory bodies.
 type ConversionPlan struct {
+	SourceSchema int
+
 	SourceDataDir, Database string
 	Binding                 Binding
 	State                   ConversionState
@@ -230,8 +231,6 @@ func planConversionWithPruneInTx(ctx context.Context, tx *sql.Tx, o Options, pru
 		if rows > PreviewContinuityReadRowLimit || bytes > 2<<30 {
 			return p, fmt.Errorf("%w: native prune rehearsal exceeds 65536 rows or 2 GiB", ErrLimitExceeded)
 		}
-	} else if err := checkContinuityReadBounds(ctx, tx); err != nil {
-		return p, err
 	}
 	rows, err := tx.QueryContext(ctx, "SELECT column_name FROM information_schema.columns WHERE table_schema=DATABASE() AND table_name='dependencies'")
 	if err != nil {
@@ -338,7 +337,7 @@ func planConversionWithPruneInTx(ctx context.Context, tx *sql.Tx, o Options, pru
 		}
 		nativeBytes += size
 	}
-	if len(p.IssueIDs)+len(p.DependencyIDs) > PreviewSnapshotLimit || nativeBytes > PreviewCurrentReadByteLimit {
+	if len(p.IssueIDs)+len(p.DependencyIDs) > PreviewContinuityReadRowLimit || nativeBytes > PreviewCurrentReadByteLimit {
 		return p, ErrLimitExceeded
 	}
 	var humanRows int
@@ -350,7 +349,14 @@ func planConversionWithPruneInTx(ctx context.Context, tx *sql.Tx, o Options, pru
 	if err := tx.QueryRowContext(ctx, "SELECT COUNT(*) FROM config WHERE BINARY LEFT(`key`,CHAR_LENGTH(?))=BINARY ? AND BINARY LEFT(`key`,CHAR_LENGTH(?))<>BINARY ? AND BINARY `key`<>BINARY ? AND BINARY LEFT(`key`,CHAR_LENGTH(?))<>BINARY ? AND BINARY LEFT(`key`,CHAR_LENGTH(?))<>BINARY ?", prefix, prefix, code, code, catalog, parts, parts, activity, activity).Scan(&humanRows); err != nil {
 		return p, err
 	}
-	if len(p.IssueIDs)+len(p.DependencyIDs)+humanRows > PreviewSnapshotLimit {
+	if humanRows > PreviewSnapshotLimit {
+		return p, ErrLimitExceeded
+	}
+	var humanBytes uint64
+	if err := tx.QueryRowContext(ctx, "SELECT CAST(COALESCE(SUM(256+OCTET_LENGTH(`key`)+OCTET_LENGTH(value)),0) AS UNSIGNED) FROM config WHERE BINARY LEFT(`key`,CHAR_LENGTH(?))=BINARY ? AND BINARY LEFT(`key`,CHAR_LENGTH(?))<>BINARY ? AND BINARY `key`<>BINARY ? AND BINARY LEFT(`key`,CHAR_LENGTH(?))<>BINARY ? AND BINARY LEFT(`key`,CHAR_LENGTH(?))<>BINARY ?", prefix, prefix, code, code, catalog, parts, parts, activity, activity).Scan(&humanBytes); err != nil {
+		return p, err
+	}
+	if humanBytes > PreviewCurrentReadByteLimit {
 		return p, ErrLimitExceeded
 	}
 	p.IssueRowsSHA256, err = conversionRowsHash(ctx, tx, "SELECT "+strings.Join(quoted, ",")+" FROM issues ORDER BY id")
@@ -386,14 +392,14 @@ func planConversionWithPruneInTx(ctx context.Context, tx *sql.Tx, o Options, pru
 		if !slices.Contains(p.IssueIDs, source) || !slices.Contains(p.IssueIDs, target) || source == target || !utf8.ValidString(thread) || !utf8.ValidString(actor) {
 			return p, fmt.Errorf("%w: Dependency %s has unsupported endpoints/fields", ErrInvalidStore, id)
 		}
-		if _, err := NativeDependencyTypeURLForSchema(o.Binding.ScopeURL, publicops.DependencyType(typ), SchemaVersion); err != nil {
+		if _, err := NativeDependencyTypeURL(o.Binding.ScopeURL, typ); err != nil {
 			return p, err
 		}
 		if err := validateConversionMetadata([]byte(metadata)); err != nil {
 			return p, fmt.Errorf("Dependency %s: %w", id, err)
 		}
 	}
-	rows, err = tx.QueryContext(ctx, "SELECT `key`,value FROM config WHERE BINARY LEFT(`key`,CHAR_LENGTH(?))=BINARY ? ORDER BY BINARY `key`", txmemory.StorageKey(""), txmemory.StorageKey(""))
+	rows, err = tx.QueryContext(ctx, "SELECT `key`,value FROM config WHERE BINARY LEFT(`key`,CHAR_LENGTH(?))=BINARY ? AND BINARY LEFT(`key`,CHAR_LENGTH(?))<>BINARY ? AND BINARY `key`<>BINARY ? AND BINARY LEFT(`key`,CHAR_LENGTH(?))<>BINARY ? AND BINARY LEFT(`key`,CHAR_LENGTH(?))<>BINARY ? ORDER BY BINARY `key`", prefix, prefix, code, code, catalog, parts, parts, activity, activity)
 	if err != nil {
 		return p, err
 	}
@@ -420,7 +426,7 @@ func planConversionWithPruneInTx(ctx context.Context, tx *sql.Tx, o Options, pru
 		return p, err
 	}
 	p.Resources = len(p.IssueIDs) + len(p.DependencyIDs) + len(p.HumanMemories)
-	if p.Resources > PreviewSnapshotLimit {
+	if p.Resources > PreviewContinuityReadRowLimit {
 		return p, ErrLimitExceeded
 	}
 	p.OtherConfigSHA256, err = conversionOtherConfigHash(ctx, tx, p.HumanMemories)
@@ -468,7 +474,7 @@ func conversionOtherConfigHash(ctx context.Context, q schema.DBConn, human map[s
 }
 
 func conversionConfigHashExcept(ctx context.Context, q schema.DBConn, human, removed map[string]string) (string, error) {
-	rows, err := q.QueryContext(ctx, "SELECT `key`,value FROM config ORDER BY BINARY `key`")
+	rows, err := q.QueryContext(ctx, "SELECT `key`, SHA2(value,256) FROM config ORDER BY BINARY `key`")
 	if err != nil {
 		return "", err
 	}
@@ -485,7 +491,7 @@ func conversionConfigHashExcept(ctx context.Context, q schema.DBConn, human, rem
 			continue
 		}
 		if expected, ok := removed[strings.TrimPrefix(key, txmemory.StorageKey(""))]; ok && strings.HasPrefix(key, txmemory.StorageKey("")) {
-			if !strings.HasPrefix(key, txmemory.StorageKey("@knowledge/code/blob/")) || conversionHash([]byte(value)) != expected {
+			if !strings.HasPrefix(key, txmemory.StorageKey("@knowledge/code/blob/")) || value != expected {
 				return "", errors.New("prune exclusion does not match the original code blob")
 			}
 			seen++
@@ -522,10 +528,10 @@ func adoptConversionCandidate(ctx context.Context, o Options, plan ConversionPla
 	if e != nil {
 		return e
 	}
-	if actual != o.DataDir || strings.HasPrefix(actual, o.Binding.WorkspaceID+string(filepath.Separator)) {
+	if actual != o.DataDir || withinPath(actual, o.Binding.WorkspaceID) {
 		return fmt.Errorf("%w: candidate must be canonical and outside final workspace", ErrInvalidStore)
 	}
-	if actual == source || strings.HasPrefix(actual, source+string(filepath.Separator)) || strings.HasPrefix(source, actual+string(filepath.Separator)) {
+	if withinPath(actual, source) || withinPath(source, actual) {
 		return fmt.Errorf("%w: candidate overlaps source", ErrInvalidStore)
 	}
 	if o.Binding != plan.Binding || o.Database != plan.Database || actor == "" || !utf8.ValidString(actor) {
@@ -567,13 +573,24 @@ func adoptConversionCandidate(ctx context.Context, o Options, plan ConversionPla
 	if err := conn.Close(); err != nil {
 		return err
 	}
-	return s.withTx(ctx, true, func(tx *sql.Tx) error {
+	return s.withTxPolicy(ctx, txPolicy{mayWrite: true, commit: true, conversion: true}, func(tx *sql.Tx) error {
 		for _, id := range plan.IssueIDs {
 			token, err := freshToken()
 			if err != nil {
 				return err
 			}
-			if _, err := tx.ExecContext(ctx, `INSERT INTO graph_preview_catalog(path,resource_kind,type_url,revision,allocation_state,backing,backing_key) VALUES (?,'bead',?,?,'live','issue',?)`, "beads/"+id, s.issueTypeURL(), token, id); err != nil {
+			var classification string
+			if err := tx.QueryRowContext(ctx, "SELECT issue_type FROM issues WHERE id=?", id).Scan(&classification); err != nil {
+				return err
+			}
+			typeURL, err := NativeIssueTypeURL(s.ScopeURL(), classification)
+			if err != nil {
+				return err
+			}
+			if err = s.ensureNativeTypeInTx(ctx, tx, typeURL); err != nil {
+				return err
+			}
+			if _, err := tx.ExecContext(ctx, `INSERT INTO graph_preview_catalog(path,resource_kind,type_url,revision,allocation_state,backing,backing_key) VALUES (?,'bead',?,?,'live','issue',?)`, "beads/"+id, typeURL, token, id); err != nil {
 				return err
 			}
 		}
@@ -582,7 +599,7 @@ func adoptConversionCandidate(ctx context.Context, o Options, plan ConversionPla
 			if err := tx.QueryRowContext(ctx, "SELECT type FROM dependencies WHERE id=?", id).Scan(&typ); err != nil {
 				return err
 			}
-			typeURL, err := NativeDependencyTypeURLForSchema(s.ScopeURL(), publicops.DependencyType(typ), SchemaVersion)
+			typeURL, err := NativeDependencyTypeURL(s.ScopeURL(), typ)
 			if err != nil {
 				return err
 			}
@@ -590,11 +607,14 @@ func adoptConversionCandidate(ctx context.Context, o Options, plan ConversionPla
 			if err != nil {
 				return err
 			}
+			if err = s.ensureNativeTypeInTx(ctx, tx, typeURL); err != nil {
+				return err
+			}
 			path := "links/native-" + id
 			if _, err := tx.ExecContext(ctx, `INSERT INTO graph_preview_catalog(path,resource_kind,type_url,revision,allocation_state,backing,backing_key) VALUES (?,'link',?,?,'live','dependency',?)`, path, typeURL, token, id); err != nil {
 				return err
 			}
-			link, err := s.currentLinkInTx(ctx, tx, path)
+			link, err := s.currentLinkForCreationInTx(ctx, tx, path)
 			if err != nil {
 				return err
 			}
@@ -654,8 +674,17 @@ func adoptConversionCandidate(ctx context.Context, o Options, plan ConversionPla
 		if err := verifyConversionPreservation(ctx, tx, plan); err != nil {
 			return err
 		}
-		_, err := s.currentSnapshotInTx(ctx, tx)
-		return err
+		for _, id := range plan.IssueIDs {
+			if _, err := s.showIssueInTx(ctx, tx, "beads/"+id); err != nil {
+				return err
+			}
+		}
+		for _, id := range plan.DependencyIDs {
+			if _, err := s.currentLinkInTx(ctx, tx, "links/native-"+id); err != nil {
+				return err
+			}
+		}
+		return s.validateTypeStateInTx(ctx, tx)
 	})
 }
 
@@ -779,7 +808,7 @@ func VerifyConversionCandidate(ctx context.Context, o Options, plan ConversionPl
 		if err := verifyConversionPreservation(ctx, tx, plan); err != nil {
 			return err
 		}
-		snapshot, err := s.currentSnapshotInTx(ctx, tx)
+		snapshot, err := s.currentSnapshotWithBoundsInTx(ctx, tx, PreviewContinuityReadRowLimit, PreviewContinuityReadByteLimit)
 		if err != nil {
 			return err
 		}

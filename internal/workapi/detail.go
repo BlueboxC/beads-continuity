@@ -218,7 +218,7 @@ func collectDependents(ctx context.Context, src DetailSource, id string, isWisp 
 	return out, nil
 }
 
-func collectComments(ctx context.Context, src DetailSource, id string, isWisp bool) ([]*types.Comment, error) {
+func collectComments(ctx context.Context, src CommentStreamer, id string, isWisp bool) ([]*types.Comment, error) {
 	iter, err := src.IterComments(ctx, id, isWisp)
 	if err != nil {
 		return nil, fmt.Errorf("iter comments %s: %w", id, err)

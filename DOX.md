@@ -43,11 +43,13 @@ Root owns fork policy, public API packages, license, build/version files, small 
 - The embedded engine pins official Dolt 2.6.0 plus the minimal BlueboxC/dolt engine corrections documented in FORK.md. Keep driver, engine and external CLI versions distinct. Carry storage fixes in the engine dependency, preserve contributor attribution, and do not enable multi-branch commit options or add core SQL workarounds.
 - Follow AGENTS.md, AGENT_INSTRUCTIONS.md and engdocs/TESTING.md. Keep manual experiments in disposable directories.
 
-## Preview3 preparation boundary
+## Preview3 isolation boundary
 
-- This isolated branch carries the pure Type/catalog/query preparation from pinned PR291. Existing native and schema8 continuity routes remain authoritative. No Preview3 activation or lossless conversion is implemented by these additions.
-- Preserve all fork runtime, security, telemetry, capacity, Codex, knowledge and recovery contracts while adapting the remaining provider/CLI seams. Never relabel a schema8 selector as schema11, rewrite retained snapshots in place, or substitute ordinary JSONL interchange for a full-history conversion.
-- `engdocs/design/preview3-integration.md` owns the preservation and qualification contract. Work state belongs in the operator Beads workspace; private project captures and evidence stay outside public Git.
+- This branch implements the pinned PR291 provider and the fork continuity adapter using schema11/generation13. Generation13 preserves the three frozen schema8 informational Types and immutable native dependency ID/thread facts; upstream generation12 is a different format.
+- Ordinary native APIs and the qualified Dolt tuple remain unchanged. Existing graph selectors require explicit conversion; ordinary discovery/open never migrates them. Do not install this candidate or activate project databases as part of copy qualification.
+- Preserve original retained bytes, tokens, Types and Dolt references. Conversion appends new current boundaries and records public-identity mappings; it never rewrites old snapshots or substitutes JSONL interchange for full-history recovery.
+- Preview3 HTTP/BDP serving and independent graph-clone merge are separate unqualified gates; copy/continuity qualification does not grant either capability.
+- `engdocs/design/preview3-integration.md` owns preservation, copy-only CLI and recovery gates. Work state belongs in the operator Beads workspace; private project captures and evidence stay outside public Git.
 
 ## Verification
 

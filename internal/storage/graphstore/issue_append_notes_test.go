@@ -32,7 +32,7 @@ func TestIssueAppendNotesLifecycle(t *testing.T) {
 	for _, backend := range []string{"embedded", "server"} {
 		t.Run(backend, func(t *testing.T) {
 			ctx, _, s, original, target, dependency := reopenFixture(t, backend)
-			memory, err := s.Create(ctx, CreateRequest{Path: "beads/context", Body: "unchanged Memory"})
+			memory, err := s.Create(ctx, CreateRequest{Title: "Context", Path: "beads/context", Body: "unchanged Memory"})
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -156,7 +156,7 @@ func TestIssueAppendNotesRefusalAndRollback(t *testing.T) {
 	for _, backend := range []string{"embedded", "server"} {
 		t.Run(backend, func(t *testing.T) {
 			ctx, options, s, original, _, _ := reopenFixture(t, backend)
-			if _, err := s.Create(ctx, CreateRequest{Path: "beads/context", Body: "Memory"}); err != nil {
+			if _, err := s.Create(ctx, CreateRequest{Title: "Context", Path: "beads/context", Body: "Memory"}); err != nil {
 				t.Fatal(err)
 			}
 			if _, err := s.CreateIssue(ctx, "beads/extra", plainIssue("Other prerequisite")); err != nil {

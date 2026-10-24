@@ -89,7 +89,9 @@ func TestEmbeddedBootstrapCreateReopen(t *testing.T) {
 	wrong.Binding.ScopeURL = "https://example.test/wrong/"
 	// Recheck within the mutation as well as the initial open.
 	s.options = wrong
-	if _, err = s.Create(ctx, CreateRequest{Path: "beads/wrong"}); !errors.Is(err, ErrInvalidStore) {
+	// Keep the requested Type installed so catalog admission does not mask
+	// the transaction's independent persisted-binding guard.
+	if _, err = s.Create(ctx, CreateRequest{Title: "Wrong", Path: "beads/wrong", TypeURL: MemoryTypeURL(o.Binding.ScopeURL)}); !errors.Is(err, ErrInvalidStore) {
 		t.Fatalf("wrong binding mutation: %v", err)
 	}
 	s.options = o
@@ -198,7 +200,7 @@ func TestEmbeddedCancelBeforeCommit(t *testing.T) {
 		}
 		return nil
 	}
-	_, err = s.Create(opCtx, CreateRequest{Path: "beads/cancelled"})
+	_, err = s.Create(opCtx, CreateRequest{Title: "Cancelled", Path: "beads/cancelled"})
 	abort()
 	if !errors.Is(err, context.Canceled) {
 		t.Fatalf("cancelled write: %v", err)
@@ -220,7 +222,7 @@ func TestEmbeddedCancelBeforeCommit(t *testing.T) {
 			t.Fatalf("cancelled writer persisted %d rows in %s", count, table)
 		}
 	}
-	if _, err := s.Create(ctx, CreateRequest{Path: "beads/successor"}); err != nil {
+	if _, err := s.Create(ctx, CreateRequest{Title: "Successor", Path: "beads/successor"}); err != nil {
 		t.Fatal(err)
 	}
 }
@@ -253,7 +255,7 @@ func TestEmbeddedCancelSharedCLIContext(t *testing.T) {
 		}
 		return nil
 	}
-	_, err = s.Create(ctx, CreateRequest{Path: "beads/cancelled"})
+	_, err = s.Create(ctx, CreateRequest{Title: "Cancelled", Path: "beads/cancelled"})
 	if !errors.Is(err, context.Canceled) {
 		t.Fatalf("shared-context cancellation: %v", err)
 	}
@@ -274,7 +276,7 @@ func TestEmbeddedCancelSharedCLIContext(t *testing.T) {
 			t.Fatalf("cancelled CLI-context transaction persisted %d rows in %s", count, table)
 		}
 	}
-	if _, err := s.Create(baseCtx, CreateRequest{Path: "beads/successor"}); err != nil {
+	if _, err := s.Create(baseCtx, CreateRequest{Title: "Successor", Path: "beads/successor"}); err != nil {
 		t.Fatal(err)
 	}
 }

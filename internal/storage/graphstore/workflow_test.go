@@ -92,6 +92,14 @@ func TestDependencyWorkflowDurableSequence(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
+			blockingType, _ := relationshipDependencyTypeURL(o.Binding.ScopeURL, types.DepBlocks)
+			issueType, err := NativeIssueTypeURL(o.Binding.ScopeURL, string(types.TypeTask))
+			if err != nil {
+				t.Fatal(err)
+			}
+			if source.Type != issueType || target.Type != source.Type || added.Link.Type != blockingType || added.Link.Properties["dep_type"] != "blocks" {
+				t.Fatalf("fresh Issue/Dependency Types differ: source=%s target=%s link=%s properties=%v", source.Type, target.Type, added.Link.Type, added.Link.Properties)
+			}
 			if !added.Changed || added.Link.Source != source.ID || added.Link.Target != target.ID || added.Source.Version == source.Version || len(added.Source.Owned) != 1 || len(added.Source.Properties.Dependencies) != 0 {
 				t.Fatalf("wrong Dependency result: %+v", added)
 			}
@@ -217,6 +225,100 @@ func TestDependencyWorkflowDurableSequence(t *testing.T) {
 	}
 }
 
+func TestNativeDependencyKindsShareTypeAndCanonicalUnlink(t *testing.T) {
+	for _, backend := range []string{"embedded", "server"} {
+		t.Run(backend, func(t *testing.T) {
+			ctx, options := issueExperimentOptions(t, backend)
+			store, err := OpenExisting(ctx, options)
+			if err != nil {
+				t.Fatal(err)
+			}
+			t.Cleanup(func() { _ = store.Close() })
+			for _, native := range []types.DependencyType{types.DepParentChild, types.DepDuplicates, types.DepSupersedes, "custom"} {
+				t.Run(string(native), func(t *testing.T) {
+					from, err := store.CreateIssue(ctx, "beads/from-"+string(native), plainIssue("Source"))
+					if err != nil {
+						t.Fatal(err)
+					}
+					to, err := store.CreateIssue(ctx, "beads/to-"+string(native), plainIssue("Target"))
+					if err != nil {
+						t.Fatal(err)
+					}
+					typeURL, _ := relationshipDependencyTypeURL(options.Binding.ScopeURL, native)
+					request := DependencyRequest{SourcePath: "beads/from-" + string(native), TargetPath: "beads/to-" + string(native), Type: native, TypeURL: typeURL, Actor: "author", ExpectedSourceRevision: from.Revision}
+					// The trusted native writer installs a new custom binding after
+					// its guards; an explicit TypeURL requires it to exist already.
+					if native == "custom" {
+						before := workflowState(t, ctx, store)
+						if got, err := store.AddDependency(ctx, request); !errors.Is(err, ErrCapabilityUnavailable) || !reflect.ValueOf(got).IsZero() || !reflect.DeepEqual(before, workflowState(t, ctx, store)) {
+							t.Fatalf("explicit uninstalled custom Type was not an atomic refusal: %+v %v", got, err)
+						}
+						request.TypeURL = ""
+					}
+					added, err := store.AddDependency(ctx, request)
+					if err != nil || !added.Changed || added.Link.Type != typeURL || added.Link.Properties["dep_type"] != string(native) || added.Link.Source != from.ID || added.Link.Target != to.ID || len(added.Source.Owned) != 1 {
+						t.Fatalf("native relationship add: %+v, %v", added, err)
+					}
+					linkPath, err := store.ResolveAllocatedResourcePath(ctx, strings.TrimPrefix(added.Link.ID, store.ScopeURL()))
+					if err != nil {
+						t.Fatal(err)
+					}
+					var nativeKind string
+					if err := store.db.QueryRowContext(ctx, `SELECT d.type FROM dependencies d JOIN graph_preview_catalog c ON c.backing_key=d.id WHERE c.path=?`, linkPath).Scan(&nativeKind); err != nil || nativeKind != string(native) {
+						t.Fatalf("native dependency kind = %q, %v", nativeKind, err)
+					}
+					countVersions := func() (int, int) {
+						t.Helper()
+						var nativeCount, graphCount int
+						if err := store.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM issue_versions WHERE issue_id=?`, from.Properties.ID).Scan(&nativeCount); err != nil {
+							t.Fatal(err)
+						}
+						if err := store.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM graph_preview_issue_versions WHERE issue_id=?`, from.Properties.ID).Scan(&graphCount); err != nil {
+							t.Fatal(err)
+						}
+						return nativeCount, graphCount
+					}
+					if n, g := countVersions(); n != 2 || g != 2 {
+						t.Fatalf("add recorded %d native and %d graph versions; want 2 each", n, g)
+					}
+					if _, err := store.AddDependency(ctx, request); !errors.Is(err, ErrConflict) {
+						t.Fatalf("stale source guard did not precede same-pair no-op: %v", err)
+					}
+					request.ExpectedSourceRevision = added.Source.Revision
+					repeated, err := store.AddDependency(ctx, request)
+					if err != nil || repeated.Changed || !reflect.DeepEqual(repeated.Link, added.Link) {
+						t.Fatalf("same-pair assertion must be a no-op: %+v, %v", repeated, err)
+					}
+					if n, g := countVersions(); n != 2 || g != 2 {
+						t.Fatalf("no-op recorded %d native and %d graph versions", n, g)
+					}
+					otherKind := request
+					otherKind.Type = types.DepBlocks
+					otherKind.TypeURL = RelationshipBlockingTypeURL(store.ScopeURL())
+					beforeConflict := workflowState(t, ctx, store)
+					if got, err := store.AddDependency(ctx, otherKind); !errors.Is(err, storage.ErrValidation) || !reflect.ValueOf(got).IsZero() || !reflect.DeepEqual(beforeConflict, workflowState(t, ctx, store)) {
+						t.Fatalf("same pair with another kind was not an atomic refusal: %+v %v", got, err)
+					}
+					if _, err := store.Unlink(ctx, LinkDeleteRequest{Path: linkPath, Actor: "remover", ExpectedRevision: added.Link.Revision, ExpectedSourceRevision: from.Revision}); !errors.Is(err, ErrConflict) {
+						t.Fatalf("stale unlink source guard was admitted: %v", err)
+					}
+					removed, err := store.Unlink(ctx, LinkDeleteRequest{Path: linkPath, Actor: "remover", ExpectedRevision: added.Link.Revision, ExpectedSourceRevision: added.Source.Revision})
+					removedSource, isIssue := removed.Source.(IssueRecord)
+					if err != nil || !removed.Changed || removed.Link.Type != typeURL || !isIssue || len(removedSource.Owned) != 0 {
+						t.Fatalf("canonical native relationship unlink: %+v, %v", removed, err)
+					}
+					if n, g := countVersions(); n != 3 || g != 3 {
+						t.Fatalf("unlink recorded %d native and %d graph versions; want 3 each", n, g)
+					}
+					if _, err := store.ShowLink(ctx, linkPath); !errors.Is(err, ErrGone) {
+						t.Fatalf("canonical Link identity was not tombstoned: %v", err)
+					}
+				})
+			}
+		})
+	}
+}
+
 func assertReadyIDs(t *testing.T, ctx context.Context, s *Store, want ...string) {
 	t.Helper()
 	ready, err := s.ReadyIssues(ctx)
@@ -236,10 +338,10 @@ func assertReadyIDs(t *testing.T, ctx context.Context, s *Store, want ...string)
 
 // Fingerprint all affected authoritative/retained tables, including the writer
 // fence and derived readiness. This detects updates as well as orphan rows.
-func workflowState(t *testing.T, ctx context.Context, s *Store, additionalTables ...string) map[string]string {
+func workflowState(t *testing.T, ctx context.Context, s *Store, extra ...string) map[string]string {
 	t.Helper()
 	state := map[string]string{}
-	for _, table := range append([]string{"issues", "dependencies", "events", "bd_events_journal", "bd_events_seq", "leases", "issue_versions", "store_epoch", "local_metadata", "graph_preview_scope", "graph_preview_catalog", "graph_preview_versions", "graph_preview_issue_versions", "graph_preview_links", "graph_preview_payloads"}, additionalTables...) {
+	for _, table := range []string{"issues", "dependencies", "events", "bd_events_journal", "bd_events_seq", "leases", "issue_versions", "store_epoch", "local_metadata", "graph_preview_scope", "graph_preview_types", "graph_preview_catalog", "graph_preview_versions", "graph_preview_issue_versions", "graph_preview_links", "graph_preview_payloads", "config"} {
 		rows, err := s.db.QueryContext(ctx, "SELECT * FROM "+table)
 		if err != nil {
 			t.Fatal(err)
@@ -463,7 +565,10 @@ func TestHistoryBookkeepingPreservesIssueTimestamp(t *testing.T) {
 				}
 				unscope := issueops.ScopeVersionedHistoryTransaction(tx, true)
 				defer unscope()
-				if err := s.recordIssueMappingInTx(ctx, tx, "beads/time", issue.Properties.ID, "test"); err != nil {
+				if err := issueops.RecordVersionInTx(ctx, tx, issue.Properties.ID, "test"); err != nil {
+					return err
+				}
+				if err := s.recordIssueMappingInTx(ctx, tx, "beads/time", issue.Properties.ID); err != nil {
 					return err
 				}
 				_, err := s.showIssueInTx(ctx, tx, "beads/time")

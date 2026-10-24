@@ -110,7 +110,7 @@ func TestServerLostCommitResponse(t *testing.T) {
 			t.Fatalf("unknown outcome has %d rows in %s", count, table)
 		}
 	}
-	if _, err := direct.Create(ctx, CreateRequest{Path: "beads/successor"}); err != nil {
+	if _, err := direct.Create(ctx, CreateRequest{Title: "Successor", Path: "beads/successor"}); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := direct.Show(ctx, "beads/uncertain"); err != nil {
@@ -365,7 +365,7 @@ func TestServerUncertainWriterConflictsAfterSuccessor(t *testing.T) {
 	if _, err := successor.Show(ctx, "beads/late"); !errors.Is(err, ErrNotFound) {
 		t.Fatalf("late writer is visible: %v", err)
 	}
-	if _, err := successor.Create(ctx, CreateRequest{Path: "beads/after-accounting"}); err != nil {
+	if _, err := successor.Create(ctx, CreateRequest{Title: "After accounting", Path: "beads/after-accounting"}); err != nil {
 		t.Fatal(err)
 	}
 }

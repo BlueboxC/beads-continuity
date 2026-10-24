@@ -161,7 +161,6 @@ func TestConversionRefusesUnsupportedDataAndDrift(t *testing.T) {
 		{"retained-table-collision", "CREATE TABLE issue_versions (issue_id VARCHAR(255) PRIMARY KEY)"},
 		{"oversized-native", "UPDATE issues SET description=REPEAT('x',16777217),updated_at=updated_at WHERE id='parent'"},
 		{"populated-native-field", "UPDATE issues SET hook_bead='prior-hook',updated_at=updated_at WHERE id='parent'"},
-		{"unknown-relation", "UPDATE dependencies SET type='custom' WHERE id='dep0'"},
 		{"unsafe-number", "UPDATE issues SET metadata='{\"n\":9007199254740993}',updated_at=updated_at WHERE id='parent'"},
 		{"no-history", "UPDATE issues SET no_history=1,updated_at=updated_at WHERE id='parent'"},
 		{"unknown-dependency-column", "ALTER TABLE dependencies ADD COLUMN unknown_payload TEXT"},
@@ -261,8 +260,8 @@ func TestConversionResourceAndSeedByteLimitsPreserveOriginal(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		if _, err := PlanConversion(ctx, o); !errors.Is(err, ErrLimitExceeded) {
-			t.Fatalf("2049 admitted: %v", err)
+		if plan, err := PlanConversion(ctx, o); err != nil || plan.Resources != 2049 {
+			t.Fatalf("explicit larger conversion profile: %d %v", plan.Resources, err)
 		}
 		after, err := InspectConversionState(ctx, o)
 		if err != nil || !reflect.DeepEqual(before, after) {
@@ -276,41 +275,65 @@ func TestConversionResourceAndSeedByteLimitsPreserveOriginal(t *testing.T) {
 			rows = append(rows, fmt.Sprintf("('kv.memory.large-%d',REPEAT('x',49152))", i))
 		}
 		mutateNativeFixture(t, ctx, o, "INSERT INTO config (`key`,value) VALUES "+strings.Join(rows, ","))
-		plan, err := PlanConversion(ctx, o)
+		before, err := InspectConversionState(ctx, o)
 		if err != nil {
 			t.Fatal(err)
 		}
-		root, err := filepath.EvalSymlinks(t.TempDir())
-		if err != nil {
-			t.Fatal(err)
+		if _, err := PlanConversion(ctx, o); !errors.Is(err, ErrLimitExceeded) {
+			t.Fatalf("oversized human seed admitted: %v", err)
 		}
-		candidate := filepath.Join(root, "candidate")
-		if err := CheckpointConversion(ctx, o, plan, filepath.Join(root, "backup"), candidate); err != nil {
-			t.Fatal(err)
-		}
-		co := o
-		co.DataDir = candidate
-		if err := AdoptConversionCandidate(ctx, co, plan, "operator"); !errors.Is(err, ErrLimitExceeded) {
-			t.Fatalf("oversized seed admitted: %v", err)
-		}
-		original, err := PlanConversion(ctx, o)
-		if err != nil || !reflect.DeepEqual(original, plan) {
-			t.Fatalf("seed failure changed source: %v", err)
-		}
-		s, err := openBackend(ctx, co, co.Database)
-		if err != nil {
-			t.Fatal(err)
-		}
-		defer s.Close()
-		for _, table := range []string{"graph_preview_catalog", "issue_versions"} {
-			var count int
-			if err := s.db.QueryRowContext(ctx, "SELECT COUNT(*) FROM "+table).Scan(&count); err != nil || count != 0 {
-				t.Fatalf("partial %s count=%d err=%v", table, count, err)
-			}
-		}
-		var prefix string
-		if err := s.db.QueryRowContext(ctx, "SELECT LEFT(value,1) FROM config WHERE `key`='kv.memory.large-0'").Scan(&prefix); err != nil || prefix != "x" {
-			t.Fatalf("seed failure changed original memory: %v", err)
+		after, err := InspectConversionState(ctx, o)
+		if err != nil || !reflect.DeepEqual(before, after) {
+			t.Fatalf("plan refusal changed source: %v", err)
 		}
 	})
+}
+
+func TestConversionPreservesCustomNativeDependency(t *testing.T) {
+	ctx, o := nativeConversionFixture(t)
+	mutateNativeFixture(t, ctx, o, "UPDATE dependencies SET type='custom' WHERE id='dep0'")
+	plan, err := PlanConversion(ctx, o)
+	if err != nil {
+		t.Fatal(err)
+	}
+	root, err := filepath.EvalSymlinks(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	candidate := filepath.Join(root, "candidate")
+	if err := CheckpointConversion(ctx, o, plan, filepath.Join(root, "backup"), candidate); err != nil {
+		t.Fatal(err)
+	}
+	co := o
+	co.DataDir = candidate
+	if err := AdoptConversionCandidate(ctx, co, plan, "operator"); err != nil {
+		t.Fatal(err)
+	}
+	s, err := OpenExisting(ctx, co)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() {
+		if err := s.Close(); err != nil {
+			t.Error(err)
+		}
+	}()
+	value, err := s.Read(ctx, "links/native-dep0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	link, ok := value.(LinkRecord)
+	if !ok {
+		t.Fatalf("native Link type: %T", value)
+	}
+	want, err := NativeDependencyTypeURL(s.ScopeURL(), "custom")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if link.Type != want || link.Properties["dep_type"] != "custom" || link.Properties["nativeId"] != "dep0" || link.Properties["threadId"] != "thread-記憶" {
+		t.Fatalf("custom native facts changed: %+v", link)
+	}
+	if original, err := PlanConversion(ctx, o); err != nil || !reflect.DeepEqual(original, plan) {
+		t.Fatalf("source changed: %v", err)
+	}
 }

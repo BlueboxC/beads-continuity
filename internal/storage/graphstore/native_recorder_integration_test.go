@@ -196,7 +196,7 @@ func TestMixedCoreNativeRecorderExactlyOnce(t *testing.T) {
 				t.Fatal("reopen noop changed state")
 			}
 
-			memory, err := s.Create(ctx, CreateRequest{Path: "beads/memory", Body: "knowledge"})
+			memory, err := s.Create(ctx, CreateRequest{Title: "Memory", Path: "beads/memory", Body: "knowledge"})
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -207,7 +207,8 @@ func TestMixedCoreNativeRecorderExactlyOnce(t *testing.T) {
 			if _, err := s.Unlink(ctx, LinkDeleteRequest{Path: "links/cites", ExpectedRevision: relation.Link.Revision, Actor: "author"}); err != nil {
 				t.Fatal(err)
 			}
-			owned, err := s.AddInformationalLink(ctx, LinkCreateRequest{Path: "links/knows", SourcePath: "beads/memory", TargetPath: "beads/source", ExpectedSourceRevision: memory.Revision, Actor: "author"})
+			createSelectedConstraintFixture(t, ctx, s, "beads/rule")
+			owned, err := s.AddInformationalLink(ctx, LinkCreateRequest{Path: "links/knows", TypeURL: s.ScopeURL() + "types/subject-to", SourcePath: "beads/memory", TargetPath: "beads/rule", ExpectedSourceRevision: memory.Revision, Actor: "author"})
 			if err != nil {
 				t.Fatal(err)
 			}

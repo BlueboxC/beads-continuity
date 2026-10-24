@@ -20,7 +20,7 @@ design/graph-preview-conversion.md owns explicit embedded adoption, preservation
 
 ERROR_HANDLING.md owns fatal, advisory and cleanup guidance. Review its examples against current functions before renewing freshness; authoritative workspace metadata failures stay fatal and preserve the original selector.
 
-`design/preview3-integration.md` owns the isolated Preview3 preparation, exact source pins, preservation dimensions and conversion/recovery gates.
+`design/preview3-integration.md` owns the isolated Preview3 integration, exact source pins, preservation dimensions and copy conversion/recovery gates.
 
 ## Verification
 

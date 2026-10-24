@@ -52,8 +52,9 @@ func readAcquisitionUsage(ctx context.Context, tx *sql.Tx) (acquisitionUsage, er
 }
 
 // A normal write must fit every read budget. Old or out-of-band oversized state
-// may be reduced (or left unchanged by a no-op), but no dimension may grow until
-// all budgets fit. The comparison is numeric and stays in the write transaction.
+// may be reduced or left unchanged. A dimension already over budget may not
+// grow; every other dimension stays under its own cap, including terminal
+// bookkeeping required to remove a Resource. Checks stay in the transaction.
 func checkAcquisitionGrowth(before, after acquisitionUsage) error {
 	dimensions := [...]struct{ limit, before, after uint64 }{
 		{PreviewSnapshotLimit, before.resources, after.resources},
@@ -61,12 +62,8 @@ func checkAcquisitionGrowth(before, after acquisitionUsage) error {
 		{PreviewContinuityReadRowLimit, before.continuityRows, after.continuityRows},
 		{PreviewContinuityReadByteLimit, before.continuityBytes, after.continuityBytes},
 	}
-	oversized := false
 	for _, dimension := range dimensions {
-		oversized = oversized || dimension.before > dimension.limit
-	}
-	for _, dimension := range dimensions {
-		if (oversized && dimension.after > dimension.before) || (!oversized && dimension.after > dimension.limit) {
+		if dimension.after > dimension.limit && dimension.after > dimension.before {
 			return fmt.Errorf("%w: graph write would exceed or grow an existing acquisition limit", ErrLimitExceeded)
 		}
 	}

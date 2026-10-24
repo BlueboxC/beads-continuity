@@ -61,6 +61,7 @@ type comparisonRecord struct {
 	properties map[string]json.RawMessage
 	metadata   map[string]json.RawMessage
 	owned      map[string]json.RawMessage
+	endpoints  map[string]json.RawMessage
 }
 
 func comparisonProjection(value any) (comparisonRecord, error) {
@@ -84,6 +85,14 @@ func comparisonProjection(value any) (comparisonRecord, error) {
 		r.resource = VersionComparisonResource{ID: v.ID, Type: v.Type, Source: v.Source, Target: v.Target}
 		r.endpoint = VersionComparisonEndpoint{v.Version, v.Attribution}
 		r.kind, properties, metadata = "link", v.Properties, v.Metadata
+		r.endpoints = map[string]json.RawMessage{}
+		for name, reference := range map[string]EndpointReference{"source": v.SourceReference(), "target": v.TargetReference()} {
+			raw, err := json.Marshal(reference)
+			if err != nil {
+				return r, err
+			}
+			r.endpoints[name] = raw
+		}
 	default:
 		return r, fmt.Errorf("%w: unsupported retained comparison record", ErrInvalidStore)
 	}
@@ -103,12 +112,7 @@ func comparisonProjection(value any) (comparisonRecord, error) {
 		return r, fmt.Errorf("%w: comparison owned set missing", ErrInvalidStore)
 	}
 	for _, raw := range owned {
-		var link struct {
-			ID     string `json:"id"`
-			Type   string `json:"type"`
-			Source string `json:"source"`
-			Target string `json:"target"`
-		}
+		var link LinkRecord
 		if err := json.Unmarshal(raw, &link); err != nil || link.ID == "" || link.Type == "" || link.Source != r.resource.ID || link.Target == "" {
 			return r, fmt.Errorf("%w: invalid comparison owned Link", ErrInvalidStore)
 		}
@@ -137,6 +141,8 @@ func compareVersionRecords(from, to any) (VersionComparison, error) {
 	result := VersionComparison{Resource: a.resource, From: a.endpoint, To: b.endpoint, Compared: []string{"properties", "metadata"}, Unsupported: []string{}, Changes: []VersionChange{}}
 	if a.kind != "link" {
 		result.Compared = append(result.Compared, "owned")
+	} else {
+		result.Compared = append(result.Compared, "endpoints")
 	}
 	if a.kind == "memory" {
 		result.Unsupported = append(result.Unsupported, "inception", "derivation")
@@ -144,14 +150,14 @@ func compareVersionRecords(from, to any) (VersionComparison, error) {
 	for _, area := range []struct {
 		name     string
 		from, to map[string]json.RawMessage
-	}{{"properties", a.properties, b.properties}, {"metadata", a.metadata, b.metadata}, {"owned", a.owned, b.owned}} {
+	}{{"properties", a.properties, b.properties}, {"metadata", a.metadata, b.metadata}, {"owned", a.owned, b.owned}, {"endpoints", a.endpoints, b.endpoints}} {
 		for _, key := range comparisonKeys(area.from, area.to) {
 			before, haveBefore := area.from[key]
 			after, haveAfter := area.to[key]
 			if haveBefore && haveAfter {
 				if area.name == "owned" {
-					var x, y struct{ ID, Type, Source, Target string }
-					if json.Unmarshal(before, &x) != nil || json.Unmarshal(after, &y) != nil || x != y {
+					var x, y LinkRecord
+					if json.Unmarshal(before, &x) != nil || json.Unmarshal(after, &y) != nil || x.ID != y.ID || x.Type != y.Type || x.Source != y.Source || x.Target != y.Target {
 						return VersionComparison{}, fmt.Errorf("%w: owned Link immutable identity differs", ErrInvalidStore)
 					}
 				}
@@ -164,7 +170,7 @@ func compareVersionRecords(from, to any) (VersionComparison, error) {
 				}
 			}
 			change := VersionChange{Area: area.name, From: VersionValue{haveBefore, bytes.Clone(before)}, To: VersionValue{haveAfter, bytes.Clone(after)}}
-			if area.name == "properties" || area.name == "metadata" {
+			if area.name == "properties" || area.name == "metadata" || area.name == "endpoints" {
 				change.Member = key
 			} else {
 				change.ID = key

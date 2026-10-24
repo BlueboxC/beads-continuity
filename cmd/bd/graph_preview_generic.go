@@ -78,6 +78,19 @@ func runGraphPreviewGeneric(cmd *cobra.Command, args []string) error {
 		return err
 	}
 	return withGraphStoreOutput(func(ctx context.Context, s *graphstore.Store) (any, string, error) {
+		// Allocation identity is immutable; traversal content comes only
+		// from the subsequent complete snapshot.
+		identity, err := s.AllocatedResourceIdentityForPath(ctx, strings.TrimPrefix(in.Root, s.ScopeURL()))
+		if err != nil {
+			return nil, "", err
+		}
+		if identity.Kind != graph.KindBead {
+			return nil, "", graphstore.ErrNotFound
+		}
+		in.Root, err = graph.CanonicalPublicResourceURL(s.ScopeURL(), identity.PublicID)
+		if err != nil {
+			return nil, "", err
+		}
 		snapshot, err := s.CurrentSnapshot(ctx)
 		if err != nil {
 			return nil, "", err

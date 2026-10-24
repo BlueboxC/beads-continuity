@@ -367,3 +367,7 @@ func RewriteDeletedReferencesInTx(ctx context.Context, tx DBTX, deletedIDs []str
 func DeletedReferencePattern(id string) *regexp.Regexp {
 	return regexp.MustCompile(`(^|[^A-Za-z0-9_-])(` + regexp.QuoteMeta(id) + `)($|[^A-Za-z0-9_-])`)
 }
+
+func DeleteNeighborsInTx(ctx context.Context, tx DBTX, ids []string) ([]*types.Issue, error) {
+	return deleteNeighborsInTx(ctx, tx, ids)
+}

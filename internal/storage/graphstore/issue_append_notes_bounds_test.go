@@ -19,6 +19,7 @@ func TestIssueAppendNotesPreservesCurrentReadBudget(t *testing.T) {
 	for _, backend := range []string{"embedded", "server"} {
 		t.Run(backend, func(t *testing.T) {
 			ctx, _, s, original, target, dependency := reopenFixture(t, backend)
+			ctx = currentReadBudgetContext(t, ctx)
 			filler, err := s.Create(ctx, CreateRequest{Path: "beads/large-context", Title: "Unrelated live context", Body: strings.Repeat("m", 7<<20)})
 			if err != nil {
 				t.Fatal(err)

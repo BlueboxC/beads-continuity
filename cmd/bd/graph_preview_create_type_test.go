@@ -63,12 +63,12 @@ func TestGraphPreviewCreateBeadTypeSelection(t *testing.T) {
 	}{
 		{name: "default-issue", want: graphstore.IssueTypeURL(scope)},
 		{name: "classification-is-not-bead-type", flags: []string{"--type=bug"}, want: graphstore.IssueTypeURL(scope)},
-		{name: "relative-issue", flags: []string{"--bead-type=types/preview-issue-v3"}, want: graphstore.IssueTypeURL(scope)},
+		{name: "relative-issue", flags: []string{"--bead-type=types/issue"}, want: graphstore.IssueTypeURL(scope)},
 		{name: "canonical-issue", flags: []string{"--bead-type=" + graphstore.IssueTypeURL(scope)}, want: graphstore.IssueTypeURL(scope)},
-		{name: "relative-memory", flags: []string{"--bead-type=types/preview-memory-v2"}, want: graphstore.MemoryTypeURL(scope)},
+		{name: "relative-memory", flags: []string{"--bead-type=types/memory"}, want: graphstore.MemoryTypeURL(scope)},
 		{name: "canonical-memory", flags: []string{"--bead-type=" + graphstore.MemoryTypeURL(scope)}, want: graphstore.MemoryTypeURL(scope)},
 		{name: "empty", flags: []string{"--bead-type="}, code: 2},
-		{name: "foreign", flags: []string{"--bead-type=https://foreign.invalid/types/preview-memory-v2"}, code: 2},
+		{name: "foreign", flags: []string{"--bead-type=https://foreign.invalid/types/memory"}, code: 2},
 		{name: "uninstalled", flags: []string{"--bead-type=types/custom"}, code: 5},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
@@ -134,7 +134,7 @@ func TestGraphPreviewCreateMemoryInput(t *testing.T) {
 		{name: "issue-estimate", flags: []string{"--estimate=0"}, code: 5},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			cmd := graphCreateTypeCommand(t, append([]string{"--bead-type=types/preview-memory-v2"}, tc.flags...))
+			cmd := graphCreateTypeCommand(t, append([]string{"--bead-type=types/memory"}, tc.flags...))
 			probe := &selectedRememberInputProbe{}
 			cmd.SetIn(probe)
 			title, body, err := graphPreviewCreateMemoryInput(cmd, tc.args)

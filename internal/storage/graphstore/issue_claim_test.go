@@ -58,7 +58,7 @@ func TestIssueClaimLifecycle(t *testing.T) {
 	for _, backend := range []string{"embedded", "server"} {
 		t.Run(backend, func(t *testing.T) {
 			ctx, options, s, before, target, dependency := reopenFixture(t, backend)
-			memory, err := s.Create(ctx, CreateRequest{Path: "beads/context", Body: "Unchanged claim context"})
+			memory, err := s.Create(ctx, CreateRequest{Title: "Context", Path: "beads/context", Body: "Unchanged claim context"})
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -128,7 +128,7 @@ func TestIssueClaimRefusalAndRollback(t *testing.T) {
 			if _, err := s.CloseIssue(ctx, "beads/prereq", "done", "closer"); err != nil {
 				t.Fatal(err)
 			}
-			if _, err := s.Create(ctx, CreateRequest{Path: "beads/memory", Body: "not an Issue"}); err != nil {
+			if _, err := s.Create(ctx, CreateRequest{Title: "Memory", Path: "beads/memory", Body: "not an Issue"}); err != nil {
 				t.Fatal(err)
 			}
 			state := reopenState(t, ctx, s)

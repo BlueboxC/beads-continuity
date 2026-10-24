@@ -16,6 +16,7 @@ func TestIssueReferencesExceedsCurrentReadBudget(t *testing.T) {
 	for _, backend := range []string{"embedded", "server"} {
 		t.Run(backend, func(t *testing.T) {
 			ctx, _, s, original, target, dependency := reopenFixture(t, backend)
+			ctx = currentReadBudgetContext(t, ctx)
 			withReferences, err := s.UpdateIssue(ctx, UpdateIssueRequest{
 				Path: "beads/work", Actor: "reference-author", ExpectedRevision: original.Revision,
 				ExternalRef: issueEditString(strings.Repeat("e", 200)), SpecID: issueEditString(strings.Repeat("s", 900)),
@@ -26,8 +27,12 @@ func TestIssueReferencesExceedsCurrentReadBudget(t *testing.T) {
 			if got, err := s.Read(ctx, "beads/work"); err != nil || !reflect.DeepEqual(got, withReferences.Issue) {
 				t.Fatalf("reference fixture is not initially readable: %v", err)
 			}
-			// Simulate canonical data admitted before write-budget enforcement.
-			seedUnreadableMemory(t, ctx, s, "beads/large-context", strings.Repeat("m", 9<<20))
+			// Normal Memory authoring retains its current and saved content. This
+			// bounded 9MiB body puts their acquisition above the 16MiB budget; no
+			// schema seeding, direct payload edits or new writer policy is involved.
+			if _, err := createLegacyMemoryFixture(t, ctx, s, CreateRequest{Path: "beads/large-context", Title: "Unrelated live context", Body: strings.Repeat("m", 9<<20)}); err != nil {
+				t.Fatal(err)
+			}
 			assertOverBudget := func() {
 				t.Helper()
 				if got, err := s.Read(ctx, "beads/work"); !errors.Is(err, ErrLimitExceeded) || got != nil {

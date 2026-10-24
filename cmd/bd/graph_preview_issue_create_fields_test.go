@@ -118,7 +118,7 @@ func TestGraphPreviewIssueCreateFieldsDispatch(t *testing.T) {
 	if fromProperties.Properties.Title != "Typed issue" || fromProperties.Properties.Description != "Exact description" || fromProperties.Properties.Priority != 1 || fromProperties.Properties.EstimatedMinutes == nil || *fromProperties.Properties.EstimatedMinutes != 45 || fromProperties.Properties.Assignee != "reviewer" || len(fromProperties.Properties.Labels) != 1 || string(fromProperties.Metadata) != `{"team":"docs"}` {
 		t.Fatalf("Issue properties initializer lost typed values or metadata: %+v", fromProperties)
 	}
-	memory := graphMixedResult[graphstore.Record](t, graphPolicyCLI(t, bd, work, home, nil, "", "create", "--bead-type", "types/preview-memory-v2", "--id", "beads/memory-properties", "--properties", `{"title":"Typed memory","body":"Exact body"}`, "--json"))
+	memory := graphMixedResult[graphstore.Record](t, graphPolicyCLI(t, bd, work, home, nil, "", "create", "--bead-type", "types/memory", "--id", "beads/memory-properties", "--properties", `{"title":"Typed memory","body":"Exact body"}`, "--json"))
 	if memory.Properties.Title != "Typed memory" || memory.Properties.Body != "Exact body" {
 		t.Fatalf("Memory properties initializer lost typed values: %+v", memory)
 	}

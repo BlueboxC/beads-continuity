@@ -89,8 +89,8 @@ metadata is {}. Metadata is separate from Type-validated properties.
 --properties JSON initializes the selected Type's writable fields, such as
 Issue description or Memory body. It may accompany shorthand flags only when
 they supply different fields; duplicate fields refuse.
-Use --bead-type types/preview-memory-v2 to create a Memory instead:
-  bd create --bead-type types/preview-memory-v2 --id policy --body 'Code flow policy'
+Use --bead-type types/memory to create a Memory instead:
+  bd create --bead-type types/memory --id policy --body 'Code flow policy'
 Use bd types to see Bead Types installed in this workspace. Both types/NAME
 and full local Type URLs work. --type remains the Issue classification
 (for example task or bug), not the Bead Type. Memory creation
@@ -150,7 +150,7 @@ an initial metadata object; native Dependencies also accept --thread ID in
 new format workspaces. --type selects blocks, parent-child, discovered-from
 or native related, while --link-type selects a canonical installed Type.
 --unconditional-source
-explicitly selects the default. The blocking Type types/preview-blocks-v2
+explicitly selects the default. The blocking Type types/native-dependency/626c6f636b73
 requires Issue endpoints and, unlike informational Types, one of
 --if-source-revision TOKEN or --unconditional-source.`},
 		{closeCmd, `Close one or more local Issues by ID or beads/ID. One --reason

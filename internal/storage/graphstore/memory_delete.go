@@ -22,12 +22,13 @@ type MemoryDeleteRequest struct {
 	Unconditional, Preview        bool
 }
 
-// MemoryDeleteResult identifies the actual final live state. Deleted does not
-// mint a successor revision, a timestamp, or a public History event.
+// MemoryDeleteResult keeps the actual final live snapshot separate from the
+// fresh terminal deletion revision. Preview never mints either state.
 type MemoryDeleteResult struct {
-	Memory  Record `json:"memory"`
-	Preview bool   `json:"preview"`
-	Deleted bool   `json:"deleted"`
+	Memory   Record               `json:"memory"`
+	Terminal *MemoryTerminalState `json:"terminal,omitempty"`
+	Preview  bool                 `json:"preview"`
+	Deleted  bool                 `json:"deleted"`
 }
 
 func (s *Store) DeleteMemory(ctx context.Context, request MemoryDeleteRequest) (MemoryDeleteResult, error) {
@@ -43,12 +44,21 @@ func (s *Store) DeleteMemory(ctx context.Context, request MemoryDeleteRequest) (
 		}
 	}
 	var result MemoryDeleteResult
-	err := s.withTx(ctx, !request.Preview, func(tx *sql.Tx) error {
+	transact := s.withTypeValidationTx
+	if request.Preview {
+		transact = func(ctx context.Context, fn func(*sql.Tx) error) error {
+			return s.withTx(ctx, false, fn)
+		}
+	}
+	err := transact(ctx, func(tx *sql.Tx) error {
 		var err error
 		result, err = s.deleteMemoryInTx(ctx, tx, request)
 		return err
 	})
-	return result, err
+	if err != nil {
+		return MemoryDeleteResult{}, err
+	}
+	return result, nil
 }
 
 func (s *Store) deleteMemoryInTx(ctx context.Context, tx *sql.Tx, request MemoryDeleteRequest) (MemoryDeleteResult, error) {
@@ -57,7 +67,7 @@ func (s *Store) deleteMemoryInTx(ctx context.Context, tx *sql.Tx, request Memory
 		if err := checkBinding(ctx, tx, s.options); err != nil {
 			return err
 		}
-		current, revision, _, err := s.beadEndpointInTx(ctx, tx, request.Path)
+		current, revision, err := s.beadEndpointInTx(ctx, tx, request.Path)
 		if err != nil {
 			return err
 		}
@@ -92,7 +102,14 @@ func (s *Store) deleteMemoryInTx(ctx context.Context, tx *sql.Tx, request Memory
 		if err := s.touchCoordination(ctx, tx); err != nil {
 			return err
 		}
-		changed, err := tx.ExecContext(ctx, `UPDATE graph_preview_catalog SET allocation_state='deleted' WHERE path=? AND allocation_state='live' AND revision=?`, request.Path, revision)
+		deletionRevision, err := freshToken()
+		if err != nil {
+			return err
+		}
+		attribution := writeAttribution(request.Actor)
+		attribution.Inception = memory.Attribution.Inception
+		terminal := MemoryTerminalState{ID: memory.ID, Revision: deletionRevision, Version: deletionRevision, State: "deleted", PreviousVersion: revision, Attribution: attribution}
+		changed, err := tx.ExecContext(ctx, `UPDATE graph_preview_catalog SET allocation_state='deleted',revision=? WHERE path=? AND allocation_state='live' AND revision=?`, deletionRevision, request.Path, revision)
 		if err != nil {
 			return err
 		}
@@ -116,6 +133,16 @@ func (s *Store) deleteMemoryInTx(ctx context.Context, tx *sql.Tx, request Memory
 		if err := s.afterStage("memory-delete-payload"); err != nil {
 			return err
 		}
+		snapshot, err := canonicalJSON(terminal)
+		if err != nil {
+			return err
+		}
+		if err := insertPreviewVersionInTx(ctx, tx, request.Path, deletionRevision, snapshot, request.Actor); err != nil {
+			return err
+		}
+		if err := s.afterStage("memory-delete-retained"); err != nil {
+			return err
+		}
 		if _, err := s.deletedMemoryInTx(ctx, tx, request.Path); err != nil {
 			return err
 		}
@@ -123,6 +150,7 @@ func (s *Store) deleteMemoryInTx(ctx context.Context, tx *sql.Tx, request Memory
 		if err := s.removeContinuityPointerInTx(ctx, tx, request.Path, memory); err != nil {
 			return err
 		}
+		result.Terminal = &terminal
 		return nil
 	}()
 	if err != nil {
@@ -146,7 +174,7 @@ func (s *Store) deleteMemoryInTx(ctx context.Context, tx *sql.Tx, request Memory
 // content-level checks that follow live here. See versionsInTx for where that line
 // is drawn and what it means for a caller.
 func (s *Store) validDeletedMemoryAllocationInTx(ctx context.Context, tx *sql.Tx, path, kind, typ, head, state, backing string, key sql.NullString) error {
-	if validatePath(path) != nil || kind != "bead" || typ != MemoryTypeURL(s.ScopeURL()) ||
+	if validatePath(path) != nil || kind != "bead" || !s.isMemoryType(typ) ||
 		!authorityID.MatchString(head) || state != "deleted" || backing != "generic" || key.Valid {
 		return fmt.Errorf("%w: invalid deleted Memory allocation", ErrInvalidStore)
 	}
@@ -160,27 +188,9 @@ func (s *Store) validDeletedMemoryAllocationInTx(ctx context.Context, tx *sql.Tx
 	return nil
 }
 
-// deletedMemoryInTx validates a reserved absent Memory against its unchanged
-// final live snapshot. It never joins live endpoints into historical owned state.
+// deletedMemoryInTx supplies the separately retained last-current baseline.
+// Ordinary current readers still return ErrGone, not this historical payload.
 func (s *Store) deletedMemoryInTx(ctx context.Context, tx *sql.Tx, path string) (Record, error) {
-	var kind, typ, revision, state, backing string
-	var key sql.NullString
-	if err := tx.QueryRowContext(ctx, `SELECT resource_kind,type_url,revision,allocation_state,backing,backing_key FROM graph_preview_catalog WHERE path=?`, path).Scan(&kind, &typ, &revision, &state, &backing, &key); err != nil {
-		return Record{}, fmt.Errorf("%w: missing deleted Memory allocation: %v", ErrInvalidStore, err)
-	}
-	if err := s.validDeletedMemoryAllocationInTx(ctx, tx, path, kind, typ, revision, state, backing, key); err != nil {
-		return Record{}, err
-	}
-	raw, actor, err := readVersionBytes(ctx, tx, path, revision, revision)
-	if err != nil {
-		return Record{}, err
-	}
-	memory, err := s.decodeMemoryVersion(ctx, tx, path, typ, revision, raw, actor)
-	if err != nil {
-		return Record{}, err
-	}
-	if len(memory.Owned) != 0 {
-		return Record{}, fmt.Errorf("%w: deleted Memory final state still owns Links", ErrInvalidStore)
-	}
-	return memory, nil
+	memory, _, err := s.deletedMemoryStateInTx(ctx, tx, path)
+	return memory, err
 }

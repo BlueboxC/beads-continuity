@@ -127,6 +127,8 @@ type ReadyRequest struct {
 // default listing, and the knob that takes each back off is a different one:
 // see Status for the first and PinnedFlag for the second.
 type ListRequest struct {
+	IncludeComments bool
+
 	// Status selects statuses; one name, or a comma-separated OR set. Setting
 	// it REPLACES the default exclusions rather than fighting them.
 	//

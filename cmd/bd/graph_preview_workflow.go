@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"strconv"
@@ -21,6 +22,15 @@ import (
 // is CLI shorthand for beads/PATH; mixed commands keep links/PATH explicit.
 // No store lookup, alias resolution or remote routing chooses the kind.
 func graphPreviewResourcePath(scope, selector string) (string, error) {
+	if strings.Contains(selector, "://") && graphPreviewConfig != nil && graphPreviewConfig.GraphScopeURL == scope && graphPreviewConfig.GraphAuthorityID != "" {
+		identity, err := graphPreviewAllocatedSelector(selector)
+		if err == nil {
+			return identity.PrivatePath, nil
+		}
+		if !errors.Is(err, graphstore.ErrNotFound) {
+			return "", err
+		}
+	}
 	if graph.ValidateBeadPath(selector) == nil || graph.ValidateLinkPath(selector) == nil {
 		return selector, nil
 	}
@@ -49,6 +59,18 @@ func graphPreviewBareBeadPath(selector string) (string, error) {
 // A Link-only command can use a bare ID without probing the Bead namespace.
 // Mixed-resource commands continue to require an explicit links/PATH.
 func graphPreviewLinkPath(scope, selector string) (string, error) {
+	if strings.Contains(selector, "://") && graphPreviewConfig != nil && graphPreviewConfig.GraphScopeURL == scope && graphPreviewConfig.GraphAuthorityID != "" {
+		identity, err := graphPreviewAllocatedSelector(selector)
+		if err == nil {
+			if identity.Kind != graph.KindLink {
+				return "", fmt.Errorf("selector is not a Link")
+			}
+			return identity.PrivatePath, nil
+		}
+		if !errors.Is(err, graphstore.ErrNotFound) {
+			return "", err
+		}
+	}
 	if graph.ValidateLinkPath(selector) == nil {
 		return selector, nil
 	}
@@ -68,6 +90,19 @@ func graphPreviewLinkPath(scope, selector string) (string, error) {
 		return "", fmt.Errorf("invalid Link ID %q: %w", selector, err)
 	}
 	return path, nil
+}
+
+// Allocation identity is immutable, so resolving the literal public URI before
+// the guarded operation cannot turn a concurrent edit into a different subject.
+func graphPreviewAllocatedSelector(uri string) (identity graphstore.AllocatedResourceIdentity, err error) {
+	ctx, cancel := context.WithTimeout(getRootContext(), 30*time.Second)
+	defer cancel()
+	s, err := graphstore.OpenExisting(ctx, graphOptions(graphPreviewConfig))
+	if err != nil {
+		return identity, err
+	}
+	defer func() { err = errors.Join(err, s.Close()) }()
+	return s.ResolveCanonicalPublicResourceIdentity(ctx, uri)
 }
 
 // Both familiar spellings and the experimental generic Type selector reach

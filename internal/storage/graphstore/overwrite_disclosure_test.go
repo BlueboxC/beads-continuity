@@ -24,15 +24,15 @@ func disclosureFixture(t *testing.T, backend string) (context.Context, Options, 
 			t.Error(err)
 		}
 	})
-	memory, err := s.Create(ctx, CreateRequest{Path: "beads/plan", Body: "original"})
+	memory, err := s.Create(ctx, CreateRequest{Path: "beads/plan", Title: "Fixture", Body: "original"})
 	if err != nil {
 		t.Fatal(err)
 	}
-	target, err := s.Create(ctx, CreateRequest{Path: "beads/target", Body: "target", Actor: "target-author"})
+	target, err := s.Create(ctx, CreateRequest{Path: "beads/target", Title: "Fixture", TypeURL: o.Binding.ScopeURL + "types/constraint", Body: "target", Actor: "target-author"})
 	if err != nil {
 		t.Fatal(err)
 	}
-	link, err := s.AddInformationalLink(ctx, LinkCreateRequest{Path: "links/out", SourcePath: "beads/plan", TargetPath: "beads/target", ExpectedSourceRevision: memory.Revision})
+	link, err := s.AddInformationalLink(ctx, LinkCreateRequest{TypeURL: s.ScopeURL() + "types/subject-to", Path: "links/out", SourcePath: "beads/plan", TargetPath: "beads/target", ExpectedSourceRevision: memory.Revision})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -54,7 +54,7 @@ func TestOverwriteDisclosureLifecycle(t *testing.T) {
 			if original.Attribution.Status != "unknown" || original.Attribution.Actor != "" {
 				t.Fatalf("fixture not unknown: %+v", original.Attribution)
 			}
-			edit, err := s.UpdateMemory(ctx, MemoryUpdateRequest{Path: "beads/plan", Properties: Properties{Body: "edited"}, Actor: "editor", Unconditional: true})
+			edit, err := s.UpdateMemory(ctx, MemoryUpdateRequest{Path: "beads/plan", Properties: Properties{Title: "Fixture", Body: "edited"}, Actor: "editor", Unconditional: true})
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -67,11 +67,11 @@ func TestOverwriteDisclosureLifecycle(t *testing.T) {
 			if !reflect.DeepEqual(before, workflowState(t, ctx, s)) {
 				t.Fatal("noop changed state")
 			}
-			guarded, err := s.UpdateMemory(ctx, MemoryUpdateRequest{Path: "beads/plan", Properties: Properties{Body: "guarded"}, ExpectedRevision: edit.Memory.Revision, Actor: "guarded-editor"})
+			guarded, err := s.UpdateMemory(ctx, MemoryUpdateRequest{Path: "beads/plan", Properties: Properties{Title: "Fixture", Body: "guarded"}, ExpectedRevision: edit.Memory.Revision, Actor: "guarded-editor"})
 			if err != nil || guarded.Replaced != nil {
 				t.Fatalf("guarded: %+v %v", guarded, err)
 			}
-			added, err := s.AddInformationalLink(ctx, LinkCreateRequest{Path: "links/second", SourcePath: "beads/plan", TargetPath: "beads/target", UnconditionalSource: true, Actor: "link-author"})
+			added, err := s.AddInformationalLink(ctx, LinkCreateRequest{TypeURL: s.ScopeURL() + "types/subject-to", Path: "links/second", SourcePath: "beads/plan", TargetPath: "beads/target", UnconditionalSource: true, Actor: "link-author"})
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -116,10 +116,10 @@ func TestOverwriteDisclosureRollback(t *testing.T) {
 			fault := errors.New("reject retained mutation")
 			operations := map[string]func(context.Context, *Store) (any, error){
 				"memory": func(ctx context.Context, s *Store) (any, error) {
-					return s.UpdateMemory(ctx, MemoryUpdateRequest{Path: "beads/plan", Properties: Properties{Body: "new"}, Unconditional: true})
+					return s.UpdateMemory(ctx, MemoryUpdateRequest{Path: "beads/plan", Properties: Properties{Title: "Fixture", Body: "new"}, Unconditional: true})
 				},
 				"create": func(ctx context.Context, s *Store) (any, error) {
-					return s.AddInformationalLink(ctx, LinkCreateRequest{Path: "links/new", SourcePath: "beads/plan", TargetPath: "beads/target", UnconditionalSource: true})
+					return s.AddInformationalLink(ctx, LinkCreateRequest{TypeURL: s.ScopeURL() + "types/subject-to", Path: "links/new", SourcePath: "beads/plan", TargetPath: "beads/target", UnconditionalSource: true})
 				},
 				"update": func(ctx context.Context, s *Store) (any, error) {
 					return s.UpdateLink(ctx, LinkUpdateRequest{Path: "links/out", Unconditional: true, UnconditionalSource: true, Properties: map[string]any{"note": "new"}})
@@ -207,7 +207,7 @@ func TestOverwriteDisclosureConcurrentPredecessor(t *testing.T) {
 			defer func() { cancel(); writers.Wait(); first.afterWrite = nil; second.afterWrite = nil }()
 			go func() {
 				defer writers.Done()
-				got, err := first.UpdateMemory(ctx, MemoryUpdateRequest{Path: "beads/plan", Properties: Properties{Body: "writer-one"}, Actor: "one", Unconditional: true})
+				got, err := first.UpdateMemory(ctx, MemoryUpdateRequest{Path: "beads/plan", Properties: Properties{Title: "Fixture", Body: "writer-one"}, Actor: "one", Unconditional: true})
 				results <- outcome{got.Memory, got.Replaced, err, reflect.ValueOf(got).IsZero()}
 			}()
 			go func() {
@@ -277,7 +277,7 @@ func TestOverwriteDisclosureConcurrentPredecessor(t *testing.T) {
 				t.Fatalf("wrong tail: %+v %v", current, err)
 			}
 			// A later caller must disclose the accepted winner, never the old race start.
-			final, err := first.UpdateMemory(ctx, MemoryUpdateRequest{Path: "beads/plan", Properties: Properties{Body: "later"}, Unconditional: true, Actor: "later"})
+			final, err := first.UpdateMemory(ctx, MemoryUpdateRequest{Path: "beads/plan", Properties: Properties{Title: "Fixture", Body: "later"}, Unconditional: true, Actor: "later"})
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -308,9 +308,9 @@ func TestOverwriteDisclosureLostCommitResponse(t *testing.T) {
 			var got any
 			switch name {
 			case "memory":
-				got, err = s.UpdateMemory(ctx, MemoryUpdateRequest{Path: "beads/plan", Properties: Properties{Body: "uncertain"}, Unconditional: true})
+				got, err = s.UpdateMemory(ctx, MemoryUpdateRequest{Path: "beads/plan", Properties: Properties{Title: "Fixture", Body: "uncertain"}, Unconditional: true})
 			case "create":
-				got, err = s.AddInformationalLink(ctx, LinkCreateRequest{Path: "links/new", SourcePath: "beads/plan", TargetPath: "beads/target", UnconditionalSource: true})
+				got, err = s.AddInformationalLink(ctx, LinkCreateRequest{TypeURL: s.ScopeURL() + "types/subject-to", Path: "links/new", SourcePath: "beads/plan", TargetPath: "beads/target", UnconditionalSource: true})
 			case "update":
 				got, err = s.UpdateLink(ctx, LinkUpdateRequest{Path: "links/out", Properties: map[string]any{"note": "uncertain"}, Unconditional: true, UnconditionalSource: true})
 			case "unlink":

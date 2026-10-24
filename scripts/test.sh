@@ -28,21 +28,11 @@ build_skip_pattern() {
     echo "$pattern"
 }
 
-# Default values.
-#
-# TIMEOUT is go test's PER-PACKAGE deadline — a hang backstop, not a
-# performance budget: it costs nothing while packages pass. The floor is set
-# by cmd/bd, the slowest package: measured 2026-07-26 on a busy darwin fleet
-# box (wy-4mtr0), its default suite is ~1090s of test time across ~1490 tests
-# (mostly serial — subprocess tests that spawn bd + embedded Dolt per
-# invocation, largely t.Setenv-bound so they cannot t.Parallel), giving
-# ~18min wall WITH the prebuilt-binary fast path below already removing the
-# in-test `go build` steps. 3m could never fit that, which made every
-# full-suite run FAIL with a package deadline panic naming no failing test.
-# 25m holds the measurement plus fleet-load headroom (the passing full-suite
-# acceptance run clocked cmd/bd at 870s under -p 4 package concurrency).
-# Raise via TEST_TIMEOUT; don't lower it below cmd/bd's measured runtime.
-TIMEOUT="${TEST_TIMEOUT:-25m}"
+# Per-package hang backstop, not an operation's performance budget. The
+# Preview3 graphstore suite takes about 31m on the measured local run with
+# coverage, exceeding the older CLI-based 25m allowance. Override TEST_TIMEOUT
+# for diagnosis; acquisition caps and individual operation deadlines stay fixed.
+TIMEOUT="${TEST_TIMEOUT:-45m}"
 GO_TEST_PKG_PARALLEL="${GO_TEST_PKG_PARALLEL:-4}"
 GO_TEST_PARALLEL="${GO_TEST_PARALLEL:-4}"
 SKIP_PATTERN=$(build_skip_pattern)

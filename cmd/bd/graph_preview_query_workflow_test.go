@@ -30,13 +30,16 @@ func TestGraphPreviewQueryWorkflow(t *testing.T) {
 				}
 				args = append(args, "--server", "--external", "--server-host", "127.0.0.1", "--server-port", port, "--server-user", "root")
 			}
+			identities := map[string]string{}
 			call := func(args ...string) string {
 				t.Helper()
-				return graphPolicyCLI(t, bd, work, home, nil, "", append(args, "--json")...)
+				output := graphPolicyCLI(t, bd, work, home, nil, "", append(args, "--json")...)
+				graphCaptureWorkflowIdentity(t, args, output, identities)
+				return output
 			}
 			list := func(extra ...string) graphstore.IssueListPage {
 				t.Helper()
-				args := append([]string{"list", "--format", "records-json", "--bead-type", "types/preview-issue-v3"}, extra...)
+				args := append([]string{"list", "--format", "records-json", "--bead-type", "types/issue"}, extra...)
 				return graphMixedResult[graphstore.IssueListPage](t, graphPolicyCLI(t, bd, work, home, nil, "", args...))
 			}
 			beads := func(extra ...string) ([]graphListedBead, bool) {
@@ -69,13 +72,13 @@ func TestGraphPreviewQueryWorkflow(t *testing.T) {
 			graphPolicyCLI(t, bd, work, home, nil, "invalid_properties", "blocked", "--label-any=", "--json")
 			// The ordinary ready and blocked predicates now select canonical
 			// graph Issues without changing their blocker-aware membership.
-			if got := graphMixedResult[[]graphstore.BlockedIssue](t, call("blocked", "--label", "release")); len(got) != 1 || got[0].Issue.ID != scope+"beads/work" {
+			if got := graphMixedResult[[]graphstore.BlockedIssue](t, call("blocked", "--label", "release")); len(got) != 1 || got[0].Issue.ID != graphWorkflowIdentity(identities, scope, "beads/work") {
 				t.Fatalf("blocked --label missed work: %+v", got)
 			}
 			if got := graphMixedResult[[]graphstore.BlockedIssue](t, call("blocked", "--exclude-label", "release")); len(got) != 0 {
 				t.Fatalf("blocked --exclude-label leaked work: %+v", got)
 			}
-			if got := graphMixedResult[[]graphstore.IssueRecord](t, call("ready", "--priority", "2", "--type", "task")); len(got) != 1 || got[0].ID != scope+"beads/gate" {
+			if got := graphMixedResult[[]graphstore.IssueRecord](t, call("ready", "--priority", "2", "--type", "task")); len(got) != 1 || got[0].ID != graphWorkflowIdentity(identities, scope, "beads/gate") {
 				t.Fatalf("ready priority/type filter missed gate: %+v", got)
 			}
 			if got := graphMixedResult[[]graphstore.IssueRecord](t, call("ready", "--priority", "1")); len(got) != 0 {
@@ -153,15 +156,15 @@ func TestGraphPreviewQueryWorkflow(t *testing.T) {
 				return ids
 			}
 			allBeads, more := beads("--all")
-			if more || len(allBeads) != 4 || !graphListNewestFirst(t, allBeads) || !slices.Equal(sortedIDs(allBeads), []string{scope + "beads/context", scope + "beads/gate", scope + "beads/plan", scope + "beads/work"}) {
+			if more || len(allBeads) != 4 || !graphListNewestFirst(t, allBeads) || !slices.Equal(sortedIDs(allBeads), graphSortedWorkflowIDs([]string{graphWorkflowIdentity(identities, scope, "beads/context"), graphWorkflowIdentity(identities, scope, "beads/gate"), graphWorkflowIdentity(identities, scope, "beads/plan"), graphWorkflowIdentity(identities, scope, "beads/work")})) {
 				t.Fatalf("complete mixed Bead inventory: %+v more=%t", allBeads, more)
 			}
 			firstPage, more := beads("--limit", "2")
 			if !more || !reflect.DeepEqual(firstPage, allBeads[:2]) {
 				t.Fatalf("bounded mixed Bead inventory: %+v more=%t", firstPage, more)
 			}
-			memories, more := beads("--bead-type", "types/preview-memory-v2", "--all")
-			if more || len(memories) != 2 || !graphListNewestFirst(t, memories) || !slices.Equal(sortedIDs(memories), []string{scope + "beads/context", scope + "beads/plan"}) {
+			memories, more := beads("--bead-type", "types/memory", "--all")
+			if more || len(memories) != 2 || !graphListNewestFirst(t, memories) || !slices.Equal(sortedIDs(memories), []string{graphWorkflowIdentity(identities, scope, "beads/context"), graphWorkflowIdentity(identities, scope, "beads/plan")}) {
 				t.Fatalf("Memory Type filter: %+v more=%t", memories, more)
 			}
 			if got := graphPolicyCLI(t, bd, work, home, nil, "", "list", "--all"); !strings.Contains(got, "Beads (4;") || !strings.Contains(got, "Memory") || !strings.Contains(got, "Issue") || strings.Contains(got, "private-memory-body") {
@@ -169,18 +172,18 @@ func TestGraphPreviewQueryWorkflow(t *testing.T) {
 			}
 			graphPolicyCLI(t, bd, work, home, nil, "capability_unavailable", "list", "--bead-type", "types/preview-related-v2", "--format", "records-json")
 			graphPolicyCLI(t, bd, work, home, nil, "capability_unavailable", "list", "--bead-type", "types/uninstalled", "--format", "records-json")
-			graphPolicyCLI(t, bd, work, home, nil, "capability_unavailable", "list", "--bead-type", "types/preview-memory-v2", "--status", "open", "--format", "records-json")
+			graphPolicyCLI(t, bd, work, home, nil, "capability_unavailable", "list", "--bead-type", "types/memory", "--status", "open", "--format", "records-json")
 
 			page := list("--limit", "1", "--sort", "priority")
-			if len(page.Items) != 1 || page.Items[0].ID != scope+"beads/work" || !page.HasMore {
+			if len(page.Items) != 1 || page.Items[0].ID != graphWorkflowIdentity(identities, scope, "beads/work") || !page.HasMore {
 				t.Fatalf("bounded list lost native order/over-fetch indication: %+v", page)
 			}
 			all := list("--all", "--sort", "priority")
-			if len(all.Items) != 2 || all.HasMore || all.Items[1].ID != scope+"beads/gate" {
+			if len(all.Items) != 2 || all.HasMore || all.Items[1].ID != graphWorkflowIdentity(identities, scope, "beads/gate") {
 				t.Fatalf("complete Issue list: %+v", all)
 			}
 			filtered := list("--label", "release", "--status", "open")
-			if len(filtered.Items) != 1 || filtered.Items[0].ID != scope+"beads/work" || filtered.HasMore {
+			if len(filtered.Items) != 1 || filtered.Items[0].ID != graphWorkflowIdentity(identities, scope, "beads/work") || filtered.HasMore {
 				t.Fatalf("native label/status selection: %+v", filtered)
 			}
 			assertBlocked := func(want bool) {
@@ -189,7 +192,7 @@ func TestGraphPreviewQueryWorkflow(t *testing.T) {
 				if !want && len(got) == 0 {
 					return
 				}
-				if !want || len(got) != 1 || got[0].Issue.ID != scope+"beads/work" || !reflect.DeepEqual(got[0].BlockedBy, []string{scope + "beads/gate"}) {
+				if !want || len(got) != 1 || got[0].Issue.ID != graphWorkflowIdentity(identities, scope, "beads/work") || !reflect.DeepEqual(got[0].BlockedBy, []string{graphWorkflowIdentity(identities, scope, "beads/gate")}) {
 					t.Fatalf("blocked membership want=%t got=%+v", want, got)
 				}
 			}
@@ -201,10 +204,10 @@ func TestGraphPreviewQueryWorkflow(t *testing.T) {
 				}
 				want := map[string]bool{}
 				if workReady {
-					want[scope+"beads/work"] = true
+					want[graphWorkflowIdentity(identities, scope, "beads/work")] = true
 				}
 				if gateReady {
-					want[scope+"beads/gate"] = true
+					want[graphWorkflowIdentity(identities, scope, "beads/gate")] = true
 				}
 				if !reflect.DeepEqual(got, want) {
 					t.Fatalf("ready=%v want=%v", got, want)
@@ -216,7 +219,8 @@ func TestGraphPreviewQueryWorkflow(t *testing.T) {
 			if len(whole.Nodes) != 4 || len(whole.Links) != 4 || !whole.Complete || len(whole.Frontier) != 0 {
 				t.Fatalf("diamond must retain both routes and all Link identities: %+v", whole)
 			}
-			wantNodes := []string{scope + "beads/context", scope + "beads/gate", scope + "beads/plan", scope + "beads/work"}
+			wantNodes := []string{graphWorkflowIdentity(identities, scope, "beads/context"), graphWorkflowIdentity(identities, scope, "beads/gate"), graphWorkflowIdentity(identities, scope, "beads/plan"), graphWorkflowIdentity(identities, scope, "beads/work")}
+			slices.Sort(wantNodes)
 			gotNodes := []string{}
 			for _, node := range whole.Nodes {
 				gotNodes = append(gotNodes, node.ID)
@@ -225,10 +229,10 @@ func TestGraphPreviewQueryWorkflow(t *testing.T) {
 				t.Fatalf("diamond nodes=%v want=%v", gotNodes, wantNodes)
 			}
 			wantLinks := map[string][2]string{
-				scope + "links/context": {scope + "beads/plan", scope + "beads/context"},
-				scope + "links/work":    {scope + "beads/plan", scope + "beads/work"},
-				scope + "links/gate":    {scope + "beads/context", scope + "beads/gate"},
-				dep.Link.ID:             {scope + "beads/work", scope + "beads/gate"},
+				scope + "links/context": {graphWorkflowIdentity(identities, scope, "beads/plan"), graphWorkflowIdentity(identities, scope, "beads/context")},
+				scope + "links/work":    {graphWorkflowIdentity(identities, scope, "beads/plan"), graphWorkflowIdentity(identities, scope, "beads/work")},
+				scope + "links/gate":    {graphWorkflowIdentity(identities, scope, "beads/context"), graphWorkflowIdentity(identities, scope, "beads/gate")},
+				dep.Link.ID:             {graphWorkflowIdentity(identities, scope, "beads/work"), graphWorkflowIdentity(identities, scope, "beads/gate")},
 			}
 			gotLinks := map[string][2]string{}
 			for _, link := range whole.Links {
@@ -239,7 +243,7 @@ func TestGraphPreviewQueryWorkflow(t *testing.T) {
 			}
 			for _, edge := range [][2]string{{"beads/plan", "in"}, {"beads/gate", "out"}} {
 				one := traverse(edge[0], edge[1], "10")
-				if len(one.Nodes) != 1 || one.Nodes[0].ID != scope+edge[0] || len(one.Links) != 0 || !one.Complete {
+				if len(one.Nodes) != 1 || one.Nodes[0].ID != graphWorkflowIdentity(identities, scope, edge[0]) || len(one.Links) != 0 || !one.Complete {
 					t.Fatalf("direction ignored: %+v", one)
 				}
 			}
@@ -248,7 +252,7 @@ func TestGraphPreviewQueryWorkflow(t *testing.T) {
 				t.Fatalf("inbound traversal: %+v", inbound)
 			}
 			frontier := traverse("beads/plan", "out", "0")
-			if len(frontier.Nodes) != 1 || len(frontier.Links) != 0 || frontier.Complete || !reflect.DeepEqual(frontier.Frontier, []string{scope + "beads/plan"}) {
+			if len(frontier.Nodes) != 1 || len(frontier.Links) != 0 || frontier.Complete || !reflect.DeepEqual(frontier.Frontier, []string{graphWorkflowIdentity(identities, scope, "beads/plan")}) {
 				t.Fatalf("depth frontier: %+v", frontier)
 			}
 			before := map[string]string{}

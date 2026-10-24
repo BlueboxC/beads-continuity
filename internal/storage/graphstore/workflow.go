@@ -27,6 +27,7 @@ func (s *Store) CloseIssue(ctx context.Context, path, reason, actor string) (Iss
 // Force bypasses only the native blocker/child and pinned/holder policies.
 type IssueCloseRequest struct {
 	Path, Reason, Actor, Session string
+	NativeID                     string
 	ExpectedRevision             string
 	Force                        bool
 }
@@ -43,10 +44,11 @@ func (s *Store) CloseIssueWithOptions(ctx context.Context, request IssueCloseReq
 		if err := checkBinding(ctx, tx, s.options); err != nil {
 			return err
 		}
-		before, err := s.requireIssueInTx(ctx, tx, request.Path)
+		path, before, err := s.resolveLiveIssueSelectorInTx(ctx, tx, IssueSelector{Path: request.Path, NativeID: request.NativeID})
 		if err != nil {
 			return err
 		}
+		request.Path = path
 		// The graph token guards the complete Issue/owned-Link projection. Pass
 		// the native row lock too, so the Issue writer remains the sole owner
 		// of lifecycle validation and its exactly-once History stamp.
@@ -257,7 +259,7 @@ func (s *Store) wakeExpiredDefersAdvisory(ctx context.Context) {
 			if err := tx.QueryRowContext(ctx, `SELECT path FROM graph_preview_catalog WHERE backing='issue' AND backing_key=? AND allocation_state='live'`, id).Scan(&path); err != nil {
 				return fmt.Errorf("%w: unmapped woken Issue: %v", ErrInvalidStore, err)
 			}
-			if err := s.recordIssueMappingInTx(ctx, tx, path, id, issueops.DeferWakeActor); err != nil {
+			if err := s.recordIssueMappingInTx(ctx, tx, path, id, ""); err != nil {
 				return err
 			}
 		}

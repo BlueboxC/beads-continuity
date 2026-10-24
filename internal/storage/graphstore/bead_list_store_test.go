@@ -21,18 +21,32 @@ func TestListBeadsHidesWhatTheIssueListHides(t *testing.T) {
 		t.Run(backend, func(t *testing.T) {
 			ctx, _, s := issueListFixture(t, backend)
 			setIssueListConfig(t, ctx, s, "status.custom", "triaged:active,archived:done,on-ice:frozen")
-			if _, err := s.Create(ctx, CreateRequest{Path: "beads/plan", Title: "Plan", Body: "memory body", Actor: "test-author"}); err != nil {
+			memory, err := s.Create(ctx, CreateRequest{PublicID: "beads/plan", Title: "Plan", Body: "memory body", Actor: "test-author"})
+			if err != nil {
 				t.Fatal(err)
 			}
 			paths := []string{}
+			visible := []string{}
+			nativeType := ""
+			memoryID := strings.TrimPrefix(memory.ID, s.ScopeURL())
 			for _, status := range []types.Status{types.StatusOpen, types.StatusClosed, types.StatusPinned, "triaged", "archived", "on-ice"} {
 				request := plainIssue(string(status))
 				request.Issue.Status = status
 				path := "beads/" + string(status)
-				if _, err := s.CreateIssue(ctx, path, request); err != nil {
+				created, err := s.CreateIssue(ctx, path, request)
+				if err != nil {
 					t.Fatal(err)
 				}
-				paths = append(paths, path)
+				if nativeType == "" {
+					nativeType = created.Type
+				} else if created.Type != nativeType {
+					t.Fatal("fixture mixed native Types unexpectedly")
+				}
+				id := strings.TrimPrefix(created.ID, s.ScopeURL())
+				paths = append(paths, id)
+				if status == types.StatusOpen || status == "triaged" {
+					visible = append(visible, id)
+				}
 			}
 
 			listed := func(request BeadListRequest) []string {
@@ -54,24 +68,31 @@ func TestListBeadsHidesWhatTheIssueListHides(t *testing.T) {
 				shownIssues = append(shownIssues, strings.TrimPrefix(item.ID, s.ScopeURL()))
 			}
 			slices.Sort(shownIssues)
-			if want := []string{"beads/open", "beads/triaged"}; !slices.Equal(shownIssues, want) {
+			slices.Sort(visible)
+			if want := visible; len(want) != 2 || !slices.Equal(shownIssues, want) {
 				t.Fatalf("the ordinary Issue list shows %v, want %v: the fixture no longer exercises every arm", shownIssues, want)
 			}
 
-			wantDefault := append([]string{"beads/plan"}, shownIssues...)
+			wantDefault := append([]string{memoryID}, shownIssues...)
 			slices.Sort(wantDefault)
 			if got := listed(BeadListRequest{}); !slices.Equal(got, wantDefault) {
 				t.Fatalf("default Bead list %v, want the Memory and the Issues the ordinary list shows %v", got, wantDefault)
 			}
-			everything := append([]string{"beads/plan"}, paths...)
+			everything := append([]string{memoryID}, paths...)
 			slices.Sort(everything)
 			if got := listed(BeadListRequest{All: true}); !slices.Equal(got, everything) {
 				t.Fatalf("--all Bead list %v, want %v", got, everything)
 			}
-			if got := listed(BeadListRequest{TypeURL: IssueTypeURL(s.ScopeURL())}); !slices.Equal(got, shownIssues) {
+			if got := listed(BeadListRequest{TypeURL: nativeType}); !slices.Equal(got, shownIssues) {
 				t.Fatalf("Issue Type list %v, want %v", got, shownIssues)
 			}
-			if got := listed(BeadListRequest{TypeURL: MemoryTypeURL(s.ScopeURL())}); !slices.Equal(got, []string{"beads/plan"}) {
+			if got := listed(BeadListRequest{TypeURL: IssueTypeURL(s.ScopeURL())}); len(got) != 0 {
+				t.Fatalf("abstract Issue exact filter matched concrete records: %v", got)
+			}
+			if got := listed(BeadListRequest{ConformsTo: IssueTypeURL(s.ScopeURL())}); !slices.Equal(got, shownIssues) {
+				t.Fatalf("Issue family list %v, want %v", got, shownIssues)
+			}
+			if got := listed(BeadListRequest{TypeURL: MemoryTypeURL(s.ScopeURL())}); !slices.Equal(got, []string{memoryID}) {
 				t.Fatalf("Memory Type list %v", got)
 			}
 			for _, notABeadType := range []string{s.ScopeURL() + "types/uninstalled", DependencyTypeURL(s.ScopeURL())} {

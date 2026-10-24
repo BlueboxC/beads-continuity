@@ -95,6 +95,8 @@ func TestLinkPropertiesPatchLifecycle(t *testing.T) {
 				{linkNotePatch(t, "  雪\r\n"), map[string]any{"note": "  雪\r\n"}, false, true},
 				{[]byte(`[{"op":"replace","path":"","value":{"note":"","scratch":[0]}},{"op":"add","path":"/scratch/-","value":1},{"op":"remove","path":"/scratch"}]`), map[string]any{"note": ""}, true, false},
 				{[]byte(`[{"op":"remove","path":"/note"}]`), map[string]any{}, false, false},
+				{[]byte(`[{"op":"replace","path":"","value":{"note":null,"title":"extension","count":42}}]`), map[string]any{"note": nil, "title": "extension", "count": float64(42)}, false, false},
+				{[]byte(`[{"op":"replace","path":"","value":{}}]`), map[string]any{}, false, false},
 			} {
 				request := LinkPropertiesPatchRequest{Path: "links/out", Patch: tc.patch, Actor: "patch-author", Unconditional: tc.linkUnconditional, UnconditionalSource: tc.sourceUnconditional}
 				if !tc.linkUnconditional {
@@ -198,10 +200,9 @@ func TestLinkPropertiesPatchLifecycle(t *testing.T) {
 			if !errors.Is(err, ErrConflict) || !reflect.ValueOf(bad).IsZero() || !reflect.DeepEqual(before, workflowState(t, ctx, s)) {
 				t.Fatalf("optional Issue guard: %+v %v", bad, err)
 			}
-			// Equal endpoints remain distinct identities; a Memory self-Link
-			// participates once in the owned set and mints one source revision.
-			for _, tc := range []struct{ path, target string }{{"links/parallel", "beads/target"}, {"links/self", "beads/plan"}} {
-				created, err := s.AddInformationalLink(ctx, LinkCreateRequest{Path: tc.path, SourcePath: "beads/plan", TargetPath: tc.target, ExpectedSourceRevision: source.Revision})
+			// Parallel Links with equal endpoints retain independent identities and histories.
+			for _, tc := range []struct{ path, target string }{{"links/parallel", "beads/target"}, {"links/parallel-two", "beads/target"}} {
+				created, err := s.AddInformationalLink(ctx, LinkCreateRequest{TypeURL: s.ScopeURL() + "types/subject-to", Path: tc.path, SourcePath: "beads/plan", TargetPath: tc.target, ExpectedSourceRevision: source.Revision})
 				if err != nil {
 					t.Fatal(err)
 				}
@@ -241,7 +242,8 @@ func TestLinkPropertiesPatchRefusalAndRollback(t *testing.T) {
 					t.Fatal(err)
 				}
 			}
-			if _, err := s.AddDependency(ctx, DependencyRequest{Path: "links/block", SourcePath: "beads/work", TargetPath: "beads/prereq", Actor: "fixture"}); err != nil {
+			blocking, err := s.AddDependency(ctx, DependencyRequest{Path: "links/block", SourcePath: "beads/work", TargetPath: "beads/prereq", Actor: "fixture"})
+			if err != nil {
 				t.Fatal(err)
 			}
 			before := workflowState(t, ctx, s)
@@ -256,7 +258,7 @@ func TestLinkPropertiesPatchRefusalAndRollback(t *testing.T) {
 				}
 			}
 			for _, tc := range []struct{ name, patch string }{
-				{"empty-operations", `[]`}, {"missing-note", `[{"op":"replace","path":"/note","value":"x"}]`}, {"null-note", `[{"op":"add","path":"/note","value":null}]`}, {"extra-member", `[{"op":"add","path":"/title","value":"x"}]`}, {"array-final", `[{"op":"replace","path":"","value":[]}]`}, {"late-error", `[{"op":"add","path":"/note","value":"early"},{"op":"remove","path":"/missing"}]`},
+				{"empty-operations", `[]`}, {"missing-note", `[{"op":"replace","path":"/note","value":"x"}]`}, {"array-final", `[{"op":"replace","path":"","value":[]}]`}, {"late-error", `[{"op":"add","path":"/note","value":"early"},{"op":"remove","path":"/missing"}]`},
 			} {
 				t.Run(tc.name, func(t *testing.T) {
 					r := request
@@ -272,7 +274,11 @@ func TestLinkPropertiesPatchRefusalAndRollback(t *testing.T) {
 			}{
 				{"actor", func(r *LinkPropertiesPatchRequest) { r.Actor = "\xff" }, storage.ErrValidation},
 				{"missing", func(r *LinkPropertiesPatchRequest) { r.Path = "links/missing" }, ErrNotFound},
-				{"blocking-Type", func(r *LinkPropertiesPatchRequest) { r.Path = "links/block" }, storage.ErrValidation},
+				{"blocking-Type", func(r *LinkPropertiesPatchRequest) {
+					r.Path = "links/block"
+					r.ExpectedRevision = blocking.Link.Revision
+					r.ExpectedSourceRevision = blocking.Source.Revision
+				}, storage.ErrValidation},
 				{"both-link-guards", func(r *LinkPropertiesPatchRequest) { r.Unconditional = true }, storage.ErrValidation},
 				{"neither-link-guard", func(r *LinkPropertiesPatchRequest) { r.ExpectedRevision = "" }, storage.ErrValidation},
 				{"both-source-guards", func(r *LinkPropertiesPatchRequest) { r.UnconditionalSource = true }, storage.ErrValidation},
@@ -345,14 +351,18 @@ func TestLinkPropertiesPatchReadBudget(t *testing.T) {
 	for _, backend := range []string{"embedded", "server"} {
 		t.Run(backend, func(t *testing.T) {
 			ctx, _, s, original, target, link := disclosureFixture(t, backend)
+			ctx = currentReadBudgetContext(t, ctx)
 			// The unchanged filler fits the established current-read budget. Multiple
 			// copies of a changed Link (including its owner) would exceed that budget.
-			if _, err := s.Create(ctx, CreateRequest{Path: "beads/filler", Body: strings.Repeat("f", PreviewCurrentReadByteLimit/2-(512<<10))}); err != nil {
+			fillerBody := strings.Repeat("f", PreviewCurrentReadByteLimit/2-(512<<10))
+			filler, err := s.Create(ctx, CreateRequest{Path: "beads/filler", Title: "Fixture", Body: "small"})
+			if err != nil {
 				t.Fatal(err)
 			}
 			if _, err := s.Read(ctx, "links/out"); err != nil {
 				t.Fatalf("fixture unreadable: %v", err)
 			}
+			filler = replaceLegacyFixtureMemory(t, ctx, s, "beads/filler", filler, fillerBody)
 			before := workflowState(t, ctx, s)
 			large := strings.Repeat("x", 768<<10)
 			for _, unconditional := range []bool{false, true} {
@@ -373,27 +383,20 @@ func TestLinkPropertiesPatchReadBudget(t *testing.T) {
 					}
 				})
 			}
-			// Replacement obeys the same atomic budget as a patch.
-			refused, err := s.UpdateLink(ctx, LinkUpdateRequest{Path: "links/out", Properties: map[string]any{"note": large}, ExpectedRevision: link.Link.Revision, ExpectedSourceRevision: original.Revision, Actor: "replacement"})
-			if !errors.Is(err, ErrLimitExceeded) || !reflect.ValueOf(refused).IsZero() || !reflect.DeepEqual(before, workflowState(t, ctx, s)) {
-				t.Fatalf("replacement budget refusal: %+v %v", refused, err)
-			}
-			filler, err := s.UpdateMemory(ctx, MemoryUpdateRequest{Path: "beads/filler", Properties: Properties{Body: strings.Repeat("f", 6<<20)}, Unconditional: true})
-			if err != nil {
-				t.Fatal(err)
-			}
+			// Replacement deliberately keeps its established subject-local policy.
+			// Make the workspace oversized through that real API, without SQL seeding.
+			filler = replaceLegacyFixtureMemory(t, ctx, s, "beads/filler", filler, "small")
 			replacement, err := s.UpdateLink(ctx, LinkUpdateRequest{Path: "links/out", Properties: map[string]any{"note": large}, ExpectedRevision: link.Link.Revision, ExpectedSourceRevision: original.Revision, Actor: "replacement"})
 			if err != nil || !replacement.Changed {
-				t.Fatalf("bounded replacement: changed=%t err=%v", replacement.Changed, err)
+				t.Fatalf("existing replacement policy changed: changed=%t err=%v", replacement.Changed, err)
 			}
+			_ = replaceLegacyFixtureMemory(t, ctx, s, "beads/filler", filler, fillerBody)
 			replacementSource, ok := replacement.Source.(Record)
 			if !ok {
 				t.Fatalf("replacement source type %T", replacement.Source)
 			}
-			// Simulate canonical oversized state admitted by an older build.
-			replaceLegacyFixtureMemory(t, ctx, s, "beads/filler", filler.Memory, strings.Repeat("f", PreviewCurrentReadByteLimit/2-(512<<10)))
 			if _, err := s.Read(ctx, "links/out"); !errors.Is(err, ErrLimitExceeded) {
-				t.Fatalf("legacy fixture must exceed current-read budget: %v", err)
+				t.Fatalf("replacement must exceed current-read budget: %v", err)
 			}
 			oversizedState := workflowState(t, ctx, s)
 			t.Run("oversized-noop", func(t *testing.T) {
@@ -666,6 +669,7 @@ func TestLinkPropertiesPatchDeletedBudget(t *testing.T) {
 	for _, backend := range []string{"embedded", "server"} {
 		t.Run(backend, func(t *testing.T) {
 			ctx, _, s, original, target, link := disclosureFixture(t, backend)
+			ctx = currentReadBudgetContext(t, ctx)
 			deleted := propertiesPatchDeletedFiller(t, ctx, s)
 			if _, err := s.Read(ctx, "links/out"); err != nil {
 				t.Fatalf("deleted filler fixture unreadable: %v", err)

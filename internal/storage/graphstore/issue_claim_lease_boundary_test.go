@@ -13,15 +13,12 @@ import (
 	"github.com/steveyegge/beads/internal/storage/issueops"
 )
 
-// This pins a refusal boundary, not a supported heartbeat/recovery workflow.
-// Lease fields are part of the complete retained Issue projection at this base.
-// A native coordinator that changes only the local lease bypasses the graph
-// writer, so current graph operations must refuse rather than invent a version
-// or silently hydrate today's lease into the saved Issue record.
-func TestIssueClaimExternalLeaseBoundary(t *testing.T) {
+// An external durable Issue edit must still refuse graph reads and writes.
+// Node-local lease drift is allowed and covered in issue_lease_test.go.
+func TestIssueClaimExternalDurableDriftBoundary(t *testing.T) {
 	for _, backend := range []string{"embedded", "server"} {
 		t.Run(backend, func(t *testing.T) {
-			for _, change := range []string{"heartbeat", "lease-deletion"} {
+			for _, change := range []string{"title-edit"} {
 				t.Run(change, func(t *testing.T) {
 					ctx, _, s, original, _, _ := reopenFixture(t, backend)
 					const actor = "lease-boundary-actor"
@@ -37,24 +34,20 @@ func TestIssueClaimExternalLeaseBoundary(t *testing.T) {
 					}
 					assertIssueEditVersion(t, ctx, s, "beads/work", claimed.Issue)
 
-					// Deliberately use the native lease helper outside the admitted
-					// graph writer. The test-only longer TTL makes the heartbeat's
-					// projection change observable even with second-precision SQL
-					// timestamps; there is no sleep, fake clock or schema fixture.
+					// Change durable native Issue state outside the admitted graph
+					// writer, without recording a new retained version.
 					err = s.withTx(ctx, true, func(tx *sql.Tx) error {
-						if change == "heartbeat" {
-							return issueops.HeartbeatIssueInTx(issueops.WithLeaseTTL(ctx, 10*time.Minute), tx, original.Properties.ID, actor)
-						}
-						return issueops.DeleteLeaseInTx(ctx, tx, original.Properties.ID)
+						_, err := tx.ExecContext(ctx, `UPDATE issues SET title=? WHERE id=?`, "external title", original.Properties.ID)
+						return err
 					})
 					if err != nil {
-						t.Fatalf("external lease change: %v", err)
+						t.Fatalf("external durable edit: %v", err)
 					}
 					afterExternal := reopenState(t, ctx, s)
 					if reflect.DeepEqual(before, afterExternal) {
-						t.Fatal("external control did not change stored lease state")
+						t.Fatal("external control did not change durable Issue state")
 					}
-					// Both historical snapshots stay independent of today's lease.
+					// Both historical snapshots stay independent of today's native edit.
 					assertIssueEditVersion(t, ctx, s, "beads/work", original)
 					assertIssueEditVersion(t, ctx, s, "beads/work", claimed.Issue)
 					stages := 0
@@ -62,7 +55,7 @@ func TestIssueClaimExternalLeaseBoundary(t *testing.T) {
 					t.Cleanup(func() { s.afterWrite = nil })
 					current, err := s.ShowIssue(ctx, "beads/work")
 					if !errors.Is(err, ErrInvalidStore) || !reflect.DeepEqual(current, IssueRecord{}) {
-						t.Fatalf("current read accepted lease drift: %+v %v", current, err)
+						t.Fatalf("current read accepted durable drift: %+v %v", current, err)
 					}
 					for _, operation := range []struct {
 						name string
@@ -72,7 +65,7 @@ func TestIssueClaimExternalLeaseBoundary(t *testing.T) {
 							return s.ClaimIssue(ctx, "beads/work", actor)
 						}},
 						{"close", func(ctx context.Context) (IssueMutationResult, error) {
-							return s.CloseIssue(ctx, "beads/work", "Must not hide lease drift", actor)
+							return s.CloseIssue(ctx, "beads/work", "Must not hide durable drift", actor)
 						}},
 					} {
 						got, err := operation.run(ctx)

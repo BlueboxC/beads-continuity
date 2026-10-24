@@ -229,6 +229,9 @@ type CreateRequest struct {
 
 // UpdateRequest describes an issue update.
 type UpdateRequest struct {
+	ForceNotesOverwrite bool
+	AllowTemplate       bool
+
 	Actor, IssueID string
 	Patch          IssuePatch
 	// Claim atomically claims the issue for Actor. It first sets Assignee to

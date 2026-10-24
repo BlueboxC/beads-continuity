@@ -27,9 +27,12 @@ func TestGraphPreviewMemoryDeleteWorkflow(t *testing.T) {
 				}
 				initArgs = append(initArgs, "--server", "--external", "--server-host", "127.0.0.1", "--server-port", port, "--server-user", "root")
 			}
+			identities := map[string]string{}
 			call := func(args ...string) string {
 				t.Helper()
-				return graphPolicyCLI(t, bd, work, home, nil, "", append(args, "--json")...)
+				output := graphPolicyCLI(t, bd, work, home, nil, "", append(args, "--json")...)
+				graphCaptureWorkflowIdentity(t, args, output, identities)
+				return output
 			}
 			refuse := func(code string, args ...string) {
 				t.Helper()
@@ -103,7 +106,7 @@ func TestGraphPreviewMemoryDeleteWorkflow(t *testing.T) {
 			other := call("remember", "Context", "--id", "beads/other", "--title", "Context")
 			issue := call("create", "Keep Issue", "--id", "beads/work")
 			issuePreview := graphMixedResult[graphstore.IssueDeleteResult](t, call("delete", "beads/work"))
-			if !issuePreview.Preview || issuePreview.Deleted || issuePreview.Issue.ID != scope+"beads/work" {
+			if !issuePreview.Preview || issuePreview.Deleted || issuePreview.Issue.ID != graphWorkflowIdentity(identities, scope, "beads/work") {
 				t.Fatal("Issue deletion preview did not preserve live Issue")
 			}
 			refuse("capability_unavailable", "forget", "beads/work", "--unconditional")

@@ -442,3 +442,16 @@ func stringSetDifference(left, right map[string]struct{}) []string {
 	sort.Strings(values)
 	return values
 }
+
+func AuthorizeNotesOverwrite(before *types.Issue, request publicops.UpdateRequest) error {
+	if !request.Patch.Notes.Set || !publicops.NotesReplacement(before.Notes, request.Patch.Notes.Value) || request.ForceNotesOverwrite {
+		return nil
+	}
+	return fmt.Errorf("%w: issue %s", storage.ErrNotesOverwrite, before.ID)
+}
+func AuthorizeTemplateUpdate(before *types.Issue, request publicops.UpdateRequest) error {
+	if before != nil && before.IsTemplate && !request.AllowTemplate {
+		return &publicops.TemplateReadOnlyError{IssueID: before.ID}
+	}
+	return nil
+}

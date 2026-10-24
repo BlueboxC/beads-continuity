@@ -1095,3 +1095,5 @@ type DependencyRemoveOptions struct {
 	// history.
 	EmitEvent bool
 }
+
+var ErrNotesOverwrite = issueops.ErrNotesOverwrite

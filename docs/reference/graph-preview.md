@@ -5,6 +5,46 @@ description: Optional typed graph workspace with retained versions and read-only
 
 # Graph Preview
 
+## Isolated Preview3 branch
+
+`codex/preview3-integration-20261024` is a candidate using schema11/generation13,
+not an installed upgrade. Its provider adds the Preview3 typed Memory families,
+pins and guarded historical composition while retaining fork learning, current
+code indexes, activity, prime and the project viewer in the same Dolt database.
+Generation13 additionally preserves the three schema8 informational Types and
+native dependency ID/thread facts; it is distinct from upstream generation12.
+
+The schema8 copy rehearsal takes a coherent copied engine and copied metadata,
+then creates a native full backup and separately restored converted candidate:
+
+```sh
+bd --sandbox graph-convert schema8-copy \
+  --source /private/rehearsal/source-engine \
+  --metadata /private/rehearsal/original-metadata.json \
+  --out /private/rehearsal/new-candidate
+bd --sandbox graph-convert verify \
+  --receipt /private/rehearsal/new-candidate/receipt.json
+```
+
+Preview3 `versions` uses public allocation IDs. It lists live snapshots as
+citable versions and exposes deletion events and current recovery guards
+separately; a deletion token remains unavailable to `show --version`.
+
+The original bound workspace is refused. Original tokens, bytes and Type
+catalogs remain readable; current format boundaries and changed public IDs are
+recorded separately. A receipt refuses later writes and cannot activate a
+schema8 copy. Full native backup/restore, rather than JSONL, preserves history.
+Larger inherited datasets retain ordinary write-capacity guards; selected
+current context can be read without loading obsolete generations.
+
+See the [Preview3 preservation contract](https://github.com/BlueboxC/beads-continuity/blob/codex/preview3-integration-20261024/engdocs/design/preview3-integration.md)
+for exact boundaries and qualification. Installation, real activation,
+independent graph-clone merge and Preview3 HTTP/BDP transport qualification are
+outside this copy-only phase. The reference below describes the prior schema8
+baseline and requires its matching binary.
+
+## Schema8 baseline reference
+
 Graph Preview adds typed Beads and Links, opaque revision guards, retained
 snapshots and graph queries to this fork. It reuses the existing embedded/server
 Dolt engines; there is no second database engine or service. Contributor source,

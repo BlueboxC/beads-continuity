@@ -82,7 +82,7 @@ func projectGraphGeneric(snapshot graphstore.Snapshot, scope string, in graphGen
 		var node graphGenericNode
 		switch record := value.(type) {
 		case graphstore.Record:
-			if record.Type != graphstore.MemoryTypeURL(scope) {
+			if !graphstore.IsMemoryTypeURL(scope, record.Type) {
 				return invalid("unsupported Memory Type")
 			}
 			node = graphGenericNode{record.ID, record.Type, record.Properties.Title, record.Version, record.Attribution}
@@ -95,7 +95,7 @@ func projectGraphGeneric(snapshot graphstore.Snapshot, scope string, in graphGen
 			if !graphstore.IsInformationalTypeURL(scope, record.Type) && !graphstore.IsNativeDependencyTypeURL(scope, record.Type) {
 				return invalid("unsupported Link Type")
 			}
-			if _, kind, ok := graph.SplitCanonicalURL(scope, record.ID); !ok || kind != graph.KindLink || record.Version == "" {
+			if _, err := graph.ScopeLocalPublicResourceID(scope, record.ID); err != nil || record.Version == "" {
 				return invalid("invalid Link identity/version")
 			}
 			if _, duplicate := links[record.ID]; duplicate {
@@ -106,7 +106,7 @@ func projectGraphGeneric(snapshot graphstore.Snapshot, scope string, in graphGen
 		default:
 			return invalid("unsupported snapshot record kind")
 		}
-		if _, kind, ok := graph.SplitCanonicalURL(scope, node.ID); !ok || kind != graph.KindBead || node.Version == "" {
+		if _, err := graph.ScopeLocalPublicResourceID(scope, node.ID); err != nil || node.Version == "" {
 			return invalid("invalid Bead identity/version")
 		}
 		if _, duplicate := nodes[node.ID]; duplicate {

@@ -6488,6 +6488,9 @@ components:
           description: Number of issues that depend on this one.
         comment_count:
           type: integer
+        comments_omitted:
+          type: boolean
+          description: Whether comments were explicitly omitted from this list item.
         parent:
           type: string
           description: Parent issue id, computed from the parent-child edge.

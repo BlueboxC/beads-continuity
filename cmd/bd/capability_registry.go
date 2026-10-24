@@ -244,6 +244,7 @@ const backupRemoteSchemeTracking = "open question, not a verdict: remote-scheme 
 var proxyCapabilityRegistry = []capabilityRow{
 	refusedPath("graph-convert plan", "proxy.graph_convert.unsupported", ProxyReasonUnimplemented, "explicit local embedded checkpoint/publication only"),
 	refusedPath("graph-convert prepare", "proxy.graph_convert.unsupported", ProxyReasonUnimplemented, "explicit local embedded checkpoint/publication only"),
+	refusedPath("graph-convert schema8-copy", "proxy.graph_convert.unsupported", ProxyReasonUnimplemented, "explicit isolated embedded checkpoint/conversion only"),
 	refusedPath("graph-convert verify", "proxy.graph_convert.unsupported", ProxyReasonUnimplemented, "explicit local embedded checkpoint/publication only"),
 	refusedPath("graph-convert activate", "proxy.graph_convert.unsupported", ProxyReasonUnimplemented, "explicit local embedded checkpoint/publication only"),
 	refusedPath("graph-convert rollback", "proxy.graph_convert.unsupported", ProxyReasonUnimplemented, "explicit local embedded checkpoint/publication only"),

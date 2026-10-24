@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"reflect"
 	"slices"
+	"strings"
 	"testing"
 
 	"github.com/steveyegge/beads/internal/storage/graphstore"
@@ -28,9 +29,12 @@ func TestGraphPreviewIssueAssignmentWorkflow(t *testing.T) {
 				}
 				args = append(args, "--server", "--external", "--server-host", "127.0.0.1", "--server-port", port, "--server-user", "root")
 			}
+			identities := map[string]string{}
 			call := func(args ...string) string {
 				t.Helper()
-				return graphPolicyCLI(t, bd, work, home, nil, "", append(args, "--json")...)
+				output := graphPolicyCLI(t, bd, work, home, nil, "", append(args, "--json")...)
+				graphCaptureWorkflowIdentity(t, args, output, identities)
+				return output
 			}
 			refuse := func(code string, args ...string) {
 				t.Helper()
@@ -38,12 +42,18 @@ func TestGraphPreviewIssueAssignmentWorkflow(t *testing.T) {
 			}
 			list := func(want []string, extra ...string) {
 				t.Helper()
-				args := append([]string{"list", "--format", "records-json", "--bead-type", "types/preview-issue-v3", "--all"}, extra...)
+				args := append([]string{"list", "--format", "records-json", "--bead-type", "types/issue", "--all"}, extra...)
 				page := graphMixedResult[graphstore.IssueListPage](t, graphPolicyCLI(t, bd, work, home, nil, "", args...))
 				got := make([]string, 0, len(page.Items))
 				for _, item := range page.Items {
 					got = append(got, item.ID)
 				}
+				actualWant := make([]string, len(want))
+				for i, id := range want {
+					actualWant[i] = graphWorkflowIdentity(identities, scope, strings.TrimPrefix(id, scope))
+				}
+				want = actualWant
+				slices.Sort(want)
 				slices.Sort(got)
 				if page.Items == nil || page.HasMore || !slices.Equal(got, want) {
 					t.Fatalf("list %v: ids=%v more=%v want=%v", extra, got, page.HasMore, want)
@@ -77,7 +87,7 @@ func TestGraphPreviewIssueAssignmentWorkflow(t *testing.T) {
 			exact(original)
 			exact(current)
 			list([]string{current.ID}, "--assignee=alice")
-			list([]string{scope + "beads/gate"}, "--no-assignee")
+			list([]string{graphWorkflowIdentity(identities, scope, "beads/gate")}, "--no-assignee")
 			list([]string{}, "--assignee=alice", "--no-assignee")
 			before := graphMemoryReadSnapshot(t, work)
 			noop := graphMixedResult[graphstore.IssueMutationResult](t, call("update", "beads/work", "--priority", "0", "--assignee", "alice", "--if-revision", current.Revision))
@@ -113,7 +123,7 @@ func TestGraphPreviewIssueAssignmentWorkflow(t *testing.T) {
 			}
 			current = cleared.Issue
 			list([]string{}, "--assignee=alice")
-			list([]string{scope + "beads/gate", scope + "beads/work"}, "--no-assignee")
+			list([]string{graphWorkflowIdentity(identities, scope, "beads/gate"), graphWorkflowIdentity(identities, scope, "beads/work")}, "--no-assignee")
 			if call("show", "beads/context") != memory || call("show", "beads/gate") != gate {
 				t.Fatal("assignment changed unrelated Beads")
 			}

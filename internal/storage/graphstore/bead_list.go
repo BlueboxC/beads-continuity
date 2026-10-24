@@ -18,6 +18,8 @@ import (
 type BeadListRequest struct {
 	// TypeURL keeps only Beads of this installed Bead Type; empty keeps every Type.
 	TypeURL string
+	// ConformsTo selects the named Type and all declared refinements.
+	ConformsTo string
 	// All also lists the Issues the ordinary list hides by default.
 	All bool
 	// Limit keeps the first Limit Beads; zero keeps every Bead.
@@ -45,6 +47,26 @@ func (s *Store) ListBeads(ctx context.Context, request BeadListRequest) (BeadLis
 		}
 		if err := checkBeadListType(snapshot.Types, request.TypeURL); err != nil {
 			return err
+		}
+		family, err := s.selectedFamilyIDsInTx(ctx, tx, request.ConformsTo, graph.KindBead)
+		if err != nil {
+			return err
+		}
+		if family != nil {
+			filtered := make([]any, 0, len(snapshot.Records))
+			for _, raw := range snapshot.Records {
+				var typ string
+				switch record := raw.(type) {
+				case Record:
+					typ = record.Type
+				case IssueRecord:
+					typ = record.Type
+				}
+				if family[typ] {
+					filtered = append(filtered, raw)
+				}
+			}
+			snapshot.Records = filtered
 		}
 		var cfg workapi.ListConfig
 		if !request.All {

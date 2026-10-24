@@ -31,9 +31,12 @@ func TestGraphPreviewCloseReopenBatchWorkflow(t *testing.T) {
 				}
 				args = append(args, "--server", "--external", "--server-host", "127.0.0.1", "--server-port", port, "--server-user", "root")
 			}
+			identities := map[string]string{}
 			call := func(args ...string) string {
 				t.Helper()
-				return graphPolicyCLI(t, bd, work, home, nil, "", append(args, "--json")...)
+				output := graphPolicyCLI(t, bd, work, home, nil, "", append(args, "--json")...)
+				graphCaptureWorkflowIdentity(t, args, output, identities)
+				return output
 			}
 			call(args...)
 			call("create", "First", "--id", "beads/first")
@@ -128,9 +131,12 @@ func TestGraphPreviewCloseForceAndSessionWorkflow(t *testing.T) {
 				}
 				initArgs = append(initArgs, "--server", "--external", "--server-host", "127.0.0.1", "--server-port", port, "--server-user", "root")
 			}
+			identities := map[string]string{}
 			call := func(extraEnv []string, code string, args ...string) string {
 				t.Helper()
-				return graphPolicyCLI(t, bd, work, home, extraEnv, code, append(args, "--json")...)
+				output := graphPolicyCLI(t, bd, work, home, extraEnv, code, append(args, "--json")...)
+				graphCaptureWorkflowIdentity(t, args, output, identities)
+				return output
 			}
 			call(nil, "", initArgs...)
 			call(nil, "", "create", "Prerequisite", "--id", "beads/prerequisite")
@@ -184,9 +190,12 @@ func TestGraphPreviewCloseSuggestNextWorkflow(t *testing.T) {
 				}
 				initArgs = append(initArgs, "--server", "--external", "--server-host", "127.0.0.1", "--server-port", port, "--server-user", "root")
 			}
+			identities := map[string]string{}
 			call := func(code string, args ...string) string {
 				t.Helper()
-				return graphPolicyCLI(t, bd, work, home, nil, code, append(args, "--json")...)
+				output := graphPolicyCLI(t, bd, work, home, nil, code, append(args, "--json")...)
+				graphCaptureWorkflowIdentity(t, args, output, identities)
+				return output
 			}
 			call("", initArgs...)
 			call("", "create", "Prerequisite", "--id", "prerequisite")
@@ -206,7 +215,7 @@ func TestGraphPreviewCloseSuggestNextWorkflow(t *testing.T) {
 			}
 			first := graphMixedResult[suggestion](t, call("", "close", "prerequisite", "--suggest-next", "--reason", "Done"))
 			if len(first.Closed) != 1 || first.Closed[0].Properties.Status != types.StatusClosed ||
-				len(first.Unblocked) != 1 || first.Unblocked[0].ID != "https://example.invalid/close-suggest/beads/dependent" {
+				len(first.Unblocked) != 1 || first.Unblocked[0].ID != identities["beads/dependent"] {
 				t.Fatalf("close did not name newly unblocked Issue: %+v", first)
 			}
 			if call("", "versions", "dependent") != dependentBefore {

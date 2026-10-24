@@ -33,7 +33,14 @@ func TestGraphPreviewNativeDependencyCLI(t *testing.T) {
 			call(args...)
 			call("create", "Source", "--id", "beads/source")
 			types := []string{"blocks", "parent-child", "discovered-from", "related"}
-			urls := []string{graphstore.DependencyTypeURL(scope), graphstore.ParentChildTypeURL(scope), graphstore.DiscoveredFromTypeURL(scope), graphstore.NativeRelatedTypeURL(scope)}
+			urls := make([]string, len(types))
+			for i, typ := range types {
+				var err error
+				urls[i], err = graphstore.NativeDependencyTypeURL(scope, typ)
+				if err != nil {
+					t.Fatal(err)
+				}
+			}
 			for i, typ := range types {
 				target := fmt.Sprintf("beads/target-%d", i)
 				call("create", typ, "--id", target)

@@ -266,6 +266,9 @@ func graphConversionMarker(workspace string) ([]byte, error) {
 // Recovery infers the next step only from the sealed intent and exact engine
 // fingerprints. Every filesystem transition is repeatable after interruption.
 func runGraphConversionActivate(ctx context.Context, receipt graphConversionReceipt, after func(string) error) (err error) {
+	if receipt.Plan.Store.SourceSchema == 8 {
+		return errors.New("schema8-copy is rehearsal-only; activation is not qualified")
+	}
 	if runtime.GOOS == "windows" {
 		return errors.New("conversion activation is not qualified on Windows")
 	}
@@ -457,6 +460,9 @@ func runGraphConversionActivate(ctx context.Context, receipt graphConversionRece
 }
 
 func runGraphConversionRollback(ctx context.Context, receipt graphConversionReceipt, after func(string) error) (err error) {
+	if receipt.Plan.Store.SourceSchema == 8 {
+		return errors.New("schema8-copy never activates a workspace; restore its native checkpoint to a new isolated destination")
+	}
 	if runtime.GOOS == "windows" {
 		return errors.New("conversion rollback is not qualified on Windows")
 	}

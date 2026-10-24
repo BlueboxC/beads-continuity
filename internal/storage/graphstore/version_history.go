@@ -15,8 +15,8 @@ import (
 // not a public BDP Type, a Type URL, or a wire enumeration. Two backings
 // ("informational" and "dependency") share one kind because both are Links
 // whose versions are retained identically; Issues are separated from Memory
-// because their ordered history lives on Jim's native issue_versions table
-// rather than in graph_preview_versions.
+// because their snapshots live on the native issue_versions table, with
+// graph-only terminal evidence retained separately.
 type ResourceKind string
 
 const (
@@ -34,14 +34,10 @@ const (
 // ReadVersionPair. ChangeAt is for display and time-based selection only; it is
 // an observed wall clock, never the ordering key, and nothing here sorts by it.
 //
-// Removed means "listed, but this token is not citable": the row is a real
-// retained version and belongs in the history, yet handing its Version to
-// ReadVersion yields ErrGone rather than a Resource. Exactly one row can carry
-// it — a deleted Link's final retained version, which is its private deletion
-// marker. Nothing is filtered out on that account: a removal is information the
-// caller renders, so this flag tells the caller which row to render as a removal
-// and to leave out of any "cite this token" guidance. Deleted Memory and
-// Issue allocations preserve their final live version without a marker.
+// Removed distinguishes retained terminal evidence from live snapshots. Such a
+// token is listed, but ReadVersion refuses it with ErrGone. Multiple Resource
+// terminal rows can remain after successive recoveries. Native Issue graph
+// history includes graph D while preserving the separate native snapshot order.
 //
 // The JSON member names are fixed. Ordinal is deliberately not spelled
 // "revision": graph records already use revision for the opaque token, and a
@@ -108,15 +104,9 @@ func shippedVersionBounds() versionBounds {
 // capability_unavailable code, which is a collision worth knowing about when
 // reading user-facing output; it is not this reader's answer.
 //
-// It supplies no snapshots, lineage, or diffs; ReadVersion resolves a returned
-// token to a record. A deleted subject still has a history, so this reader does
-// not refuse one, and it reports exactly what the retained tables hold. One
-// listed token is therefore not resolvable as a Resource: a deleted Link's final
-// retained version is its private deletion marker, which ReadVersion refuses
-// with ErrGone. That row is flagged Removed rather than withheld, because a
-// removal is part of the history. A deleted Memory's final live head is a real
-// retained Resource (deletedMemoryInTx reads it) and is not flagged. The same
-// holds for a deleted Issue's final native retained snapshot.
+// It supplies no payload snapshots or diffs. Deleted allocations retain their
+// ordered history. Terminal rows are flagged Removed, including earlier Resource
+// deletion states after recovery; live snapshots remain independently citable.
 func (s *Store) Versions(ctx context.Context, path string) (ResourceKind, []VersionRow, error) {
 	return s.versionsWithin(ctx, path, shippedVersionBounds())
 }
@@ -148,15 +138,19 @@ func (s *Store) versionsWithin(ctx context.Context, path string, bounds versionB
 // snapshot, so a concurrent writer cannot interleave a new head between the
 // kind resolution and the list.
 func (s *Store) versionsInTx(ctx context.Context, tx *sql.Tx, path string, bounds versionBounds) (ResourceKind, []VersionRow, error) {
+	issueType, err := installedIssueTypeURLInTx(ctx, tx, s.ScopeURL())
+	if err != nil {
+		return "", nil, err
+	}
 	var kind, backing, state, head string
 	var typ, key sql.NullString
 	// The type_url bound and the NullString are readVersionInTx's, not an
 	// invention: an oversized type_url selects as NULL and then fails the
 	// !typ.Valid check below, so a listing cannot be tricked into trusting a
 	// type it never actually compared.
-	err := tx.QueryRowContext(ctx, `SELECT resource_kind,backing,allocation_state,revision,
+	err = tx.QueryRowContext(ctx, `SELECT resource_kind,backing,allocation_state,revision,
  CASE WHEN OCTET_LENGTH(type_url)<=? THEN type_url ELSE NULL END,backing_key
- FROM graph_preview_catalog WHERE path=?`, len(s.ScopeURL())+256, path).Scan(&kind, &backing, &state, &head, &typ, &key)
+ FROM graph_preview_catalog WHERE path=?`, len(s.ScopeURL())+512, path).Scan(&kind, &backing, &state, &head, &typ, &key)
 	if errors.Is(err, sql.ErrNoRows) {
 		// Retained rows without an allocation are corruption, not an absence.
 		// Same refusal readVersionInTx makes: a History reader must not report
@@ -211,33 +205,32 @@ func (s *Store) versionsInTx(ctx context.Context, tx *sql.Tx, path string, bound
 			if err := s.validDeletedIssueAllocationInTx(ctx, tx, path, kind, typ.String, head, state, backing, key); err != nil {
 				return "", nil, err
 			}
-		} else if !s.validDeletedLinkAllocation(kind, typ.String, backing, key) {
+		} else if !s.validDeletedLinkAllocation(kind, typ.String, backing, key, issueType) {
 			return "", nil, fmt.Errorf("%w: unsupported deleted subject", ErrInvalidStore)
 		}
 	}
 	switch {
 	case backing == "issue" && kind == "bead":
-		// The Issue plane's ordinal is the native revision, so the mapping must
+		// Native snapshots retain their native revision mapping, and must
 		// name the same Issue the catalog is bound to before it is trusted. The
 		// type URL is compared too: backing alone was never enough to establish
 		// that this allocation is the kind of thing it claims to be.
-		if typ.String != s.issueTypeURL() || !key.Valid || key.String == "" {
+		if !nativeIssueTypeMatches(s.ScopeURL(), typ.String, issueType) || !key.Valid || key.String == "" {
 			return "", nil, fmt.Errorf("%w: invalid Issue allocation", ErrInvalidStore)
 		}
-		rows, err := issueVersionsInTx(ctx, tx, path, key.String, head, bounds)
+		rows, err := s.nativeIssueVersionsInTx(ctx, tx, path, key.String, head, bounds)
 		return KindIssue, rows, err
-	case backing == "generic" && kind == "bead" && typ.String == MemoryTypeURL(s.ScopeURL()):
-		// A deleted Memory mints no successor version, so its head stays a real
-		// retained Resource: there is no deletion marker on this backing and no
-		// row to flag (deletedMemoryInTx reads that same head).
-		rows, err := previewVersionsInTx(ctx, tx, path, head, "", bounds)
+	case backing == "generic" && kind == "bead" && s.isMemoryType(typ.String):
+		// Memory history may include terminal states, even while currently live.
+		// The shared reader classifies root terminal state without acquiring
+		// payload snapshots into Go.
+		rows, err := previewVersionsInTx(ctx, tx, path, head, "", true, bounds)
 		return KindMemory, rows, err
 	case backing == "informational" && kind == "link" && IsInformationalTypeURL(s.ScopeURL(), typ.String),
-		backing == "dependency" && kind == "link" && s.isNativeDependencyType(typ.String):
+		backing == "dependency" && kind == "link" && isNativeDependencyLinkType(s.ScopeURL(), issueType, typ.String):
 		// Every informational Type the binary knows is accepted here, but only
-		// one this store has INSTALLED is valid: a legacy four-Type installation
-		// never holds the example Types, so an allocation naming one is corrupt
-		// state. readVersionInTx makes the same check, so the list and the
+		// one this store has INSTALLED is valid. An allocation naming an absent
+		// Type is corrupt state. readVersionInTx makes the same check, so the list and the
 		// single read agree about which allocations are well formed.
 		if backing == "informational" {
 			if err := s.informationalTypeInTx(ctx, tx, typ.String); err != nil {
@@ -248,19 +241,20 @@ func (s *Store) versionsInTx(ctx context.Context, tx *sql.Tx, path string, bound
 		// dependency_unlink.go set the catalog revision to the marker's token in
 		// the same transaction that retains the marker row, and readVersionInTx
 		// refuses that exact token with ErrGone. It is therefore both the row
-		// that satisfies the head check and the one row flagged Removed.
+		// that satisfies the head check. Root terminal markers also classify
+		// earlier D rows after same-ID recovery, without hydrating their payloads.
 		marker := ""
 		if state == "deleted" {
 			marker = head
 		}
-		rows, err := previewVersionsInTx(ctx, tx, path, head, marker, bounds)
+		rows, err := previewVersionsInTx(ctx, tx, path, head, marker, true, bounds)
 		return KindLink, rows, err
 	}
 	return "", nil, fmt.Errorf("%w: unsupported retained allocation", ErrInvalidStore)
 }
 
-// issueVersionsInTx orders a graph Issue's history by the native revision the
-// preview mapping points at. Those native rows exist in every graph workspace
+// issueVersionsInTx orders native graph mappings by their graph-local ordinal,
+// retaining native ordinal interpretation for older mappings without one. Those native rows exist in every graph workspace
 // even though config versioned-history.enabled defaults to false: each graph
 // Issue write path scopes its own transaction with
 // issueops.ScopeVersionedHistoryTransaction(tx, true), which forces recording on
@@ -293,9 +287,9 @@ func issueVersionsInTx(ctx context.Context, tx *sql.Tx, path, backingKey, head s
 	}
 	// change_actor and attribution_status are VARCHAR on the native plane, so
 	// the row count above already bounds this acquisition; no blob is selected.
-	rows, err := tx.QueryContext(ctx, `SELECT m.issue_id,m.issue_revision,m.version,v.change_at,v.change_actor,v.attribution_status
+	rows, err := tx.QueryContext(ctx, `SELECT m.issue_id,COALESCE(m.history_ordinal,m.issue_revision),m.version,v.change_at,v.change_actor,v.attribution_status
  FROM graph_preview_issue_versions m JOIN issue_versions v ON v.issue_id=m.issue_id AND v.revision=m.issue_revision
- WHERE m.path=? ORDER BY v.revision DESC`, path)
+ WHERE m.path=? ORDER BY COALESCE(m.history_ordinal,m.issue_revision) DESC`, path)
 	if err != nil {
 		return nil, err
 	}
@@ -334,26 +328,14 @@ func issueVersionsInTx(ctx context.Context, tx *sql.Tx, path, backingKey, head s
 	// descending, just missing its newest version. Same refusal and wording
 	// readIssueVersionInTx makes when the head's mapping is absent.
 	//
-	// No density check belongs here. These ordinals are native revisions this
-	// reader does not own: recordIssueMappingInTx maps whatever current_revision
-	// then reads, so any native write that advances an Issue's revision without
-	// a graph mapping leaves a legitimate gap. Requiring dense 1..N would refuse
-	// healthy Issues, which is worse than the gap it would catch.
-	//
-	// SO THIS PLANE HAS ONE UNDETECTED CORRUPTION, stated plainly rather than
-	// left for a reader to infer from the absence of a check: deleting a MIDDLE
-	// mapping row keeps the head present and lowers the mapping count and the
-	// join count together, so neither guard fires and the list comes back
-	// complete-looking with a version missing. The head check closes the
-	// newest-row case only. Density is the wrong instrument, not a forgotten
-	// one. A correct guard would have to compare the native revisions for this
-	// issue_id against the mapped set, which means deciding whether a graph
-	// writer may ever advance a revision without minting a mapping -- a
-	// question about the write paths, not about this reader. Measured on the
-	// four paths the suite exercises, native revisions are in fact dense
-	// (logged by the Issue-plane test), but four call sites are evidence, not
-	// an invariant graphstore enforces.
-	if !listsVersion(result, head) {
+	// Do not require density: older mappings use native ordinals and may
+	// contain legitimate native-write gaps. Shared graph ordering after D
+	// does not retroactively make that older history dense. Losing a middle
+	// mapping can still leave a complete-looking list; this reader closes
+	// missing-current and missing-body cases without claiming full history
+	// completeness or inventing a replacement ordinal.
+
+	if head != "" && !listsVersion(result, head) {
 		return nil, fmt.Errorf("%w: current Issue retained mapping is missing", ErrInvalidStore)
 	}
 	return result, nil
@@ -364,7 +346,7 @@ func issueVersionsInTx(ctx context.Context, tx *sql.Tx, path, backingKey, head s
 // rather than the Issue domain. Every retained row is reported, including a
 // deleted Link's deletion marker, which marker names so it can be flagged
 // Removed; see Versions.
-func previewVersionsInTx(ctx context.Context, tx *sql.Tx, path, head, marker string, bounds versionBounds) ([]VersionRow, error) {
+func previewVersionsInTx(ctx context.Context, tx *sql.Tx, path, head, marker string, memoryTerminals bool, bounds versionBounds) ([]VersionRow, error) {
 	var retained int
 	if err := tx.QueryRowContext(ctx, `SELECT COUNT(*) FROM graph_preview_versions WHERE path=?`, path).Scan(&retained); err != nil {
 		return nil, err
@@ -392,21 +374,22 @@ func previewVersionsInTx(ctx context.Context, tx *sql.Tx, path, head, marker str
 	if size > bounds.bytes {
 		return nil, fmt.Errorf("%w: retained version list exceeds the %d-byte acquisition budget", ErrLimitExceeded, bounds.bytes)
 	}
-	rows, err := tx.QueryContext(ctx, `SELECT ordinal,version,change_at,actor FROM graph_preview_versions
- WHERE path=? ORDER BY ordinal DESC`, path)
+	rows, err := tx.QueryContext(ctx, `SELECT ordinal,version,change_at,actor,
+ CASE WHEN ? AND JSON_VALID(CAST(snapshot AS CHAR)) THEN COALESCE(JSON_UNQUOTE(JSON_EXTRACT(CAST(snapshot AS CHAR),'$.state'))='deleted',FALSE) ELSE FALSE END
+ FROM graph_preview_versions WHERE path=? ORDER BY ordinal DESC`, memoryTerminals, path)
 	if err != nil {
 		return nil, err
 	}
 	result := []VersionRow{}
 	for rows.Next() {
 		var row VersionRow
-		if err := rows.Scan(&row.Ordinal, &row.Version, &row.ChangeAt, &row.Actor); err != nil {
+		if err := rows.Scan(&row.Ordinal, &row.Version, &row.ChangeAt, &row.Actor, &row.Removed); err != nil {
 			return nil, errors.Join(err, rows.Close())
 		}
 		row.ChangeAt = row.ChangeAt.UTC()
 		// The deletion marker is listed, not withheld, but it is not citable:
 		// ReadVersion refuses this exact token with ErrGone.
-		row.Removed = marker != "" && row.Version == marker
+		row.Removed = row.Removed || (marker != "" && row.Version == marker)
 		// Attribution stays empty: this plane records an actor and derives
 		// claimed/unknown from it at read time (validVersionAttribution). There
 		// is no stored status column to report, and synthesizing one here would

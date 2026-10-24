@@ -296,3 +296,10 @@ var ErrNotesOverwrite = errors.New("update would replace existing notes")
 func NotesReplacement(existing, proposed string) bool {
 	return existing != "" && proposed != "" && proposed != existing
 }
+
+type TemplateReadOnlyError struct {
+	// IssueID names the template that refused the mutation.
+	IssueID string
+}
+
+func (e *TemplateReadOnlyError) Error() string { return "template is read-only: " + e.IssueID }

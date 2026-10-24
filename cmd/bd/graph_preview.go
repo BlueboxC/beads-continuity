@@ -34,17 +34,14 @@ import (
 
 const graphPreviewMarker = "graph-preview-format"
 
-// The marker records the format generation a workspace was created with.
-// graphPreviewGeneration is the only one this bd writes; admission accepts every
-// entry of graphPreviewSupportedGenerations. Generations 5/6 retain schema 7
-// and their four/six Types; generation 7 uses schema 8 and nine Types.
-// TestGraphPreviewGenerationPinsFreshInstallTypes pins each fresh installed set.
+// Schema11/generation13 is the isolated Preview3 fork contract. Earlier
+// selectors require explicit copy conversion; ordinary opens never migrate.
 const (
 	graphPreviewGenerationPrefix = "link-preview-v"
-	graphPreviewGeneration       = "link-preview-v7\n"
+	graphPreviewGeneration       = "link-preview-v13\n"
 )
 
-var graphPreviewSupportedGenerations = []string{"link-preview-v5\n", "link-preview-v6\n", graphPreviewGeneration}
+var graphPreviewSupportedGenerations = []string{graphPreviewGeneration}
 
 var graphPreviewActive bool
 var graphPreviewStructuredErrors bool

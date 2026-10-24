@@ -109,7 +109,7 @@ func TestGraphIssueListAssigneeFilters(t *testing.T) {
 				}
 				records[entry.path] = record
 			}
-			memory, err := s.Create(ctx, CreateRequest{Path: "beads/memory", Body: "Excluded from Issue listing"})
+			memory, err := s.Create(ctx, CreateRequest{Title: "Memory", Path: "beads/memory", Body: "Excluded from Issue listing"})
 			if err != nil {
 				t.Fatal(err)
 			}

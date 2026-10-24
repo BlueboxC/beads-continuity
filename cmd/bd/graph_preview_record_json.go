@@ -4,7 +4,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
-	"strings"
+	"net/url"
 
 	"github.com/steveyegge/beads/internal/storage/graphstore"
 )
@@ -154,6 +154,6 @@ func graphIsCompleteRecord(members map[string]json.RawMessage) bool {
 	if err := json.Unmarshal(members["id"], &id); err != nil {
 		return false
 	}
-	return (strings.HasPrefix(id, "https://") || strings.HasPrefix(id, "http://")) &&
-		(strings.Contains(id, "/beads/") || strings.Contains(id, "/links/"))
+	u, err := url.Parse(id)
+	return err == nil && (u.Scheme == "https" || u.Scheme == "http") && u.Host != ""
 }

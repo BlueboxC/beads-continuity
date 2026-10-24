@@ -29,14 +29,14 @@ func TestGraphPreviewHelpDocumentsPlaytestCommands(t *testing.T) {
 		want []string
 	}{
 		{"remember", rememberCmd, []string{"Graph preview workspaces:", "bd remember 'Revised policy' --id policy", "bd remember 'Revised policy' --update policy", "--create-only", "--if-revision TOKEN", "Omitted fields remain unchanged"}},
-		{"create", createCmd, []string{"Graph preview workspaces:", "--bead-type types/preview-memory-v2", "--id policy", "--properties JSON"}},
+		{"create", createCmd, []string{"Graph preview workspaces:", "--bead-type types/memory", "--id policy", "--properties JSON"}},
 		{"dep", depCmd, []string{"Graph preview workspaces:", "bd dep BLOCKER --blocks BLOCKED", "--no-cycle-check"}},
 		{"link", linkCmd, []string{
 			"Graph preview workspaces:", "--link-type types/example-cites", "Memory or Issue",
 			// --link-type sits beside the ordinary -t/--type, so its own usage says it is graph-only.
 			"Installed Link Type: types/NAME or full local URL (graph preview only)",
 			// Informational Links default to the current source; the blocking Type does not.
-			"The blocking Type types/preview-blocks-v2", "unlike informational Types, one of",
+			"The blocking Type types/native-dependency/626c6f636b73", "unlike informational Types, one of",
 			"--if-source-revision TOKEN or --unconditional-source.",
 		}},
 		{"update", updateCmd, []string{"Graph preview workspaces:", "--properties", "--if-revision TOKEN"}},
