@@ -20,6 +20,8 @@ Root DOX.md and the parent chain remain binding.
 
 Keep required checks aligned with Makefile and scripts. Go setup follows the root module toolchain; pin golangci-lint v2.15.0 for Go 1.27 export-data compatibility in all lint lanes; all MCP package jobs pin uv 0.13.5. Do not enable publication or introduce credentials during fork bootstrap.
 
+- Action upgrades use verified immutable upstream SHAs and accurate tag comments. Preserve workflow events, permissions, credential boundaries and publication guards; do not add unused action families. Node 24 actions require a compatible runner. Qualify nonpublishing setup/artifact paths separately from release/deployment authority.
+
 ## Verification
 
 Use the affected existing checks selected in engdocs/TESTING.md; verify indexed child contracts.

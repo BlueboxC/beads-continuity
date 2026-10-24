@@ -794,7 +794,7 @@ const (
 	cacheRestoreActionFamily    = "actions/cache/restore"
 	cacheSaveActionFamily       = "actions/cache/save"
 	setupGoSHA                  = "b7ad1dad31e06c5925ef5d2fc7ad053ef454303e"
-	setupNodeSHA                = "820762786026740c76f36085b0efc47a31fe5020"
+	setupNodeSHA                = "949feb2413d6458794dcd2491c4babbbce0c15c1"
 	cacheSHA                    = "55cc8345863c7cc4c66a329aec7e433d2d1c52a9"
 	goCacheSchema               = "v2"
 	goBaseTag                   = "gms_pure_go"
