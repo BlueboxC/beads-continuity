@@ -5,10 +5,10 @@ description: Optional typed graph workspace with retained versions and read-only
 
 # Graph Preview
 
-## Isolated Preview3 branch
+## Preview3 integration branch
 
-`codex/preview3-integration-20261024` is a candidate using schema11/generation13,
-not an installed upgrade. Its provider adds the Preview3 typed Memory families,
+`codex/preview3-integration-20261024` implements schema11/generation13.
+Installation remains an explicit operator action. Its provider adds the Preview3 typed Memory families,
 pins and guarded historical composition while retaining fork learning, current
 code indexes, activity, prime and the project viewer in the same Dolt database.
 Generation13 additionally preserves the three schema8 informational Types and
@@ -312,3 +312,12 @@ an interrupted restoration. This bounded conversion recovery is not a generic
 restore/merge API. Publication/rollback refuse Windows and server/proxy modes.
 See the [conversion design](https://github.com/BlueboxC/beads-continuity/blob/codex/project-continuity/engdocs/design/graph-preview-conversion.md)
 for the preservation and recovery contracts.
+
+### Explicit schema8 publication
+
+After separate operator authorization, the same workspace-bound workflow also
+accepts embedded schema8 and preserves its exact Scope, authority and original
+format marker. An explicit `--graph-profile continuity-v1` on `plan` is retained
+in the private receipt for prepare/publication and recovery. Copy-only
+`schema8-copy` receipts remain ineligible; later writes still block rollback.
+These commands never install a binary or change hook trust.
