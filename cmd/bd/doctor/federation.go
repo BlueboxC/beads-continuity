@@ -53,15 +53,12 @@ func doltServerConfig(beadsDir, doltPath string) *dolt.Config {
 // doltServerConfig resolves them, so the probe asks about the same server the
 // remotes check would open.
 func federationServerProbe(beadsDir string) bool {
-	host := configfile.DefaultDoltServerHost
-	if bcfg, err := configfile.Load(beadsDir); err == nil && bcfg != nil {
-		host = bcfg.GetDoltServerHost()
-	}
-	port := doltserver.DefaultConfig(beadsDir).Port
-	if port <= 0 {
+	cfg := doltServerConfig(beadsDir, filepath.Join(beadsDir, "dolt"))
+	dolt.ResolveServerPort(cfg)
+	if cfg.ServerPort <= 0 {
 		return false
 	}
-	return isDoltServerRunning(host, port)
+	return isDoltServerRunning(cfg.ServerHost, cfg.ServerPort)
 }
 
 // serverRunningOrProbeable reports whether the federation checks should treat

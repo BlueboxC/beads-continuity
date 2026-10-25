@@ -20,6 +20,7 @@ import (
 
 	"github.com/steveyegge/beads/internal/configfile"
 	"github.com/steveyegge/beads/internal/doltserver"
+	"github.com/steveyegge/beads/internal/storage/dolt"
 )
 
 // clearDoltServerEnv removes every environment override that would change
@@ -197,5 +198,20 @@ func TestCheckRemotesAPIListener_ProbeFoundServer(t *testing.T) {
 	tracked := checkRemotesAPIListener(beadsDir, 4242)
 	if !strings.Contains(tracked.Detail, "PID 4242") {
 		t.Fatalf("Detail %q must still name the PID of a PID-tracked server", tracked.Detail)
+	}
+}
+
+func TestFederationServerProbeFollowsLegacyPortEnv(t *testing.T) {
+	clearDoltServerEnv(t)
+	port := probeTestListener(t, true)
+	beadsDir := externalServerWorkspace(t, 0)
+	t.Setenv("BEADS_DOLT_PORT", strconv.Itoa(port))
+	cfg := doltServerConfig(beadsDir, filepath.Join(beadsDir, "dolt"))
+	dolt.ResolveServerPort(cfg)
+	if cfg.ServerPort != port {
+		t.Fatalf("doltServerConfig resolved port %d, want legacy environment port %d", cfg.ServerPort, port)
+	}
+	if !federationServerProbe(beadsDir) {
+		t.Fatalf("federationServerProbe = false with a listener on legacy environment port %d", port)
 	}
 }
