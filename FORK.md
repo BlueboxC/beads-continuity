@@ -526,6 +526,8 @@ Adapted Rongjun GENG (rjgeng)’s PR [#7653](https://github.com/gastownhall/bead
 
 Adapted Julian Knutsen’s PR [#7836](https://github.com/gastownhall/beads/pull/7836): recognized external CLI/server versions below 2.6.0 refuse, cached versions are rechecked, doctor explains the same floor, and paired CI pins use 2.6.0. Preserve this fork’s hardened private version probe, gateway binding, authenticated per-connection proxy resolution and strict existing-only reads. The embedded engine/driver tuple and restored-backup compatibility remain unchanged.
 
+The inherited macOS managed-listener fixture advertises admitted Dolt 2.6.0 and reads its generated listener port from YAML as well as CLI flags, so its ownership/readiness/cleanup checks still execute. Dedicated CLI/server floor tests continue rejecting older identified versions. Installer retry fixtures and the documentation pin guard follow the paired 2.6.0 pin while retaining exact-version, retry-exhaustion and substring-drift assertions.
+
 ### Security documentation consistency
 
 SECURITY.md describes the existing removal of anonymous Beads usage metrics and keeps operator-enabled OpenTelemetry and standalone Dolt controls separate. This corrects stale documentation; it does not add a collector, change saved settings or qualify an upstream vulnerability.

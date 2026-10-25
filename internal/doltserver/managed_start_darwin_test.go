@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/steveyegge/beads/internal/config"
+	"gopkg.in/yaml.v3"
 )
 
 // The helper implements only version/config and a controlled greeting listener.
@@ -35,7 +36,8 @@ func TestManagedDoltHelperProcess(t *testing.T) {
 	}
 	switch args[0] {
 	case "version":
-		fmt.Println("dolt version 0.0.0")
+		// Reach the ownership/readiness checks beyond the external version floor.
+		fmt.Println("dolt version 2.6.0")
 		os.Exit(0)
 	case "config":
 		fmt.Println("fixture")
@@ -48,6 +50,18 @@ func TestManagedDoltHelperProcess(t *testing.T) {
 	for i, arg := range args {
 		if arg == "-P" && i+1 < len(args) {
 			port, _ = strconv.Atoi(args[i+1])
+		}
+		if arg == "--config" && i+1 < len(args) {
+			var cfg struct {
+				Listener struct {
+					Port int `yaml:"port"`
+				} `yaml:"listener"`
+			}
+			raw, err := os.ReadFile(args[i+1])
+			if err != nil || yaml.Unmarshal(raw, &cfg) != nil {
+				os.Exit(2)
+			}
+			port = cfg.Listener.Port
 		}
 	}
 	if port == 0 {

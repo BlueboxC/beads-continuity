@@ -20,7 +20,7 @@ const (
 )
 
 var (
-	doltPinProseRE   = regexp.MustCompile(`Beads pins Dolt to \*\*([0-9]+\.[0-9]+\.[0-9]+)\*\*`)
+	doltPinProseRE   = regexp.MustCompile(`paired CI CLI/container pin is ([0-9]+\.[0-9]+\.[0-9]+)`)
 	doltPinSnippetRE = regexp.MustCompile(`DOLT_VERSION=([0-9]+\.[0-9]+\.[0-9]+)`)
 	doltPinImageRE   = regexp.MustCompile(`DoltDockerImage = "dolthub/dolt-sql-server:([0-9]+\.[0-9]+\.[0-9]+)"`)
 )
