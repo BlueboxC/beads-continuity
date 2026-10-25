@@ -22,6 +22,8 @@ Root DOX.md and the parent chain remain binding.
 
 - The normal test runner uses a 45-minute per-package hang backstop: the Preview3 graphstore coverage suite exceeds the previous 25-minute CLI allowance. This changes no assertion, acquisition cap or operation deadline. TEST_TIMEOUT remains the explicit diagnostic override.
 
+- Paired standalone CLI, Docker fixture and proxied-smoke pins are Dolt 2.6.0, at or above the enforced external floor. Keep the embedded engine and independent backup qualification separate.
+
 ## Work Guidance
 
 Generated CLI freshness checks compare generated pages while excluding DOX.md work contracts; DOX reachability is checked separately.

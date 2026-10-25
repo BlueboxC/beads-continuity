@@ -521,3 +521,7 @@ Adapted Rongjun GENG (rjgeng) PR7849: declined CLI-transport merge conflicts abo
 ### Embedded freeze and commit identity
 
 Adapted Rongjun GENG (rjgeng)’s PR [#7653](https://github.com/gastownhall/beads/pull/7653), including its freeze regressions. Preserve this fork’s stricter server read-only route and existing embedded callers; carry the freeze into the embedded lazy wake and resolve future commit authors only for writes. Pair updates are synchronized, and agent attribution does not borrow an unrelated Git user’s email. Real embedded history checks cover ordinary and explicitly staged commits. In this pinned driver, connection identity alone leaves an ordinary DOLT_COMMIT attributed to root; commitAll now supplies --author too.
+
+### External Dolt version admission
+
+Adapted Julian Knutsen’s PR [#7836](https://github.com/gastownhall/beads/pull/7836): recognized external CLI/server versions below 2.6.0 refuse, cached versions are rechecked, doctor explains the same floor, and paired CI pins use 2.6.0. Preserve this fork’s hardened private version probe, gateway binding, authenticated per-connection proxy resolution and strict existing-only reads. The embedded engine/driver tuple and restored-backup compatibility remain unchanged.

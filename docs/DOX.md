@@ -16,7 +16,7 @@ Root DOX.md and the parent chain remain binding.
 
 - reference/graph-preview.md owns this fork’s experimental format, actual supported commands, source attribution and compatibility limits; ordinary onboarding remains in fork-continuity.md. Distinguish schema11/generation13 from the matched schema8 baseline. Copy receipts never authorize activation; explicit workspace publication requires separate owner authorization and fresh matched recovery. Report only observed installation/activation and ordinary SQL-server read qualification; never imply automatic activation, embedded BDP serving, HTTP mutation or History admission.
 
-- Dolt guidance distinguishes the qualified embedded dependency, standalone CLI policy and database storage-format compatibility. Attribute upstream cross-version measurements; neither a read-only success nor the advisory minimum qualifies writes to newer storage.
+- Dolt guidance distinguishes the qualified embedded dependency, enforced external 2.6.0 floor and database storage-format compatibility. Attribute upstream cross-version measurements; neither a read-only success nor the external minimum qualifies writes to newer storage.
 
 ## Work Guidance
 

@@ -16,6 +16,8 @@ import (
 	"github.com/cenkalti/backoff/v4"
 	"github.com/go-sql-driver/mysql"
 
+	"github.com/steveyegge/beads/internal/debug"
+	"github.com/steveyegge/beads/internal/doltversion"
 	"github.com/steveyegge/beads/internal/storage"
 	"github.com/steveyegge/beads/internal/storage/dbproxy/proxy"
 	"github.com/steveyegge/beads/internal/storage/dbproxy/util"
@@ -798,12 +800,19 @@ func openDBWithPolicy(ctx context.Context, dsn string, strictReadOnly bool, dial
 	return conn, nil
 }
 
+func requireServerDoltVersion(ctx context.Context, q doltversion.RowQuerier, ep proxy.Endpoint) error {
+	return doltversion.CheckServer(ctx, q, fmt.Sprintf("dolt sql-server behind bd proxy at %q", ep.Address()), func(err error) { debug.Logf("uow: version unverified: %q\n", err.Error()) })
+}
+
 func openAndInitSchema(ctx context.Context, ep proxy.Endpoint, database, rootUser, rootPassword, tlsConfigName string, teamServer bool, expectedProjectID string, opts providerOptions, dial ...func(context.Context, string, string) (net.Conn, error)) (UnitOfWorkProvider, error) {
 	initDB, err := openDB(ctx, buildDSN(ep, "", rootUser, rootPassword, tlsConfigName))
 	if err != nil {
 		return nil, err
 	}
 
+	if err := requireServerDoltVersion(ctx, initDB, ep); err != nil {
+		return nil, errors.Join(err, initDB.Close())
+	}
 	initProvider := &doltSQLProvider{
 		defaultBranch:     defaultBranch,
 		db:                initDB,

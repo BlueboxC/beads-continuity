@@ -21,8 +21,8 @@ set -euo pipefail
 # TestFreshBootstrapHealIncarnation fail on a coin flip the day
 # releases/latest moved to 2.3.x, and it also puts bd dolt compact/flatten
 # and the #4566 fresh-bootstrap heal at risk on 2.3.x. Raise this pin only
-# once a Dolt release is confirmed clean by that same measurement.
-readonly version="2.2.0"
+# once qualified; this fork qualified 2.6.0 independently, and requires it outside embedded mode.
+readonly version="2.6.0"
 readonly max_attempts=3
 readonly retry_delay_seconds=5
 

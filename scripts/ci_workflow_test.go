@@ -1323,13 +1323,13 @@ func TestProxiedLocalSmokeMatchesPinnedDoltVersion(t *testing.T) {
 	}
 }
 
-// TestPinnedDoltCLIAtLeastRecommendedMin guards doltversion.RecommendedMin
+// TestPinnedDoltCLIAtLeastRequiredMin guards doltversion.RequiredMin
 // against the pinned Dolt CLI version (scripts/ci/install-dolt.sh) drifting
-// below it. RecommendedMin documents itself as aligned with the CLI pins,
-// but nothing enforced that claim: a pin lowered below RecommendedMin would
+// below it. RequiredMin documents itself as aligned with the CLI pins,
+// but nothing enforced that claim: a pin lowered below RequiredMin would
 // mean every CI run exercises a Dolt CLI the package's own policy already
 // warns is below the matrix-tested floor.
-func TestPinnedDoltCLIAtLeastRecommendedMin(t *testing.T) {
+func TestPinnedDoltCLIAtLeastRequiredMin(t *testing.T) {
 	root := sourceRepoRoot(t)
 
 	installer, err := os.ReadFile(filepath.Join(root, "scripts", "ci", "install-dolt.sh"))
@@ -1339,8 +1339,8 @@ func TestPinnedDoltCLIAtLeastRecommendedMin(t *testing.T) {
 	cliVersion := captureOne(t, `(?m)^readonly version="([0-9]+\.[0-9]+\.[0-9]+)"$`, string(installer), "scripts/ci/install-dolt.sh")
 
 	pinned := doltversion.MustParse(cliVersion)
-	if !pinned.AtLeast(doltversion.RecommendedMin) {
-		t.Errorf("pinned Dolt CLI %s is below doltversion.RecommendedMin %s", cliVersion, doltversion.RecommendedMin)
+	if !pinned.AtLeast(doltversion.RequiredMin) {
+		t.Errorf("pinned Dolt CLI %s is below doltversion.RequiredMin %s", cliVersion, doltversion.RequiredMin)
 	}
 }
 

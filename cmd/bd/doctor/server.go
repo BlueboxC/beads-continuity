@@ -12,6 +12,7 @@ import (
 
 	"github.com/steveyegge/beads/internal/configfile"
 	"github.com/steveyegge/beads/internal/doltserver"
+	"github.com/steveyegge/beads/internal/doltversion"
 	"github.com/steveyegge/beads/internal/storage/doltutil"
 )
 
@@ -378,12 +379,7 @@ func checkDoltVersion(cfg *configfile.Config, beadsDir string) (DoctorCheck, *sq
 		}, nil
 	}
 
-	return DoctorCheck{
-		Name:     "Dolt Version",
-		Status:   StatusOK,
-		Message:  fmt.Sprintf("Dolt %s", version),
-		Category: CategoryFederation,
-	}, db
+	return doltVersionFloorCheck(version, fmt.Sprintf("dolt sql-server at %q", doltutil.ServerAddr(host, port))), db
 }
 
 // checkDatabaseExists checks if the beads database exists
@@ -586,4 +582,35 @@ func checkConnectionPool(db *sql.DB) DoctorCheck {
 		Detail:   detail,
 		Category: CategoryFederation,
 	}
+}
+
+// doltVersionFloorCheck judges the version a server's dolt_version()
+// reported against doltversion.RequiredMin, the floor every server-mode
+// open enforces. Below it is an error whose fix is the upgrade. A version
+// that does not parse stays OK, as before: the open does not refuse one
+// either (see doltversion.CheckServer), and the detail says it was not
+// checked.
+func doltVersionFloorCheck(version, subject string) DoctorCheck {
+	v, err := doltversion.ParseVersion(version)
+	if err != nil {
+		// The server supplied this text, so it is printed escaped.
+		return DoctorCheck{
+			Name:     "Dolt Version",
+			Status:   StatusOK,
+			Message:  fmt.Sprintf("Dolt %s", fmt.Sprintf("%q", version)),
+			Detail:   fmt.Sprintf("not a version bd recognizes; not checked against the required minimum %s", doltversion.RequiredMin),
+			Category: CategoryFederation,
+		}
+	}
+	if floorErr := doltversion.CheckRequired(v, subject, true); floorErr != nil {
+		return DoctorCheck{
+			Name:     "Dolt Version",
+			Status:   StatusError,
+			Message:  fmt.Sprintf("Dolt %s is below the required minimum %s", v, doltversion.RequiredMin),
+			Detail:   floorErr.Error(),
+			Fix:      fmt.Sprintf("Upgrade the dolt sql-server to %s or newer and restart it; bd refuses to open older servers", doltversion.RequiredMin),
+			Category: CategoryFederation,
+		}
+	}
+	return DoctorCheck{Name: "Dolt Version", Status: StatusOK, Message: fmt.Sprintf("Dolt %s", v), Category: CategoryFederation}
 }

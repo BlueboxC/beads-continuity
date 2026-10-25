@@ -26,7 +26,7 @@ Install a specific version. Do not install `releases/latest` — see
 version to use and why the pin exists.
 
 ```bash
-DOLT_VERSION=2.2.0   # see "Which Dolt version to install" below
+DOLT_VERSION=2.6.0   # see "Which Dolt version to install" below
 
 os=$(uname -s | tr '[:upper:]' '[:lower:]')
 arch=$(uname -m | sed -e 's/^x86_64$/amd64/' -e 's/^aarch64$/arm64/')
@@ -44,19 +44,15 @@ against the pin below.
 
 ### Which Dolt version to install
 
-Beads pins Dolt to **2.2.0**. CI installs that same pin with
-`scripts/ci/install-dolt.sh`, which records the per-version measurements and
-the criterion for raising it; raise the pin here and in that script together.
+This fork requires **Dolt 2.6.0 or newer** for recognized external binaries and
+SQL servers; the paired CI CLI/container pin is 2.6.0. Older identified versions
+refuse before startup or schema work, with upgrade/restart guidance. Unknown
+custom versions remain advisory. `doctor --server` reports the same floor.
 
-This pin is about the standalone `dolt` CLI, which only server and
-proxied-server mode use. Embedded mode is unaffected either way: it links the
-Dolt engine into `bd` at the dependency tuple in `go.mod`, independently of
-which `dolt` CLI is on your PATH. This fork uses driver v2.4.1 with the qualified
-Dolt **2.6.0** engine and the fork corrections documented in
-[FORK.md](https://github.com/BlueboxC/beads-continuity/blob/codex/project-continuity/FORK.md#embedded-engine-compatibility).
-Native Dolt 2.4.2 backup compatibility was qualified separately; it does not
-qualify an older external server to open every database written by this engine
-or raise the standalone server pin.
+Embedded mode independently links driver v2.4.1 and the qualified Dolt 2.6.0
+fork tuple in `go.mod` and [FORK.md](https://github.com/BlueboxC/beads-continuity/blob/codex/preview3-integration-20261024/FORK.md).
+Native 2.4.2 backup recovery was qualified separately: restoring an older backup
+does not authorize running an older server against modern storage.
 
 #### Storage compatibility is separate from the CLI pin
 
@@ -104,10 +100,9 @@ Historical upstream measurements, creating fresh databases and immediately calli
 
 This table is the earlier upstream snapshot, not a fresh measurement by this
 fork. [PR #7807](https://github.com/gastownhall/beads/pull/7807) records later
-upstream measurements. They do not silently change this fork's external CLI
-pin or qualify an operator's existing database. In particular, the retained
-2.2.0 pin cannot open descending-index storage created by modern engines;
-server selection must also satisfy the storage compatibility requirement above.
+upstream measurements. They do not qualify an operator's existing database. The previous 2.2.0 CLI
+pin could not open descending-index storage from modern engines; the current
+2.6.0 floor is a separate policy from backup compatibility.
 
 Pin rather than track `latest` for a second, independent reason: the upstream
 `releases/latest` URL resolves to the most recently *created* release, not the

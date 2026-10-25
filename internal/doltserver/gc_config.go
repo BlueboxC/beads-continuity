@@ -2,6 +2,7 @@ package doltserver
 
 import (
 	"context"
+	"fmt"
 	"os"
 	"strconv"
 	"strings"
@@ -33,7 +34,11 @@ const MinDoltVersionForArchiveLevelConfig = "1.52.1"
 // just the path string) lets an in-place dolt upgrade/downgrade at that
 // same path invalidate the cache naturally on its next probe, rather than
 // keeping a stale verdict for the rest of the process's lifetime.
-var archiveLevelSupportCache sync.Map // map[archiveLevelCacheKey]bool
+var archiveLevelSupportCache sync.Map // map[archiveLevelCacheKey]doltVersionOutput
+type doltVersionOutput struct {
+	out string
+	ok  bool
+}
 
 // archiveLevelCacheKey identifies a specific on-disk binary, not just a
 // path: two different binaries can share a path over time (a package
@@ -59,20 +64,40 @@ type archiveLevelCacheKey struct {
 // force-clear the cache in a test that cannot otherwise change a stub's
 // file identity between subtests.
 func SupportsArchiveLevelConfig(doltBin string) bool {
+	out, ok := probeDoltVersionOutput(doltBin)
+	return ok && doltVersionAtLeast(out, MinDoltVersionForArchiveLevelConfig)
+}
+
+// RequireDoltBinaryVersion refuses a recognized older binary before startup.
+// Unverifiable versions keep the existing advisory posture.
+func RequireDoltBinaryVersion(doltBin string) error {
+	out, ok := probeDoltVersionOutput(doltBin)
+	if !ok {
+		return nil
+	}
+	v, err := doltversion.ParseVersion(out)
+	if err != nil {
+		return nil
+	}
+	return doltversion.CheckRequired(v, fmt.Sprintf("dolt binary %q", doltBin), false)
+}
+
+func probeDoltVersionOutput(doltBin string) (string, bool) {
 	key, hasKey := archiveLevelCacheKeyFor(doltBin)
 	if hasKey {
 		if cached, ok := archiveLevelSupportCache.Load(key); ok {
-			return cached.(bool)
+			v := cached.(doltVersionOutput)
+			return v.out, v.ok
 		}
 	}
 
 	identity, err := doltversion.Probe(context.Background(), doltBin)
-	supported := err == nil && doltVersionAtLeast(identity.RawOutput, MinDoltVersionForArchiveLevelConfig)
+	res := doltVersionOutput{out: identity.RawOutput, ok: err == nil}
 
 	if hasKey {
-		archiveLevelSupportCache.Store(key, supported)
+		archiveLevelSupportCache.Store(key, res)
 	}
-	return supported
+	return res.out, res.ok
 }
 
 // archiveLevelCacheKeyFor stats doltBin and returns its cache key. The

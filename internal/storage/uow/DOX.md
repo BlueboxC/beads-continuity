@@ -23,6 +23,8 @@ Root DOX.md and the parent chain remain binding.
 
 - Server-log rotation is explicit per provider and applies only to the default owned path. Preserve context-aware discovery and per-connection authenticated proxy resolution when forwarding this option.
 
+- Both ordinary and strict existing-only proxy providers check the external server version before schema work or returning a provider. Identified versions below 2.6.0 refuse without bootstrap; unknown versions preserve advisory behavior.
+
 ## Work Guidance
 
 Verify commit, rollback and failure behavior at the affected transaction boundary.

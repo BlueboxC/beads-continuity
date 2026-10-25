@@ -378,51 +378,19 @@ bd dolt stop
 bd dolt start
 ```
 
-### Proxied-server mode: "dolt is older than the recommended minimum" warning
+### External Dolt below the required minimum
 
-Managed proxied-server mode spawns an external `dolt` CLI it finds via
-`BEADS_DOLT_BIN` or PATH (in that order — see
-[Environment Variables](/reference/configuration#environment-variables); a
-clone-local sidecar setting will slot between the two when the sidecar
-reader lands in contract part 2). On
-startup it probes that binary with `dolt version` and recommends
-**dolt >= 2.0.0**: the 2026-07-25 cross-version compatibility matrix found
-that cross-reading storage written by the beads Dolt Go module (as opposed
-to writing it, which older dolt CLIs can also do) requires dolt >= 2.0.0 —
-dolt 1.85 can *serve* proxied mode but cannot *read* storage the module
-wrote, and dolt 1.52.1 fails at both serving and reading.
+Recognized external Dolt binaries and SQL servers must be **2.6.0 or newer**.
+An older version refuses before startup or schema work, naming the endpoint,
+detected version and upgrade steps. Install a pinned compatible binary; update
+PATH or `BEADS_DOLT_BIN` for a managed proxy, or restart an externally managed
+server on that release. Unknown/custom version output remains advisory, not a
+compatibility certification. Embedded mode uses its independently qualified
+engine and does not need a standalone executable.
 
-This is a warning, not a hard failure — there is deliberately no hard
-version floor, so an older dolt can still be used at your own risk. To
-resolve it, install the pinned dolt version — see
-[Which Dolt version to install](/architecture/dolt#which-dolt-version-to-install)
-— and either update PATH or set `BEADS_DOLT_BIN` to the new binary's path.
-Install a qualified specific version rather than `latest`: 2.3.0 and 2.3.1
-satisfy this warning but carry a
-[separate data-operation defect](/architecture/dolt#which-dolt-version-to-install).
-
-The advisory minimum and standalone pin are not a storage-format guarantee.
-A pre-2.3.3 server can fail on a database created with descending-index storage:
-schema probes such as `information_schema.tables` and a plain `INSERT` can
-report `table has unknown fields`; an `UPDATE` or `DELETE` on `issues` can
-instead name `fk_comp_snap_issue`. Reads of issue rows and `SHOW TABLES` can
-still succeed. See [storage compatibility](/architecture/dolt#storage-compatibility-is-separate-from-the-cli-pin)
-before downgrading an engine; bypassing Beads schema checks does not repair an
-engine-format mismatch. The fork's embedded engine is 2.6.0, independently of
-the external binary selected by PATH or `BEADS_DOLT_BIN`.
-
-The advisory repeats at most once per day, not on every command: the probe
-result and the warning timestamp are cached (keyed by the binary's path,
-size, and mtime, in the user cache directory), so day-to-day `bd` use stays
-quiet while the reminder still resurfaces until the binary is upgraded.
-Upgrading or replacing the dolt binary re-probes immediately.
-
-If the probe can't parse `dolt version`'s output at all (most commonly a
-dev/custom build with non-standard version output), that also only warns —
-proxied-server mode still starts, since an unparseable version means "we
-don't know", not "this is definitely broken". A genuinely missing or
-broken `dolt` binary (not found, not executable, or the probe itself
-fails/times out) is a hard error, not a warning.
+See [Which Dolt version to install](/architecture/dolt#which-dolt-version-to-install).
+An older native backup being restorable does not qualify an older server for
+storage written by a newer engine. Do not bypass storage/schema guards.
 
 ### Proxied-server mode: closing a bead gate fails with "no local store available"
 

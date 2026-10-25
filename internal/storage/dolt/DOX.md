@@ -38,6 +38,8 @@ Root DOX.md and the parent chain remain binding.
 
 - CLI-transport pull settlement aborts declined conflicts and unrepaired constraints, matching SQL-route recovery. Capture a known-clean pre-pull working set before permitting the shared hard-reset fallback. Determinate settlement rejections and required conflict-read errors also clean up; indeterminate commit responses preserve state and never abort/replay.
 
+- External server opens check dolt_version before reads/bootstrap; identified versions below 2.6.0 refuse. Unknown versions keep advisory behavior; preserve gateway project binding and pool cleanup.
+
 ## Work Guidance
 
 Metadata field conversion delegates to shared issueops parsing; YAML numeric types, enum fallback and adapter-specific warning/error modes remain unchanged.

@@ -40,7 +40,7 @@ Root owns fork policy, public API packages, license, build/version files, small 
 - SQL and catalog dependency updates preserve existing view/diff/SAVEPOINT protections and typed missing-database handling. Keep driver, engine and analyzer pins explicit in every independent consumer module; do not equate supplied SQL regressions with general dialect compatibility.
 - The embedded engine publishes SQL remote/session cleanup after repository-state saving succeeds; a failed removal retains the live remote and matching upstreams. Existing concurrent repository-file write limits remain unchanged.
 - Qualified engine merge features preserve logical references and conflict evidence through GC/backup. Unsupported key transformations or conflicting virtual bases refuse explicitly; rollback after feature writes requires matched data and engine preimages.
-- The embedded engine pins official Dolt 2.6.0 plus the minimal BlueboxC/dolt engine corrections documented in FORK.md. Keep driver, engine and external CLI versions distinct. Carry storage fixes in the engine dependency, preserve contributor attribution, and do not enable multi-branch commit options or add core SQL workarounds.
+- The embedded engine pins official Dolt 2.6.0 plus the minimal BlueboxC/dolt engine corrections documented in FORK.md. Keep driver, engine and external CLI versions distinct; recognized external binaries/servers require at least 2.6.0, independently of backup readability. Carry storage fixes in the engine dependency, preserve contributor attribution, and do not enable multi-branch commit options or add core SQL workarounds.
 - Follow AGENTS.md, AGENT_INSTRUCTIONS.md and engdocs/TESTING.md. Keep manual experiments in disposable directories.
 
 ## Preview3 isolation boundary

@@ -23,6 +23,8 @@ Root DOX.md and the parent chain remain binding.
 - Claude plugin and hook checks reuse setup’s exact identity and settings precedence; personal disablement remains effective.
 - Server diagnostics format bare/bracketed IPv6 through the shared address builder and retain external-owner advice. An unmanaged endpoint without a resolved port fails with pin-the-port advice instead of an auto-start skip or a port-zero probe; server health marks the result unsuccessful. Owned/proxied health checks retain their existing auto-start skip. Performance diagnostics do not attribute local directory sizes to externally managed IPv6 loopback endpoints.
 
+- Server version diagnostics share the external required floor, provide upgrade/restart advice for recognized old servers and escape unknown version text.
+
 ## Work Guidance
 
 Diagnose before repair; preserve recovery evidence. Use existing doctor operations rather than adding parallel repair commands.

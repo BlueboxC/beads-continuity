@@ -43,6 +43,9 @@ func NewReadOnlyProxyUOWProvider(ctx context.Context, root, database, user, pass
 	if err != nil {
 		return nil, err
 	}
+	if err := requireServerDoltVersion(ctx, pool, ep); err != nil {
+		return nil, errors.Join(err, pool.Close())
+	}
 	p := &doltSQLProvider{db: pool, defaultBranch: defaultBranch, expectedProjectID: expectedProjectID, preview: true, readOnly: true, proxiedServerMode: true, strictReadOnly: true}
 	uw, err := p.NewUOW(ctx)
 	if err != nil {

@@ -42,6 +42,7 @@ import (
 	"github.com/steveyegge/beads/internal/configfile"
 	"github.com/steveyegge/beads/internal/debug"
 	"github.com/steveyegge/beads/internal/doltserver"
+	"github.com/steveyegge/beads/internal/doltversion"
 	"github.com/steveyegge/beads/internal/gittraceenv"
 	"github.com/steveyegge/beads/internal/storage"
 	"github.com/steveyegge/beads/internal/storage/doltutil"
@@ -2660,6 +2661,14 @@ func assertGatewaySessionDatabase(ctx context.Context, db *sql.DB, want string) 
 // openServerConnection connects to (and if needed creates) the target database
 // on a dolt sql-server via MySQL protocol. See serverConnFacts for what the
 // returned facts mean and why they are not a single bool.
+func requireServerDoltVersion(ctx context.Context, q doltversion.RowQuerier, cfg *Config) error {
+	addr := doltutil.ServerAddr(cfg.ServerHost, cfg.ServerPort)
+	if cfg.ServerSocket != "" {
+		addr = cfg.ServerSocket
+	}
+	return doltversion.CheckServer(ctx, q, fmt.Sprintf("dolt sql-server at %q", addr), func(err error) { debug.Logf("dolt: version unverified: %q\n", err.Error()) })
+}
+
 func openServerConnection(ctx context.Context, cfg *Config) (*sql.DB, string, serverConnFacts, error) {
 	connStr := buildServerDSN(cfg, cfg.Database)
 
@@ -2702,6 +2711,9 @@ func openServerConnection(ctx context.Context, cfg *Config) (*sql.DB, string, se
 		// On `bd init --database=<other>` that adoption is completely silent:
 		// resolveInitIssuePrefix adopts whatever prefix comes back. One query
 		// closes it.
+		if err := requireServerDoltVersion(ctx, db, cfg); err != nil {
+			return nil, "", serverConnFacts{}, err
+		}
 		if err := assertGatewaySessionDatabase(ctx, db, cfg.Database); err != nil {
 			return nil, "", serverConnFacts{}, err
 		}
@@ -2757,6 +2769,9 @@ func openServerConnection(ctx context.Context, cfg *Config) (*sql.DB, string, se
 	// because LIKE treats _ and % as wildcards and Dolt does not support backslash
 	// escaping. Database names like "beads_vulcan" contain underscores which would
 	// match unrelated databases with LIKE.
+	if err := requireServerDoltVersion(ctx, initDB, cfg); err != nil {
+		return nil, "", serverConnFacts{}, err
+	}
 	dbExists, checkErr := databaseExistsOnServer(ctx, initDB, cfg.Database)
 	if checkErr != nil {
 		return nil, "", serverConnFacts{}, fmt.Errorf("failed to check if database %q exists on server %s: %w",
