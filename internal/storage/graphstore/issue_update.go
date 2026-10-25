@@ -206,7 +206,7 @@ func (s *Store) UpdateIssue(ctx context.Context, request UpdateIssueRequest) (Is
 			}
 		}
 		if request.FromRevision != "" {
-			if err := checkCurrentReadBytes(ctx, tx); err != nil {
+			if err := s.checkCurrentReadBytes(ctx, tx); err != nil {
 				return err
 			}
 		}
@@ -226,7 +226,7 @@ func (s *Store) UpdateIssue(ctx context.Context, request UpdateIssueRequest) (Is
 			if err := checkRevisionGuard(request.ExpectedRevision, request.Unconditional, revision, true, "Issue"); err != nil {
 				return err
 			}
-			if err := checkHistoricalIssueReadBytes(ctx, tx, path, request.FromRevision); err != nil {
+			if err := s.checkHistoricalIssueReadBytes(ctx, tx, path, request.FromRevision); err != nil {
 				return err
 			}
 			var err error
@@ -257,7 +257,7 @@ func (s *Store) UpdateIssue(ctx context.Context, request UpdateIssueRequest) (Is
 		}
 		if request.FromRevision != "" {
 			if terminal == nil {
-				if err := checkHistoricalIssueReadBytes(ctx, tx, path, request.FromRevision); err != nil {
+				if err := s.checkHistoricalIssueReadBytes(ctx, tx, path, request.FromRevision); err != nil {
 					return err
 				}
 			}
@@ -359,7 +359,7 @@ func (s *Store) UpdateIssue(ctx context.Context, request UpdateIssueRequest) (Is
 		// Charge the new retained head as well as current data; an unreadable
 		// notes or metadata edit rolls back every write effect.
 		if request.FromRevision != "" || patch.Notes.Set || patch.AppendNotes.Set || metadataChanged {
-			if err := checkCurrentReadBytes(ctx, tx); err != nil {
+			if err := s.checkCurrentReadBytes(ctx, tx); err != nil {
 				return err
 			}
 		}

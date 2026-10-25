@@ -62,7 +62,7 @@ func TestGraphReadRouteCompilation(t *testing.T) {
 		{"/team/beads/a?view=events", "", "invalid-parameter"},
 		{"/team/bdp.json?x=1", "", "invalid-parameter"}, {"/team/?x=1", "", "invalid-parameter"},
 		{"/team/alias/latest?x=1", "", "resource-not-found"},
-		{"/team/alias/latest?bad=%zz", "", "resource-not-found"},
+		{"/team/alias/latest?bad=%zz", "", "invalid-parameter"},
 		{"/team/operations/create-bead", "", "resource-not-found"},
 		{"/team/beads/a/", "", "resource-not-found"}, {"/team/beads//a", "", "resource-not-found"},
 		{"/team/beads/../a", "", "resource-not-found"}, {"/team/beads/%2e%2e/a", "", "resource-not-found"},

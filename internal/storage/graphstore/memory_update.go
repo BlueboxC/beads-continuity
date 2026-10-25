@@ -162,7 +162,7 @@ func (s *Store) writeMemoryInTx(ctx context.Context, tx *sql.Tx, request memoryW
 			return err
 		}
 		if request.fromRevision != "" {
-			if err := checkCurrentReadBytes(ctx, tx); err != nil {
+			if err := s.checkCurrentReadBytes(ctx, tx); err != nil {
 				return err
 			}
 		}
@@ -223,7 +223,7 @@ func (s *Store) writeMemoryInTx(ctx context.Context, tx *sql.Tx, request memoryW
 			if request.typeURL != "" && request.typeURL != memory.Type {
 				return fmt.Errorf("%w: historical Update preserves the current Type", storage.ErrValidation)
 			}
-			if err := checkHistoricalMemoryReadBytes(ctx, tx, request.path, request.fromRevision); err != nil {
+			if err := s.checkHistoricalMemoryReadBytes(ctx, tx, request.path, request.fromRevision); err != nil {
 				return err
 			}
 			// Current allocation/baseline was validated above in this transaction;
@@ -363,7 +363,7 @@ func (s *Store) writeMemoryInTx(ctx context.Context, tx *sql.Tx, request memoryW
 		// current-read acquisition budget. Existing replacement/field routes retain
 		// their prior admission behavior. A no-op above writes nothing.
 		if request.fromRevision != "" || request.propertiesPatch != nil || hasCommonMetadataPatch(request.metadataPatch) {
-			if err := checkCurrentReadBytes(ctx, tx); err != nil {
+			if err := s.checkCurrentReadBytes(ctx, tx); err != nil {
 				return err
 			}
 		}

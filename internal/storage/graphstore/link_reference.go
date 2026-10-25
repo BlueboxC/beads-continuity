@@ -170,7 +170,7 @@ func (s *Store) endpointPinInTxBudget(ctx context.Context, tx *sql.Tx, path stri
 		return "", err
 	}
 	if includeCurrent {
-		if err := checkCurrentReadBytesAdditional(ctx, tx, *used); err != nil {
+		if err := s.checkCurrentReadBytesAdditional(ctx, tx, *used); err != nil {
 			return "", err
 		}
 	}

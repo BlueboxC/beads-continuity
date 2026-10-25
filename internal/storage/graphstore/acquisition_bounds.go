@@ -51,16 +51,20 @@ func readAcquisitionUsage(ctx context.Context, tx *sql.Tx) (acquisitionUsage, er
 	return usage, err
 }
 
-// A normal write must fit every read budget. Old or out-of-band oversized state
+// The selected policy bounds atomic growth. Old or out-of-band oversized state
 // may be reduced or left unchanged. A dimension already over budget may not
 // grow; every other dimension stays under its own cap, including terminal
 // bookkeeping required to remove a Resource. Checks stay in the transaction.
 func checkAcquisitionGrowth(before, after acquisitionUsage) error {
+	return checkProfileGrowth("", before, after)
+}
+
+func checkGrowthDimensions(before, after acquisitionUsage, limits CapacityLimits) error {
 	dimensions := [...]struct{ limit, before, after uint64 }{
-		{PreviewSnapshotLimit, before.resources, after.resources},
-		{PreviewCurrentReadByteLimit, before.currentBytes, after.currentBytes},
-		{PreviewContinuityReadRowLimit, before.continuityRows, after.continuityRows},
-		{PreviewContinuityReadByteLimit, before.continuityBytes, after.continuityBytes},
+		{limits.Resources, before.resources, after.resources},
+		{limits.CurrentBytes, before.currentBytes, after.currentBytes},
+		{limits.RetainedRows, before.continuityRows, after.continuityRows},
+		{limits.RetainedBytes, before.continuityBytes, after.continuityBytes},
 	}
 	for _, dimension := range dimensions {
 		if dimension.after > dimension.limit && dimension.after > dimension.before {

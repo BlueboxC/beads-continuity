@@ -104,7 +104,7 @@ func TestAuthoritativeRecordsProjectToPublicWire(t *testing.T) {
 			if readBead("beads/other").Attribution != nil {
 				t.Fatal("fabricated actor")
 			}
-			firstIssue := readBead("beads/task")
+			firstIssue := readBead(issue.ID)
 			if string(firstIssue.Metadata["team"]) != `"triage"` {
 				t.Fatalf("Issue metadata projection = %#v", firstIssue.Metadata)
 			}
@@ -152,7 +152,7 @@ func TestAuthoritativeRecordsProjectToPublicWire(t *testing.T) {
 			if readBead("beads/other").Revision != other.Revision {
 				t.Fatal("incoming Link changed target")
 			}
-			withBlock := readBead("beads/task")
+			withBlock := readBead(issue.ID)
 			if len(withBlock.OwnedLinks[o.Binding.ScopeURL+"types/native-dependency/626c6f636b73"]) != 1 || withBlock.Revision == firstIssue.Revision {
 				t.Fatal("Issue owned state did not advance")
 			}

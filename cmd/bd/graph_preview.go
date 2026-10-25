@@ -43,6 +43,8 @@ const (
 
 var graphPreviewSupportedGenerations = []string{graphPreviewGeneration}
 
+var graphOperationalProfile string
+
 var graphPreviewActive bool
 var graphPreviewStructuredErrors bool
 var graphPreviewDir string
@@ -56,6 +58,7 @@ func init() {
 		command.Flags().Bool("unconditional", false, "Accept the current state (Graph Preview only)")
 	}
 	updateCmd.Flags().Bool("clear-notes", false, "Explicitly clear Issue notes (Graph Preview only)")
+	rootCmd.PersistentFlags().StringVar(&graphOperationalProfile, "graph-profile", "", "Explicit graph operational capacity profile: continuity-v1 (no persistent setting)")
 	rootCmd.PersistentFlags().String("graph-mode", "", "Assert workspace format: dependency or link (init selects format)")
 	initCmd.Flags().String("scope-url", "", "Permanent operator-selected Scope URL for a fresh disposable graph preview")
 	rememberCmd.Flags().String("id", "", "Memory ID or beads/PATH; creates if unused or updates existing Memory (generated when omitted; graph preview only)")
@@ -227,6 +230,9 @@ func admitGraphPreview(cmd *cobra.Command) (handled bool, admissionErr error) {
 	if flag != "" && env != "" && flag != env {
 		return true, graphFailure("invalid_selector", "--graph-mode and BD_GRAPH_MODE disagree", 2)
 	}
+	if graphOperationalProfile != "" && graphOperationalProfile != graphstore.ContinuityProfile {
+		return true, graphFailure("invalid_selector", "unknown graph operational profile", 2)
+	}
 	requested := flag
 	if requested == "" {
 		requested = env
@@ -258,6 +264,9 @@ func admitGraphPreview(cmd *cobra.Command) (handled bool, admissionErr error) {
 				}
 				if cmd == graphCmd && graphGenericFlagsChanged(cmd) {
 					return true, graphFailure("graph_not_initialized", err.Error(), 5)
+				}
+				if graphOperationalProfile != "" {
+					return true, graphFailure("capability_unavailable", "--graph-profile requires an initialized Graph Preview workspace", 5)
 				}
 				return false, nil
 			}
@@ -332,6 +341,9 @@ func admitGraphPreview(cmd *cobra.Command) (handled bool, admissionErr error) {
 		if (cmd == rememberCmd && rememberGraphFlagsChanged(cmd)) || (cmd == initCmd && cmd.Flags().Changed("scope-url")) || (cmd == statusCmd && cmd.Flags().Changed("graph")) {
 			return true, graphFailure("capability_unavailable", "these graph options require a workspace initialized with graph_mode link", 5)
 		}
+		if graphOperationalProfile != "" {
+			return true, graphFailure("capability_unavailable", "--graph-profile requires an initialized Graph Preview workspace", 5)
+		}
 		return false, nil
 	}
 	if err := requireDoltBackend(cfg, dir); err != nil {
@@ -376,7 +388,7 @@ func admitGraphPreview(cmd *cobra.Command) (handled bool, admissionErr error) {
 // silently pretending a legacy option was honored by the generic route.
 func graphPreviewFlags(cmd *cobra.Command, allowed ...string) error {
 	// Graph routes skip native sync/push housekeeping, preserving sandbox's opt-out.
-	set := map[string]bool{"json": true, "graph-mode": true, "actor": true, "quiet": true, "no-color": true, "directory": true, "readonly": true, "sandbox": true}
+	set := map[string]bool{"json": true, "graph-mode": true, "graph-profile": true, "actor": true, "quiet": true, "no-color": true, "directory": true, "readonly": true, "sandbox": true}
 	for _, name := range allowed {
 		set[name] = true
 	}
@@ -550,7 +562,7 @@ func graphOptionsFor(dir string, cfg *configfile.Config) graphstore.Options {
 	if cfg.DoltMode == configfile.DoltModeServer && password == "" {
 		password = configfile.LookupCredentialsPassword(cfg.DoltServerHost, cfg.DoltServerPort)
 	}
-	return graphstore.Options{Backend: cfg.DoltMode, DataDir: filepath.Join(dir, "embeddeddolt"), Database: cfg.DoltDatabase, Branch: "main",
+	return graphstore.Options{OperationalProfile: graphOperationalProfile, Backend: cfg.DoltMode, DataDir: filepath.Join(dir, "embeddeddolt"), Database: cfg.DoltDatabase, Branch: "main",
 		Binding:    graphstore.Binding{WorkspaceID: cfg.GraphWorkspace, ScopeURL: cfg.GraphScopeURL, AuthorityID: cfg.GraphAuthorityID, SchemaVersion: cfg.GraphSchemaVersion},
 		ServerHost: cfg.DoltServerHost, ServerPort: cfg.DoltServerPort, ServerUser: cfg.DoltServerUser, ServerPassword: password, ServerSocket: cfg.DoltServerSocket, ServerTLS: cfg.DoltServerTLS}
 }
@@ -693,15 +705,19 @@ func runGraphPreviewStatus(cmd *cobra.Command) error {
 	if err := graphPreviewFlags(cmd, "graph"); err != nil {
 		return err
 	}
-	return withGraphStore(func(_ context.Context, _ *graphstore.Store) (any, string, error) {
-		return map[string]any{"scope": graphPreviewConfig.GraphScopeURL, "backend": graphPreviewConfig.DoltMode, "preview": true,
+	return withGraphStore(func(ctx context.Context, s *graphstore.Store) (any, string, error) {
+		capacity, err := s.ReadCapacity(ctx)
+		if err != nil {
+			return nil, "", err
+		}
+		return map[string]any{"scope": graphPreviewConfig.GraphScopeURL, "backend": graphPreviewConfig.DoltMode, "preview": true, "operationalCapacity": capacity,
 				"limits": map[string]int{"issueListOutputBytes": graphIssueListOutputLimit, "beadListOutputBytes": graphIssueListOutputLimit,
-					"beadListInventoryResources": graphstore.PreviewSnapshotLimit,
-					"issueBlockedOutputBytes":    graphIssueBlockedOutputLimit, "issueBlockedInventoryResources": graphstore.PreviewSnapshotLimit,
+					"beadListInventoryResources": int(s.CapacityLimits().Resources),
+					"issueBlockedOutputBytes":    graphIssueBlockedOutputLimit, "issueBlockedInventoryResources": int(s.CapacityLimits().Resources),
 					"genericTraversalOutputBytes": graphGenericOutputLimit, "genericTraversalDepth": graphGenericBound,
 					"genericTraversalNodes": graphGenericBound, "genericTraversalLinks": graphGenericBound, "genericTraversalInventoryResources": graphstore.PreviewSnapshotLimit,
 					"memoryBodyInputBytes": graphPreviewMemoryBodyLimit, "metadataInputBytes": metadataInputLimit, "memoryOwnedLinks": graphstore.PreviewOwnedLinkLimit,
-					"issueOwnedLinks": graphstore.PreviewOwnedLinkLimit, "currentReadBytes": graphstore.PreviewCurrentReadByteLimit,
+					"issueOwnedLinks": graphstore.PreviewOwnedLinkLimit, "currentReadBytes": int(s.CapacityLimits().CurrentBytes),
 					"continuityReadRows": graphstore.PreviewContinuityReadRowLimit, "continuityReadBytes": graphstore.PreviewContinuityReadByteLimit,
 					"linkPropertiesInputBytes": graphPreviewPropertiesLimit, "memoryPropertiesInputBytes": graphPreviewPropertiesLimit,
 					"memoryPatchInputBytes":      graphpatch.MaxInputBytes,

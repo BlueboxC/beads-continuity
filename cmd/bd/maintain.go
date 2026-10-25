@@ -143,7 +143,11 @@ func init() {
 			python, _ := cmd.Flags().GetString("python")
 			node, _ := cmd.Flags().GetString("node")
 			pass := func(ctx context.Context) error {
-				child := exec.CommandContext(ctx, exe, "maintain", "once", "--python="+python, "--node="+node, "--json") // #nosec G204 -- own executable/fixed command; no shell
+				args := []string{"maintain", "once", "--python=" + python, "--node=" + node, "--json"}
+				if graphOperationalProfile != "" {
+					args = append(args, "--graph-profile", graphOperationalProfile)
+				}
+				child := exec.CommandContext(ctx, exe, args...) // #nosec G204 -- own executable/fixed command; no shell
 				child.Dir, child.Env = workspace, env
 				out, stderr := &graphOutput{limit: 1 << 20}, &graphOutput{limit: 1 << 20}
 				child.Stdout, child.Stderr = out, stderr

@@ -27,7 +27,7 @@ type Inventory struct {
 // inventories return an error and no partial result. The store's operational
 // bound is not a page size; selection and pagination are not implemented here.
 func (r *Reader) Inventory(ctx context.Context) (Inventory, error) {
-	snapshot, err := r.store.CurrentSnapshot(ctx)
+	snapshot, err := r.store.OperationalSnapshot(ctx)
 	if err != nil {
 		return Inventory{}, err
 	}

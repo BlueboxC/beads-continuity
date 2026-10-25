@@ -25,7 +25,7 @@ func (s *Store) EpicStatuses(ctx context.Context) ([]*types.EpicStatus, error) {
 		if err := s.requireRelationshipGenerationInTx(ctx, tx); err != nil {
 			return err
 		}
-		if err := checkCurrentReadBytes(ctx, tx); err != nil {
+		if err := s.checkCurrentReadBytes(ctx, tx); err != nil {
 			return err
 		}
 		var count int

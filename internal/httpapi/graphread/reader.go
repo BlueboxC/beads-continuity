@@ -22,12 +22,20 @@ type Reader struct{ store *graphstore.Store }
 
 func New(store *graphstore.Store) *Reader { return &Reader{store: store} }
 
-// Resource reads a canonical local beads/... or links/... path. Storage absence,
+func (r *Reader) CapacityLimits() graphstore.CapacityLimits { return r.store.CapacityLimits() }
+
+// Identity resolves literal public identity; private locators are never aliases
+// on the HTTP surface. Kind is an allocation fact, independent of path spelling.
+func (r *Reader) Identity(ctx context.Context, path string) (graphstore.AllocatedResourceIdentity, error) {
+	return r.store.ResolveAllocatedResourceIdentity(ctx, path)
+}
+
+// Resource reads an exact allocated public Resource identity. Storage absence,
 // deletion and corruption errors remain distinct for the future HTTP adapter.
 // The result is either bdpwire.BeadRecord or bdpwire.LinkRecord, never a private
 // preview envelope. This method does not select historical versions.
 func (r *Reader) Resource(ctx context.Context, path string) (any, error) {
-	if graph.ValidateBeadPath(path) != nil && graph.ValidateLinkPath(path) != nil && !strings.Contains(path, "://") {
+	if !strings.Contains(path, "://") {
 		var err error
 		path, err = graph.CanonicalPublicResourceURL(r.store.ScopeURL(), path)
 		if err != nil {

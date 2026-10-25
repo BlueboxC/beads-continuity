@@ -51,12 +51,14 @@ func TestGraphReadHTTPAuthorityAndSecurity(t *testing.T) {
 		request := graphstore.CreateRequest{Path: path, Title: "記憶"}
 		if path == "beads/plan" {
 			request.Metadata = json.RawMessage(`{"team":"docs"}`)
+		} else {
+			request.TypeURL = scope + "types/constraint"
 		}
 		if _, err := store.Create(ctx, request); err != nil {
 			t.Fatal(err)
 		}
 	}
-	if _, err := store.AddInformationalLink(ctx, graphstore.LinkCreateRequest{Path: "links/context", SourcePath: "beads/plan", TargetPath: "beads/other", UnconditionalSource: true, Properties: map[string]any{"note": "initial"}, Metadata: json.RawMessage(`{"origin":"manual"}`)}); err != nil {
+	if _, err := store.AddInformationalLink(ctx, graphstore.LinkCreateRequest{Path: "links/context", TypeURL: scope + "types/subject-to", SourcePath: "beads/plan", TargetPath: "beads/other", UnconditionalSource: true, Properties: map[string]any{"note": "initial"}, Metadata: json.RawMessage(`{"origin":"manual"}`)}); err != nil {
 		t.Fatal(err)
 	}
 	graph, err := NewGraphRead(graphread.New(store), scope)
@@ -222,9 +224,9 @@ func TestGraphReadHTTPAuthorityAndSecurity(t *testing.T) {
 		if response.StatusCode != 200 || bdpwire.Unmarshal(body, &aggregate) != nil || aggregate.Links == nil || len(aggregate.Links.Items) != 1 {
 			t.Fatalf("aggregate: %d %s", response.StatusCode, body)
 		}
-		owned := aggregate.OwnedLinks[graphstore.RelatedTypeURL(scope)]
+		owned := aggregate.OwnedLinks[scope+"types/subject-to"]
 		if len(owned) != 1 || owned[0].Revision != aggregate.Links.Items[0].Revision || string(owned[0].Properties["note"]) != string(aggregate.Links.Items[0].Properties["note"]) {
-			t.Fatal("aggregate mixed two storage snapshots")
+			t.Fatalf("aggregate owned/incident snapshots differ: %s", body)
 		}
 		if string(owned[0].Metadata["origin"]) != `"manual"` || string(aggregate.Links.Items[0].Metadata["origin"]) != `"manual"` {
 			t.Fatalf("HTTP aggregate omitted Link metadata: %s", body)
@@ -233,11 +235,13 @@ func TestGraphReadHTTPAuthorityAndSecurity(t *testing.T) {
 	stopAndWait()
 	// The same canonical HTTP reader exposes native Issue edits. This exercises
 	// real storage and listener calls, without inventing an HTTP Write endpoint.
+	var workURL string
 	t.Run("issue-priority-assignment", func(t *testing.T) {
 		issue, err := store.CreateIssue(ctx, "beads/work", issueops.CreateRequest{Issue: &issueops.Issue{Title: "HTTP work", Status: "open", IssueType: "task", Priority: 2}, Actor: "creator"})
 		if err != nil {
 			t.Fatal(err)
 		}
+		workURL = "/read/" + strings.TrimPrefix(issue.ID, scope)
 		priority, assignee := 0, "agent.雪"
 		edited, err := store.UpdateIssue(ctx, graphstore.UpdateIssueRequest{Path: "beads/work", Actor: "editor", ExpectedRevision: issue.Revision, Priority: &priority, Assignee: &assignee})
 		if err != nil || !edited.Changed {
@@ -247,7 +251,7 @@ func TestGraphReadHTTPAuthorityAndSecurity(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		resp, raw := request("GET", "/read/beads/work", "second-token-longer", "", nil)
+		resp, raw := request("GET", workURL, "second-token-longer", "", nil)
 		var record bdpwire.BeadRecord
 		if resp.StatusCode != 200 || bdpwire.Unmarshal(raw, &record) != nil || record.ID != edited.Issue.ID || record.Revision != edited.Issue.Revision || string(record.Properties["priority"]) != "0" || string(record.Properties["assignee"]) != `"agent.雪"` || record.Attribution == nil || record.Attribution.Principal != "editor" || record.Metadata == nil || len(record.Metadata) != 0 {
 			t.Fatalf("canonical Issue edit not exposed: %d %s", resp.StatusCode, raw)
@@ -277,7 +281,7 @@ func TestGraphReadHTTPAuthorityAndSecurity(t *testing.T) {
 		if err != nil || !cleared.Changed {
 			t.Fatalf("clear: %+v %v", cleared, err)
 		}
-		resp, raw = request("GET", "/read/beads/work", "second-token-longer", "", nil)
+		resp, raw = request("GET", workURL, "second-token-longer", "", nil)
 		record = bdpwire.BeadRecord{}
 		if resp.StatusCode != 200 || bdpwire.Unmarshal(raw, &record) != nil || record.Revision != cleared.Issue.Revision || string(record.Properties["priority"]) != "0" {
 			t.Fatalf("cleared canonical Issue: %d %s", resp.StatusCode, raw)
@@ -293,7 +297,7 @@ func TestGraphReadHTTPAuthorityAndSecurity(t *testing.T) {
 		}
 		read := func(headers http.Header) (*http.Response, bdpwire.BeadRecord) {
 			t.Helper()
-			resp, raw := request("GET", "/read/beads/work", "second-token-longer", "", headers)
+			resp, raw := request("GET", workURL, "second-token-longer", "", headers)
 			var value bdpwire.BeadRecord
 			if resp.StatusCode != 200 || bdpwire.Unmarshal(raw, &value) != nil {
 				t.Fatalf("notes canonical read: %d %s", resp.StatusCode, raw)
@@ -314,7 +318,7 @@ func TestGraphReadHTTPAuthorityAndSecurity(t *testing.T) {
 		if err != nil || noop.Changed || !reflect.DeepEqual(noop.Issue, claimed.Issue) {
 			t.Fatalf("empty append noop: %+v %v", noop, err)
 		}
-		resp, raw := request("GET", "/read/beads/work", "second-token-longer", "", http.Header{"If-None-Match": {etag}})
+		resp, raw := request("GET", workURL, "second-token-longer", "", http.Header{"If-None-Match": {etag}})
 		if resp.StatusCode != 304 || len(raw) != 0 || resp.Header.Get("ETag") != etag {
 			t.Fatalf("noop changed ETag: %d %s", resp.StatusCode, raw)
 		}
@@ -345,7 +349,7 @@ func TestGraphReadHTTPAuthorityAndSecurity(t *testing.T) {
 		if after.Attribution == nil || after.Attribution.Principal != "notes-holder" || !reflect.DeepEqual(after, want) {
 			t.Fatal("append changed other HTTP properties, lease or ownership")
 		}
-		resp, raw = request("GET", "/read/beads/work?view=properties", "second-token-longer", "", nil)
+		resp, raw = request("GET", workURL+"?view=properties", "second-token-longer", "", nil)
 		var properties bdpwire.Properties
 		if resp.StatusCode != 200 || bdpwire.Unmarshal(raw, &properties) != nil || !reflect.DeepEqual(properties, after.Properties) {
 			t.Fatalf("appended properties: %d %s", resp.StatusCode, raw)

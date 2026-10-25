@@ -43,6 +43,9 @@ func runGraphViewer(opts serveOptions) error {
 	env := graphViewerEnv(os.Environ(), info.BeadsDir, database)
 	load := func(ctx context.Context) (graphview.Page, error) {
 		args := []string{"graph", "--project", "--readonly", "--json"}
+		if graphOperationalProfile != "" {
+			args = append(args, "--graph-profile", graphOperationalProfile)
+		}
 		child := exec.CommandContext(ctx, exe, args...) // #nosec G204 -- own executable, fixed arguments; no shell or project script
 		child.Dir, child.Env = workspace, env
 		out, stderr := &graphOutput{limit: 64 << 20}, &graphOutput{limit: 1 << 20}

@@ -12,6 +12,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"sort"
 	"strconv"
 	"strings"
 	"testing"
@@ -61,10 +62,11 @@ func TestGraphReadMemoryDeletionHTTP(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	if _, err := store.CreateIssue(ctx, "beads/work", issueops.CreateRequest{Issue: &issueops.Issue{Title: "Surviving Issue", Status: "open", IssueType: "task", Priority: 2}, Actor: "human:issue-author"}); err != nil {
+	issue, err := store.CreateIssue(ctx, "beads/work", issueops.CreateRequest{Issue: &issueops.Issue{Title: "Surviving Issue", Status: "open", IssueType: "task", Priority: 2}, Actor: "human:issue-author"})
+	if err != nil {
 		t.Fatal(err)
 	}
-	contextLink, err := store.AddInformationalLink(ctx, graphstore.LinkCreateRequest{Path: "links/context", SourcePath: "beads/plan", TargetPath: "beads/alpha", UnconditionalSource: true, Actor: "human:link-author"})
+	contextLink, err := store.AddInformationalLink(ctx, graphstore.LinkCreateRequest{Path: "links/context", TypeURL: scope + "types/superseded-by", SourcePath: "beads/plan", TargetPath: "beads/alpha", UnconditionalSource: true, Actor: "human:link-author"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -131,7 +133,7 @@ func TestGraphReadMemoryDeletionHTTP(t *testing.T) {
 	var alpha, plan, work bdpwire.BeadRecord
 	read(scope+"beads/alpha", &alpha)
 	read(scope+"beads/plan", &plan)
-	read(scope+"beads/work", &work)
+	read(issue.ID, &work)
 	if string(plan.Properties["body"]) != `""` || plan.Attribution == nil || plan.Attribution.Principal != "human:link-author" || len(plan.OwnedLinks[contextLink.Link.Type]) != 1 {
 		t.Fatal("predelete record lost empty content, attribution or owned Link")
 	}
@@ -143,9 +145,15 @@ func TestGraphReadMemoryDeletionHTTP(t *testing.T) {
 	if linksBefore.Items[0].ID != scope+"links/context" || linksBefore.Items[1].ID != scope+"links/survivor" {
 		t.Fatal("initial Link inventory identity/order differs")
 	}
+	// Canonical public order can place native IDs before rooted Memory IDs.
+	ordered := func(items ...bdpwire.BeadRecord) bdpwire.BeadRecords {
+		sort.Slice(items, func(i, j int) bool { return items[i].ID < items[j].ID })
+		return items
+	}
+	expectedBefore := ordered(alpha, plan, work)
 	var first bdpwire.BeadCollection
 	read(scope+"beads/?limit=1", &first)
-	if first.Next == nil || !reflect.DeepEqual(first.Items, bdpwire.BeadRecords{alpha}) {
+	if first.Next == nil || !reflect.DeepEqual(first.Items, expectedBefore[:1]) || first.Items[0].ID == plan.ID {
 		t.Fatal("first page did not retain the later Memory before deletion")
 	}
 	retainedURL := *first.Next
@@ -162,8 +170,13 @@ func TestGraphReadMemoryDeletionHTTP(t *testing.T) {
 	}
 	var final bdpwire.BeadRecord
 	finalResponse := read(scope+"beads/plan", &final)
-	if final.Revision == plan.Revision || len(final.OwnedLinks) != 0 || final.Attribution == nil || final.Attribution.Principal != "human:unlinker" || finalResponse.Header.Get("ETag") == "" {
+	if final.Revision == plan.Revision || final.Attribution == nil || final.Attribution.Principal != "human:unlinker" || finalResponse.Header.Get("ETag") == "" {
 		t.Fatal("explicit unlink did not expose final current Memory")
+	}
+	for _, group := range final.OwnedLinks {
+		if len(group) != 0 {
+			t.Fatal("explicit unlink left an owned Link")
+		}
 	}
 	deleted, err := store.DeleteMemory(ctx, graphstore.MemoryDeleteRequest{Path: "beads/plan", ExpectedRevision: final.Revision, Actor: "human:deleter"})
 	if err != nil || !deleted.Deleted || deleted.Memory.Revision != final.Revision {
@@ -190,7 +203,7 @@ func TestGraphReadMemoryDeletionHTTP(t *testing.T) {
 	}
 	var fresh bdpwire.BeadCollection
 	read(scope+"beads/?limit=1", &fresh)
-	if got := collect(fresh); !reflect.DeepEqual(got, bdpwire.BeadRecords{alpha, work}) {
+	if got := collect(fresh); !reflect.DeepEqual(got, ordered(alpha, work)) {
 		t.Fatalf("fresh complete mixed inventory contains deleted state: %+v", got)
 	}
 	for _, expected := range []bdpwire.BeadRecord{alpha, work} {
@@ -212,12 +225,12 @@ func TestGraphReadMemoryDeletionHTTP(t *testing.T) {
 	}
 	// Consume and replay the cursor issued before unlink/delete. It returns the
 	// old Memory and its then-owned Link and attribution, not the final live state.
-	if got := collect(first); !reflect.DeepEqual(got, bdpwire.BeadRecords{alpha, plan, work}) {
+	if got := collect(first); !reflect.DeepEqual(got, expectedBefore) {
 		t.Fatal("retained cursor refreshed deleted Memory state")
 	}
 	var replay bdpwire.BeadCollection
 	read(retainedURL, &replay)
-	if !reflect.DeepEqual(replay.Items, bdpwire.BeadRecords{plan}) || replay.Next == nil {
+	if !reflect.DeepEqual(replay.Items, expectedBefore[1:2]) || replay.Next == nil || !reflect.DeepEqual(collect(replay), expectedBefore[1:]) {
 		t.Fatal("retained cursor replay lost old owned state or attribution")
 	}
 	if strings.Contains(srv.stderr.String(), token) {

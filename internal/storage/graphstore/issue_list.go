@@ -137,7 +137,7 @@ func prepareIssueListRequest(in publicops.ListRequest) (publicops.ListRequest, e
 }
 
 func (s *Store) listIssuesInTx(ctx context.Context, tx *sql.Tx, request publicops.ListRequest) (IssueListPage, error) {
-	if err := checkCurrentReadBytes(ctx, tx); err != nil {
+	if err := s.checkCurrentReadBytes(ctx, tx); err != nil {
 		return IssueListPage{}, err
 	}
 	if err := checkBinding(ctx, tx, s.options); err != nil {
@@ -150,8 +150,8 @@ func (s *Store) listIssuesInTx(ctx context.Context, tx *sql.Tx, request publicop
 	if err := tx.QueryRowContext(ctx, "SELECT COUNT(*) FROM graph_preview_catalog WHERE allocation_state='live'").Scan(&count); err != nil {
 		return IssueListPage{}, err
 	}
-	if count > PreviewSnapshotLimit {
-		return IssueListPage{}, fmt.Errorf("%w: graph Issue list exceeds %d live Resources before filtering", ErrLimitExceeded, PreviewSnapshotLimit)
+	if count > int(s.CapacityLimits().Resources) {
+		return IssueListPage{}, fmt.Errorf("%w: graph Issue list exceeds %d live Resources before filtering", ErrLimitExceeded, int(s.CapacityLimits().Resources))
 	}
 	if err := tx.QueryRowContext(ctx, "SELECT COUNT(*) FROM graph_preview_catalog WHERE allocation_state NOT IN ('live','deleted')").Scan(&count); err != nil {
 		return IssueListPage{}, err
@@ -179,11 +179,11 @@ func (s *Store) listIssuesInTx(ctx context.Context, tx *sql.Tx, request publicop
 	// Counts are not in this result's projection. Labels and complete Issue
 	// properties remain present; callers cannot request partial graph records.
 	filter.SkipCounts = true
-	// Every admitted workspace has <=1000 live Resources. Bounding an enormous
+	// The explicit profile bounds all live Resources. Bounding an enormous
 	// requested SQL limit here cannot discard an admitted row, and prevents the
 	// shared probe-row increment from overflowing an arbitrary caller's int.
-	if filter.Limit > PreviewSnapshotLimit {
-		filter.Limit = PreviewSnapshotLimit
+	if filter.Limit > int(s.CapacityLimits().Resources) {
+		filter.Limit = int(s.CapacityLimits().Resources)
 	}
 	filter = workapi.WithFetchOneExtra(workapi.WithRowsBeforeThePage(filter, request.Offset))
 	rows, err := issueops.SearchIssuesWithCountsInTx(ctx, tx, "", filter)
@@ -326,7 +326,7 @@ func (s *Store) checkIssueListCatalogInTx(ctx context.Context, tx *sql.Tx) error
  LEFT JOIN issues i ON c.backing='issue' AND i.id=c.backing_key
  LEFT JOIN dependencies d ON c.backing='dependency' AND d.id=c.backing_key
  LEFT JOIN graph_preview_links l ON l.path=c.path
- WHERE c.allocation_state='live' LIMIT ?`, PreviewSnapshotLimit+1)
+ WHERE c.allocation_state='live' LIMIT ?`, int(s.CapacityLimits().Resources)+1)
 	if err != nil {
 		return err
 	}
@@ -341,7 +341,7 @@ func (s *Store) checkIssueListCatalogInTx(ctx context.Context, tx *sql.Tx) error
 			break
 		}
 		count++
-		if count > PreviewSnapshotLimit {
+		if count > int(s.CapacityLimits().Resources) {
 			readErr = fmt.Errorf("%w: graph Issue list live Resource limit exceeded", ErrLimitExceeded)
 			break
 		}

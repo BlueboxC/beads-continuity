@@ -22,7 +22,7 @@ func (s *Store) ShowIssueDetails(ctx context.Context, path string, opts workapi.
 	}
 	var details *types.IssueDetails
 	err := s.withTx(ctx, false, func(tx *sql.Tx) error {
-		if err := checkCurrentReadBytes(ctx, tx); err != nil {
+		if err := s.checkCurrentReadBytes(ctx, tx); err != nil {
 			return err
 		}
 		if err := checkBinding(ctx, tx, s.options); err != nil {
@@ -47,7 +47,7 @@ func (s *Store) ShowIssueDetailsSelected(ctx context.Context, selector IssueSele
 	}
 	var details *types.IssueDetails
 	err := s.withTx(ctx, false, func(tx *sql.Tx) error {
-		if err := checkCurrentReadBytes(ctx, tx); err != nil {
+		if err := s.checkCurrentReadBytes(ctx, tx); err != nil {
 			return err
 		}
 		if err := checkBinding(ctx, tx, s.options); err != nil {
@@ -83,7 +83,7 @@ func (s *Store) ReadBeadWithIssueDetailsSelected(ctx context.Context, selector I
 	var record any
 	var details *types.IssueDetails
 	err := s.withTx(ctx, false, func(tx *sql.Tx) error {
-		if err := checkCurrentReadBytes(ctx, tx); err != nil {
+		if err := s.checkCurrentReadBytes(ctx, tx); err != nil {
 			return err
 		}
 		if err := checkBinding(ctx, tx, s.options); err != nil {
@@ -134,7 +134,7 @@ func (s *Store) readResourceSelected(ctx context.Context, path, localID string, 
 	var record any
 	var details *types.IssueDetails
 	err := s.withTx(ctx, false, func(tx *sql.Tx) error {
-		if err := checkCurrentReadBytes(ctx, tx); err != nil {
+		if err := s.checkCurrentReadBytes(ctx, tx); err != nil {
 			return err
 		}
 		if err := checkBinding(ctx, tx, s.options); err != nil {

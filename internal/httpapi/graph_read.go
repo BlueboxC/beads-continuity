@@ -43,6 +43,7 @@ type GraphRead struct {
 	limits                        graphread.SelectorLimits
 	discovery                     bdpwire.ReadDiscovery
 	closed                        atomic.Bool
+	boundedPages                  bool
 }
 
 // NewGraphRead constructs process-local continuation state. Startup and requests
@@ -61,6 +62,12 @@ func NewGraphRead(reader *graphread.Reader, scope string) (*GraphRead, error) {
 	// (at most PaginationContextLimit bytes, even if JSON escaping expands each
 	// byte sixfold). Thus no already-issued page can outgrow the response cap.
 	options.MaxSnapshotBytes = graphReadSnapshotLimit
+	capacity := reader.CapacityLimits()
+	if capacity.Profile == graphstore.ContinuityProfile {
+		options.MaxSnapshotItems = int(capacity.Resources)
+		options.MaxSnapshotBytes = int(capacity.CurrentBytes)
+		options.MaxRetainedBytes = 128 << 20
+	}
 	pager, err := graphread.NewPagination(options)
 	if err != nil {
 		return nil, err
@@ -73,6 +80,7 @@ func NewGraphRead(reader *graphread.Reader, scope string) (*GraphRead, error) {
 	generation := hex.EncodeToString(entropy[:])
 	limits := graphread.SelectorLimits{Bytes: 16384, Depth: 256, Nodes: 2048}
 	g := &GraphRead{reader: reader, scope: scope, path: parsed.EscapedPath(), generation: generation, view: "full-workspace:" + generation, pager: pager, limits: limits}
+	g.boundedPages = capacity.Profile == graphstore.ContinuityProfile
 	g.discovery = bdpwire.ReadDiscovery{BDPVersion: bdpwire.BDPVersion, Profile: bdpwire.ProfileRead, Scope: scope, Beads: scope + "beads/", Links: scope + "links/", Types: scope + "types/", Limits: &bdpwire.AdvertisedLimits{
 		Page:      &bdpwire.PageLimits{DefaultItems: options.DefaultPageItems, MaximumItems: options.MaxPageItems},
 		Request:   &bdpwire.RequestLimits{TargetBytes: graphReadTargetLimit},
@@ -116,14 +124,14 @@ func (g *GraphRead) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		graphReadProblem(w, r, code)
 		return
 	}
-	route, err := g.compileRoute(path, query)
-	if err != nil {
-		graphReadFailure(w, r, err)
-		return
-	}
 	// This must also run on Scope/discovery and retained pages. A cursor is
 	// neither authority nor authentication, and must not keep a failed store live.
 	if err := g.reader.ValidateAuthority(r.Context()); err != nil {
+		graphReadFailure(w, r, err)
+		return
+	}
+	route, err := g.resolveRoute(r.Context(), path, query)
+	if err != nil {
 		graphReadFailure(w, r, err)
 		return
 	}
@@ -288,6 +296,23 @@ func (g *GraphRead) collectionPage(ctx context.Context, q *graphread.Selection) 
 	return g.firstPage(q, records)
 }
 func (g *GraphRead) firstPage(q *graphread.Selection, records []json.RawMessage) (graphread.Page, error) {
+	if g.boundedPages {
+		limit, err := g.pager.ValidateLimit(q.Limit())
+		if err != nil {
+			return graphread.Page{}, err
+		}
+		// Validate every future page before issuing any cursor. A larger retained
+		// snapshot never grants a larger HTTP response or an unservable next page.
+		for start := 0; start < len(records); start += limit {
+			used := 0
+			for _, record := range records[start:min(start+limit, len(records))] {
+				if len(record)+1 > graphReadSnapshotLimit-used {
+					return graphread.Page{}, graphstore.ErrLimitExceeded
+				}
+				used += len(record) + 1
+			}
+		}
+	}
 	return g.pager.FirstPage(graphread.FirstPageInput{Items: records, Limit: q.Limit(), AuthorizationView: g.view, ScopeEpoch: g.generation, Projection: q.Projection(), ContinuationURL: q.ContinuationURL()})
 }
 func (g *GraphRead) aggregate(ctx context.Context, path string, q *graphread.Selection) (bdpwire.BeadRecord, error) {

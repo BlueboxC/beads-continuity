@@ -136,7 +136,7 @@ func (s *Store) historicalIssuePatchInTx(ctx context.Context, tx *sql.Tx, path, 
 	return composeHistoricalIssuePatch(current, source, edit)
 }
 
-func checkHistoricalIssueReadBytes(ctx context.Context, tx *sql.Tx, path, revision string) error {
+func (s *Store) checkHistoricalIssueReadBytes(ctx context.Context, tx *sql.Tx, path, revision string) error {
 	var size uint64
 	if err := tx.QueryRowContext(ctx, `SELECT CAST(LEAST(
  COALESCE((SELECT SUM(OCTET_LENGTH(m.owned)+COALESCE(OCTET_LENGTH(m.revision_context),0)+OCTET_LENGTH(v.durable_state)+COALESCE(OCTET_LENGTH(v.change_actor),0)+COALESCE(OCTET_LENGTH(v.attribution_status),0)+256)
@@ -145,8 +145,8 @@ func checkHistoricalIssueReadBytes(ctx context.Context, tx *sql.Tx, path, revisi
  WHERE m.path=? AND m.version=? AND v.removed_at IS NULL AND NOT(c.allocation_state='deleted' AND JSON_VALID(CAST(d.snapshot AS CHAR)) AND m.version=JSON_UNQUOTE(JSON_EXTRACT(CAST(d.snapshot AS CHAR),'$.previousVersion')))),0)
  +COALESCE((SELECT SUM(OCTET_LENGTH(m.owned)+COALESCE(OCTET_LENGTH(m.revision_context),0)+OCTET_LENGTH(v.durable_state)+COALESCE(OCTET_LENGTH(v.change_actor),0)+COALESCE(OCTET_LENGTH(v.attribution_status),0)+256)
  FROM graph_preview_catalog c JOIN graph_preview_versions d ON d.path=c.path AND d.version=c.revision JOIN graph_preview_issue_versions m ON m.path=c.path AND m.version=CASE WHEN JSON_VALID(CAST(d.snapshot AS CHAR)) THEN JSON_UNQUOTE(JSON_EXTRACT(CAST(d.snapshot AS CHAR),'$.previousVersion')) ELSE NULL END JOIN issue_versions v ON v.issue_id=m.issue_id AND v.revision=m.issue_revision WHERE c.path=? AND c.allocation_state='deleted' AND c.backing='issue'),0)
- +COALESCE((SELECT OCTET_LENGTH(v.snapshot)+OCTET_LENGTH(v.actor)+256 FROM graph_preview_versions v JOIN graph_preview_catalog c ON c.path=v.path WHERE v.path=? AND v.version=? AND NOT(c.allocation_state='deleted' AND c.revision=v.version)),0),?) AS UNSIGNED)`, path, revision, path, path, revision, PreviewCurrentReadByteLimit+1).Scan(&size); err != nil {
+ +COALESCE((SELECT OCTET_LENGTH(v.snapshot)+OCTET_LENGTH(v.actor)+256 FROM graph_preview_versions v JOIN graph_preview_catalog c ON c.path=v.path WHERE v.path=? AND v.version=? AND NOT(c.allocation_state='deleted' AND c.revision=v.version)),0),?) AS UNSIGNED)`, path, revision, path, path, revision, s.CapacityLimits().CurrentBytes+1).Scan(&size); err != nil {
 		return err
 	}
-	return checkCurrentReadBytesAdditional(ctx, tx, size)
+	return s.checkCurrentReadBytesAdditional(ctx, tx, size)
 }

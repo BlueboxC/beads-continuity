@@ -48,7 +48,7 @@ Root owns fork policy, public API packages, license, build/version files, small 
 - This branch implements the pinned PR291 provider and the fork continuity adapter using schema11/generation13. Generation13 preserves the three frozen schema8 informational Types and immutable native dependency ID/thread facts; upstream generation12 is a different format.
 - Ordinary native APIs and the qualified Dolt tuple remain unchanged. Existing graph selectors require explicit conversion; ordinary discovery/open never migrates them. Do not install this candidate or activate project databases as part of copy qualification.
 - Preserve original retained bytes, tokens, Types and Dolt references. Conversion appends new current boundaries and records public-identity mappings; it never rewrites old snapshots or substitutes JSONL interchange for full-history recovery.
-- Preview3 HTTP/BDP serving and independent graph-clone merge are separate unqualified gates; copy/continuity qualification does not grant either capability.
+- Preview3 HTTP/BDP admits only bounded GET/HEAD reads on the ordinary SQL-server route, with exact public allocation identity and the existing Host/auth controls. History, aliases, HTTP mutation, embedded CLI serving, hot restore and independent graph-clone merge remain refused. Copy qualification never activates real project selectors.
 - `engdocs/design/preview3-integration.md` owns preservation, copy-only CLI and recovery gates. Work state belongs in the operator Beads workspace; private project captures and evidence stay outside public Git.
 
 ## Verification

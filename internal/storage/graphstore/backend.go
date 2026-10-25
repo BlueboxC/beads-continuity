@@ -49,6 +49,9 @@ func (s *Store) Close() error {
 }
 
 func validateOptions(o Options) error {
+	if _, err := capacityLimits(o.OperationalProfile); err != nil {
+		return err
+	}
 	if o.Backend != "embedded" && o.Backend != "server" {
 		return fmt.Errorf("%w: backend must be embedded or server", ErrInvalidStore)
 	}
@@ -274,7 +277,7 @@ func (s *Store) withTxPolicy(ctx context.Context, policy txPolicy, fn func(*sql.
 		if usageErr != nil {
 			return usageErr
 		}
-		if err = checkAcquisitionGrowth(before, after); err != nil {
+		if err = checkProfileGrowth(s.options.OperationalProfile, before, after); err != nil {
 			return err
 		}
 		if err = checkCurrentIssueAuthority(ctx, tx); err != nil {

@@ -257,7 +257,7 @@ func (s *Store) ImportLegacyWithOptions(ctx context.Context, input legacyimport.
 		if err := s.afterStage("import-retained"); err != nil {
 			return err
 		}
-		if err := checkCurrentReadBytes(ctx, tx); err != nil {
+		if err := s.checkCurrentReadBytes(ctx, tx); err != nil {
 			return fmt.Errorf("validate imported current-read representation: %w", err)
 		}
 		return nil

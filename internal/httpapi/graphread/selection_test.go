@@ -107,7 +107,6 @@ func TestCollectionInvalidQueries(t *testing.T) {
 		{"beads", "type=types/a"}, {"beads", "conformsTo=urn:type:a"},
 		{"beads", "type=https://example.test/read/beads/a"},
 		{"beads", "type=https://example.test/read/types/%2561"},
-		{"links", "source=links/a"}, {"links", "target=alias/a"},
 		{"links", "endpoint=https://EXAMPLE.test/read/beads/a"},
 		{"links", "endpoint=https://example.test/read/beads/%2561"},
 		{"types", "cursor=abc&unknown=x"}, {"unknown", ""},
@@ -200,6 +199,27 @@ func TestIncidentSelection(t *testing.T) {
 	for _, values := range []url.Values{{"direction": {"out"}}, {"type": {selectionScope + "types/link"}}, {"view": {"properties"}}} {
 		if _, err := CompileIncident(selectionScope, "beads/z", values, selectionLimits); err == nil {
 			t.Fatal("invalid incident parameters admitted")
+		}
+	}
+}
+
+func TestEndpointPredicatesPreserveOpaquePublicIDs(t *testing.T) {
+	for _, name := range []string{"source", "target", "endpoint"} {
+		for _, id := range []string{"work", "links/a", "alias/a", "types/custom"} {
+			q, err := CompileCollection(selectionScope, "links", url.Values{name: {id}}, selectionLimits)
+			if err != nil {
+				t.Fatal(err)
+			}
+			got := q.source
+			if name == "target" {
+				got = q.target
+			}
+			if name == "endpoint" {
+				got = q.endpoint
+			}
+			if got != selectionScope+id {
+				t.Fatalf("%s %s became %s", name, id, got)
+			}
 		}
 	}
 }

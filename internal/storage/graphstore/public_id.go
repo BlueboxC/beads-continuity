@@ -70,7 +70,7 @@ func (s *Store) resolveAllocatedResourcePath(ctx context.Context, id string, all
 	}
 	var selected string
 	err := s.withTx(ctx, false, func(tx *sql.Tx) error {
-		if err := checkCurrentReadBytes(ctx, tx); err != nil {
+		if err := s.checkCurrentReadBytes(ctx, tx); err != nil {
 			return err
 		}
 		if err := checkBinding(ctx, tx, s.options); err != nil {
@@ -268,7 +268,7 @@ func (s *Store) ResolveMemorySelector(ctx context.Context, selector string) (str
 		if err := checkBinding(ctx, tx, s.options); err != nil {
 			return err
 		}
-		if err := checkCurrentReadBytes(ctx, tx); err != nil {
+		if err := s.checkCurrentReadBytes(ctx, tx); err != nil {
 			return err
 		}
 		identity, err := resolveAllocatedResourceIdentityInTx(ctx, tx, id)

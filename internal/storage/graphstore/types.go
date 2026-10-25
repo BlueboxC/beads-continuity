@@ -29,6 +29,9 @@ type Binding struct {
 // Options selects an explicit backend. Existing opens never provision or migrate.
 // DataDir is the already-created embedded engine directory, not a second DB.
 type Options struct {
+	// OperationalProfile must be selected explicitly for each open.
+	OperationalProfile string
+
 	// AssessmentsEnabled admits assessment authoring; definitions and reads remain intact.
 	AssessmentsEnabled bool
 

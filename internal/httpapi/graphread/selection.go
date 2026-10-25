@@ -49,7 +49,7 @@ func CompileCollection(scope, collection string, parameters url.Values, limits S
 // supplied it must equal links. Unlike collections, incident views accept only
 // direction, limit and cursor controls, as well as view=links.
 func CompileIncident(scope, path string, parameters url.Values, limits SelectorLimits) (*Selection, error) {
-	if err := graph.ValidateBeadPath(path); err != nil {
+	if err := graph.ValidateCanonicalResourceID(path); err != nil {
 		return nil, &ParameterError{Name: "bead"}
 	}
 	return compileSelection(scope, "links", path, parameters, limits)
@@ -108,17 +108,17 @@ func compileSelection(scope, collection, bead string, parameters url.Values, lim
 				q.conformsTo = value
 			}
 		case "source", "target", "endpoint":
-			ref, err := graph.ParseRef(scope, value, "")
+			ref, err := selectionEndpoint(scope, value)
 			if err != nil {
 				return nil, &ParameterError{Name: name}
 			}
 			switch name {
 			case "source":
-				q.source = ref.URL(scope)
+				q.source = ref
 			case "target":
-				q.target = ref.URL(scope)
+				q.target = ref
 			case "endpoint":
-				q.endpoint = ref.URL(scope)
+				q.endpoint = ref
 			}
 		case "selector":
 			selector, err := CompileSelector(value, limits)
@@ -310,4 +310,23 @@ func inventoryConformance(types []bdpwire.TypeDescriptor) (map[string]map[string
 		result[typ.ID] = seen
 	}
 	return result, nil
+}
+
+// Endpoint predicates compare canonical public identities, not private rooted
+// addresses. Foreign absolute URIs retain their literal spelling.
+func selectionEndpoint(scope, value string) (string, error) {
+	if strings.HasPrefix(value, scope) {
+		if _, err := graph.ScopeLocalPublicResourceID(scope, value); err != nil {
+			return "", err
+		}
+		return value, nil
+	}
+	if !strings.Contains(value, ":") {
+		return graph.CanonicalPublicResourceURL(scope, value)
+	}
+	ref, err := graph.ParseRef(scope, value, "")
+	if err != nil {
+		return "", err
+	}
+	return ref.URL(scope), nil
 }

@@ -250,7 +250,7 @@ func (s *Store) writeNativeLinkPropertiesInTx(ctx context.Context, tx *sql.Tx, r
 	if err != nil {
 		return LinkMutationResult{}, err
 	}
-	if err := checkCurrentReadBytes(ctx, tx); err != nil {
+	if err := s.checkCurrentReadBytes(ctx, tx); err != nil {
 		return LinkMutationResult{}, err
 	}
 	if err := s.validateVersionLink(ctx, tx, link, snapshot, request.Actor); err != nil {

@@ -19,12 +19,12 @@ func (s *Store) SearchIssueRows(ctx context.Context, query string, filter types.
 	if !filter.SkipWisps || (filter.Ephemeral != nil && *filter.Ephemeral) {
 		return nil, fmt.Errorf("%w: graph Issue discovery requires durable scope", ErrCapabilityUnavailable)
 	}
-	// The graph catalog has at most PreviewSnapshotLimit live Resources, so no
+	// The selected profile bounds all live Resources, so no
 	// admitted Issue can be lost by this acquisition bound.
-	filter.Limit = PreviewSnapshotLimit
+	filter.Limit = int(s.CapacityLimits().Resources)
 	var result []*types.IssueWithCounts
 	err := s.withTx(ctx, false, func(tx *sql.Tx) error {
-		if err := checkCurrentReadBytes(ctx, tx); err != nil {
+		if err := s.checkCurrentReadBytes(ctx, tx); err != nil {
 			return err
 		}
 		if err := checkBinding(ctx, tx, s.options); err != nil {
@@ -37,8 +37,8 @@ func (s *Store) SearchIssueRows(ctx context.Context, query string, filter types.
 		if err := tx.QueryRowContext(ctx, "SELECT COUNT(*) FROM graph_preview_catalog WHERE allocation_state='live'").Scan(&count); err != nil {
 			return err
 		}
-		if count > PreviewSnapshotLimit {
-			return fmt.Errorf("%w: graph Issue discovery exceeds %d live Resources", ErrLimitExceeded, PreviewSnapshotLimit)
+		if count > int(s.CapacityLimits().Resources) {
+			return fmt.Errorf("%w: graph Issue discovery exceeds %d live Resources", ErrLimitExceeded, int(s.CapacityLimits().Resources))
 		}
 		if err := tx.QueryRowContext(ctx, "SELECT COUNT(*) FROM graph_preview_catalog WHERE allocation_state NOT IN ('live','deleted')").Scan(&count); err != nil {
 			return err

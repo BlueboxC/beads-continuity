@@ -39,9 +39,38 @@ current context can be read without loading obsolete generations.
 
 See the [Preview3 preservation contract](https://github.com/BlueboxC/beads-continuity/blob/codex/preview3-integration-20261024/engdocs/design/preview3-integration.md)
 for exact boundaries and qualification. Installation, real activation,
-independent graph-clone merge and Preview3 HTTP/BDP transport qualification are
-outside this copy-only phase. The reference below describes the prior schema8
+and independent graph-clone merge remain outside this copy-only phase.
+Preview3 HTTP/BDP read routing is separately qualified against owned ordinary SQL
+servers and copies; that does not admit HTTP writes or activate a workspace. The reference below describes the prior schema8
 baseline and requires its matching binary.
+
+### Explicit capacity for Preview3
+
+Select the profile on each process that needs the larger retained workspace:
+
+```sh
+bd --graph-profile continuity-v1 status --graph --json
+bd --graph-profile continuity-v1 --readonly prime
+bd --graph-profile continuity-v1 serve --graph-viewer --addr 127.0.0.1:18750
+```
+
+This profile allows 16,384 live Resources and 2,097,152 retained config-memory rows
+(up to 8 GiB), with an explicit 64 MiB graph-acquisition bound. Selected context
+and code keep their 64 MiB bounds. Status reports measured logical usage and the
+chosen limits. No flag is saved, no history is pruned, and omission keeps the
+ordinary policy. Each future writer launcher/hook must pass the choice explicitly;
+these examples do not install or activate the candidate. Viewer and maintenance
+watch children preserve their parent's explicit selection.
+
+Ordinary SQL-server `serve` admits BDP GET/HEAD discovery, exact public Resources
+and Types, properties, collection/incident selection, aggregates, validators and
+bounded process-local pagination. Kind comes from the catalog, including IDs
+with literal kind-like prefixes. Private locators are not public aliases.
+HTTP writes, HTTP History, alias resolution, embedded CLI BDP serving and hot
+restore remain unavailable. The profile bounds pagination snapshots to 64 MiB/16,384 items and retained
+payload to 128 MiB. Every future page must fit below 7 MiB before a cursor is
+issued, preserving the 8 MiB response ceiling. Cursor-count and lifetime bounds
+remain unchanged; an oversized selection refuses.
 
 ## Schema8 baseline reference
 

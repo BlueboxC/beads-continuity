@@ -120,3 +120,46 @@ Keep source reviewable on `codex/preview3-integration-20261024`. Execution state
 belongs in operator Beads; project captures, hashes, logs and recovery material
 stay private. Installation and real activation are separate work, requiring a
 fresh coherent capture and resolution of any capacity/admission limits.
+
+## Explicit operational profile
+
+`--graph-profile continuity-v1` selects capacity for one graph CLI process or
+`graphstore.Options.OperationalProfile` for one library open. It is not a setting,
+environment fallback or automatic response to imported size. It changes no
+persisted format and does not make an old binary claim new capacity. Omission
+retains the conservative ordinary policy; unknown profiles and native CLI routes
+refuse before opening storage.
+
+The profile permits 16,384 live Resources and 2,097,152 retained config memory rows
+(up to 8 GiB including key/row charges). The explicitly selected current graph acquisition is 64 MiB; the ordinary
+profile remains at 16 MiB. These are finite logical limits, not disk quotas or heap guarantees.
+Selected code/context acquisition remains 65,536 rows/64 MiB. All dimensions are
+checked before/after each write within its transaction; an already oversized
+dimension can stay or shrink. Human records and retained generations are never
+removed to fit the policy. Full-plane List, ordinary CurrentSnapshot, input
+limits, owned-Link limits and generic traversal retain their existing ceilings.
+
+Admitted paths are guarded CLI Resource/Issue mutation and discovery, selected
+prime/knowledge/code/activity/project-viewer continuity, and ordinary SQL-server
+BDP GET/HEAD discovery, exact public Resource/Type, properties, collections,
+selectors, incident Links, aggregates, validators and process-local pagination.
+A public `links/...` ID can be a Bead, and a `beads/...` ID can be a Link; the
+catalog decides kind. Exact installed Type URLs remain reserved. Foreign/missing
+IDs and private-locator-only addresses cannot acquire authority.
+
+HTTP writes, history/version URLs, alias resolution, embedded CLI BDP serving,
+proxy conversion, hot restore and independent-clone graph merge remain refused.
+The profile retains at most 64 MiB/16,384 items per pagination snapshot and
+128 MiB across cached snapshots. Every future page is checked below 7 MiB before
+issuing a cursor; the 8 MiB response ceiling stays unchanged. It may
+refuse a large selection; pagination does not bypass acquisition bounds. No BDP
+write or full History capability is advertised.
+
+Before later real activation: take a fresh coherent capture of each workspace,
+record the exact selector/binary/engine tuple, verify a matched full native
+backup/restore and retained history, qualify writes and selected reads under the
+explicit profile, and arrange quiescent writers. Review the measured capacity
+headroom and supply the explicit profile to each writer launcher/hook; this phase
+does not rewrite existing hooks or silently raise their default capacity. Conversion receipts from this copy-only phase cannot activate or roll
+back a real selector; later writes require a new recovery checkpoint. Activation
+and installation need their separate authorized work phase.

@@ -200,7 +200,7 @@ func (s *Store) CreateChildIssue(ctx context.Context, request IssueChildCreateRe
 			return err
 		}
 		if create.Issue.Notes != "" {
-			if err := checkCurrentReadBytes(ctx, tx); err != nil {
+			if err := s.checkCurrentReadBytes(ctx, tx); err != nil {
 				return err
 			}
 		}

@@ -90,7 +90,7 @@ func (s *Store) recoverIssueInTx(ctx context.Context, tx *sql.Tx, path string, b
 	if err := s.recordIssueMappingContextInTx(ctx, tx, path, next.ID, context, attempt.Actor); err != nil {
 		return IssueMutationResult{}, err
 	}
-	if err := checkCurrentReadBytes(ctx, tx); err != nil {
+	if err := s.checkCurrentReadBytes(ctx, tx); err != nil {
 		return IssueMutationResult{}, err
 	}
 	if err := s.validateTypeStateInTx(ctx, tx); err != nil {

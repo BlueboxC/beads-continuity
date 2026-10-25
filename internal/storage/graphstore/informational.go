@@ -295,7 +295,7 @@ func (s *Store) writeLinkProperties(ctx context.Context, request LinkUpdateReque
 			if err != nil {
 				return err
 			}
-			if err := checkCurrentReadBytesAdditional(ctx, tx, historicalBytes); err != nil {
+			if err := s.checkCurrentReadBytesAdditional(ctx, tx, historicalBytes); err != nil {
 				return err
 			}
 			if state == "deleted" {
@@ -488,7 +488,7 @@ func (s *Store) writeLinkProperties(ctx context.Context, request LinkUpdateReque
 			if request.FromRevision != "" || patch != nil || request.MergeProperties || hasCommonMetadataPatch(request.Metadata) || pinsChanged {
 				// The new patch route must not commit a graph that current reads
 				// cannot acquire. Replacement retains its existing policy.
-				return checkCurrentReadBytes(ctx, tx)
+				return s.checkCurrentReadBytes(ctx, tx)
 			}
 		}
 		return err

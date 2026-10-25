@@ -41,7 +41,7 @@ type BeadListPage struct {
 func (s *Store) ListBeads(ctx context.Context, request BeadListRequest) (BeadListPage, error) {
 	var page BeadListPage
 	err := s.withTx(ctx, false, func(tx *sql.Tx) error {
-		snapshot, err := s.currentSnapshotInTx(ctx, tx)
+		snapshot, err := s.operationalSnapshotInTx(ctx, tx)
 		if err != nil {
 			return err
 		}

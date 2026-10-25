@@ -114,10 +114,17 @@ func checkCurrentReadBytesBudget(ctx context.Context, tx *sql.Tx, additional, li
 	return nil
 }
 
-func checkHistoricalMemoryReadBytes(ctx context.Context, tx *sql.Tx, path, revision string) error {
+func (s *Store) checkHistoricalMemoryReadBytes(ctx context.Context, tx *sql.Tx, path, revision string) error {
 	var size uint64
-	if err := tx.QueryRowContext(ctx, `SELECT CAST(LEAST(COALESCE(SUM(OCTET_LENGTH(snapshot)+OCTET_LENGTH(actor)+256),0),?) AS UNSIGNED) FROM graph_preview_versions WHERE path=? AND version=?`, PreviewCurrentReadByteLimit+1, path, revision).Scan(&size); err != nil {
+	if err := tx.QueryRowContext(ctx, `SELECT CAST(LEAST(COALESCE(SUM(OCTET_LENGTH(snapshot)+OCTET_LENGTH(actor)+256),0),?) AS UNSIGNED) FROM graph_preview_versions WHERE path=? AND version=?`, s.CapacityLimits().CurrentBytes+1, path, revision).Scan(&size); err != nil {
 		return err
 	}
-	return checkCurrentReadBytesAdditional(ctx, tx, size)
+	return s.checkCurrentReadBytesAdditional(ctx, tx, size)
+}
+
+func (s *Store) checkCurrentReadBytes(ctx context.Context, tx *sql.Tx) error {
+	return s.checkCurrentReadBytesAdditional(ctx, tx, 0)
+}
+func (s *Store) checkCurrentReadBytesAdditional(ctx context.Context, tx *sql.Tx, additional uint64) error {
+	return checkCurrentReadBytesBudget(ctx, tx, additional, s.CapacityLimits().CurrentBytes)
 }

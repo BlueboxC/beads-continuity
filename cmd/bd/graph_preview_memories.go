@@ -38,7 +38,7 @@ func runGraphPreviewMemories(cmd *cobra.Command, args []string) error {
 	all, _ := cmd.Flags().GetBool("all")
 	details, _ := cmd.Flags().GetBool("details")
 	return withGraphStoreOutput(func(ctx context.Context, s *graphstore.Store) (any, string, error) {
-		snapshot, err := s.CurrentSnapshot(ctx)
+		snapshot, err := s.OperationalSnapshot(ctx)
 		if err != nil {
 			return nil, "", err
 		}

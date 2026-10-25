@@ -34,7 +34,7 @@ func (s *Store) ListChildren(ctx context.Context, parentPath string) ([]IssueRec
 }
 
 func (s *Store) listChildrenInTx(ctx context.Context, tx *sql.Tx, parentPath string) ([]IssueRecord, error) {
-	if err := checkCurrentReadBytes(ctx, tx); err != nil {
+	if err := s.checkCurrentReadBytes(ctx, tx); err != nil {
 		return nil, err
 	}
 	if err := checkBinding(ctx, tx, s.options); err != nil {

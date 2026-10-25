@@ -19,7 +19,7 @@ Listener, Host allowlist, optional bearer authentication, request/concurrency li
 
 - Normal API callers may supply ExternalResolver; bind it to each request context behind existing Host/auth controls. Provider paths remain caller-owned and missing resolution stays blocked. The exclusive graph viewer does not acquire external provider configuration.
 
-- GraphRead is an exclusive read-only BDP surface and refuses GraphViewer/provider/roles/journal mixtures. Reuse Host/auth/deadline/concurrency controls; keep normal API and native viewer routes intact. Ordinary-server Graph Preview serving is admitted; embedded Graph Preview serving is refused.
+- GraphRead is an exclusive read-only BDP surface and refuses GraphViewer/provider/roles/journal mixtures. Reuse Host/auth/deadline/concurrency controls; keep normal API and native viewer routes intact. Ordinary-server Graph Preview serving is admitted; embedded Graph Preview CLI serving is refused. Preview3 GET/HEAD routing resolves exact catalog identities before choosing Bead/Link behavior, including opaque IDs and literal kind-like prefixes. Installed Types own only their exact URLs. History, aliases, writes and hot restore remain unavailable; no private locator fallback. Read selections retain the profile graph bound and existing HTTP/pagination caps.
 
 ## Work Guidance
 
@@ -27,7 +27,7 @@ Reuse the transport; do not create a second API or persistence engine for graphs
 
 ## Verification
 
-Run affected httpapi tests, including exclusive route, Host/auth and mixed-source refusal checks.
+Run affected httpapi tests, including exclusive route, Host/auth and mixed-source refusal checks. Qualify ordinary-server reads on an owned SQL fixture; fixtures use writer-returned public IDs and explicit owned Link Types from the selected catalog.
 
 ## Child DOX Index
 - [graphread/DOX.md](graphread/DOX.md) — Read-only BDP projections and pagination.

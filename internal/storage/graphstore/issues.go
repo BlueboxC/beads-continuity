@@ -165,7 +165,7 @@ func (s *Store) CreateIssue(ctx context.Context, path string, request publicops.
 		// Initial notes have no admitted replacement/clear inverse. Charge the
 		// completed mapping and native retained head before committing.
 		if request.Issue.Notes != "" {
-			if err := checkCurrentReadBytes(ctx, tx); err != nil {
+			if err := s.checkCurrentReadBytes(ctx, tx); err != nil {
 				return err
 			}
 		}
@@ -215,7 +215,7 @@ func (s *Store) Read(ctx context.Context, path string) (any, error) {
 	}
 	var result any
 	err := s.withTx(ctx, false, func(tx *sql.Tx) error {
-		if err := checkCurrentReadBytes(ctx, tx); err != nil {
+		if err := s.checkCurrentReadBytes(ctx, tx); err != nil {
 			return err
 		}
 		if err := checkBinding(ctx, tx, s.options); err != nil {
@@ -245,7 +245,7 @@ func (s *Store) ReadBeadSelected(ctx context.Context, selector IssueSelector) (a
 	}
 	var result any
 	err := s.withTx(ctx, false, func(tx *sql.Tx) error {
-		if err := checkCurrentReadBytes(ctx, tx); err != nil {
+		if err := s.checkCurrentReadBytes(ctx, tx); err != nil {
 			return err
 		}
 		if err := checkBinding(ctx, tx, s.options); err != nil {

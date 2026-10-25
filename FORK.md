@@ -505,3 +505,7 @@ Explicit native adoption and `bd graph-convert schema8-copy --source <copied-eng
 Prime and project reads select current code generations without loading obsolete blobs; activity retains full counts while selecting bounded recent events/handoffs. Ordinary complete snapshots keep 2,048 Resources/16 MiB; the fork project profile has separate explicit graph/current-code budgets. Larger preserved datasets do not silently gain ordinary write capacity: no already oversized acquisition dimension may grow, and other dimensions retain their existing caps.
 
 No real database conversion, installation, Preview3 activation or graph-clone merge is included. Schema8 copy receipts refuse activation. See the [integration and recovery contract](engdocs/design/preview3-integration.md).
+
+### Preview3 explicit operational capacity
+
+The isolated Preview3 branch adds the per-open `continuity-v1` capacity profile and exact public-identity BDP read routing. Ordinary limits, the pinned engine, full history, human knowledge, selected continuity projections and fork customizations remain intact. See `engdocs/design/preview3-integration.md` for finite limits, admitted routes and copy-only activation gates.

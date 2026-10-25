@@ -14,7 +14,7 @@ Root and parent DOX contracts remain binding.
 
 - Validate persisted authority on every read; reject inconsistent payloads and incomplete bounded representations.
 - Map stored claimed attribution to public writer-supplied basis. Do not authenticate actors or expose local history ordinals.
-- Partial Preview3 descriptors require the store's captured effective ownership sidecar; do not infer inherited owned groups from descriptor spelling. Project captured native endpoint pins and sort by public identity. This is projection compatibility, not qualification of the Preview3 HTTP routes.
+- Partial Preview3 descriptors require the store's captured effective ownership sidecar; do not infer inherited owned groups from descriptor spelling. Project captured native endpoint pins and sort by public identity. Use exact public allocation IDs, including endpoint predicates and incident paths. Operational inventory uses the explicitly selected capacity profile; ordinary full snapshots keep their limits.
 - Pagination is process-local and bounded; tokens cannot resume across server restarts.
 
 ## Work Guidance

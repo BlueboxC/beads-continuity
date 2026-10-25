@@ -44,7 +44,7 @@ func (s *Store) CollectLinks(ctx context.Context, request LinkCollectionRequest)
 	}
 	var result []LinkRecord
 	err := s.withTx(ctx, false, func(tx *sql.Tx) error {
-		if err := checkCurrentReadBytes(ctx, tx); err != nil {
+		if err := s.checkCurrentReadBytes(ctx, tx); err != nil {
 			return err
 		}
 		if err := checkBinding(ctx, tx, s.options); err != nil {
@@ -88,7 +88,7 @@ func (s *Store) CollectLinks(ctx context.Context, request LinkCollectionRequest)
 			currentRevisions[endpoint.path] = revision
 		}
 		rows, err := tx.QueryContext(ctx, `SELECT path FROM graph_preview_catalog
- WHERE allocation_state='live' AND resource_kind='link' LIMIT ?`, PreviewSnapshotLimit+1)
+ WHERE allocation_state='live' AND resource_kind='link' LIMIT ?`, int(s.CapacityLimits().Resources)+1)
 		if err != nil {
 			return err
 		}
@@ -103,8 +103,8 @@ func (s *Store) CollectLinks(ctx context.Context, request LinkCollectionRequest)
 		if err := errors.Join(rows.Err(), rows.Close()); err != nil {
 			return err
 		}
-		if len(paths) > PreviewSnapshotLimit {
-			return fmt.Errorf("%w: complete Link collection exceeds %d live Links; pagination is unavailable", ErrLimitExceeded, PreviewSnapshotLimit)
+		if len(paths) > int(s.CapacityLimits().Resources) {
+			return fmt.Errorf("%w: complete Link collection exceeds %d live Links; pagination is unavailable", ErrLimitExceeded, int(s.CapacityLimits().Resources))
 		}
 		sort.Slice(paths, func(i, j int) bool { return graph.CompareCodeUnits(paths[i], paths[j]) < 0 })
 		result = make([]LinkRecord, 0, len(paths))

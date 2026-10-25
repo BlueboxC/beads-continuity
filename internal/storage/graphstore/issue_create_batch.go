@@ -134,7 +134,7 @@ func (s *Store) CreateIssueBatch(ctx context.Context, request publicops.CreateBa
 			hasInitialNotes = hasInitialNotes || issue.Notes != ""
 		}
 		if hasInitialNotes {
-			if err := checkCurrentReadBytes(ctx, tx); err != nil {
+			if err := s.checkCurrentReadBytes(ctx, tx); err != nil {
 				return err
 			}
 		}

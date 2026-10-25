@@ -62,7 +62,7 @@ func (s *Store) blockedIssuesInTx(ctx context.Context, tx *sql.Tx) ([]BlockedIss
 }
 
 func (s *Store) blockedIssuesFilteredInTx(ctx context.Context, tx *sql.Tx, filter types.WorkFilter, parent *IssueSelector) ([]BlockedIssue, error) {
-	snapshot, err := s.currentSnapshotInTx(ctx, tx)
+	snapshot, err := s.operationalSnapshotInTx(ctx, tx)
 	if err != nil {
 		return nil, err
 	}

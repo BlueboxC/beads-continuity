@@ -68,7 +68,7 @@ func (s *Store) validateTypeStateInTx(ctx context.Context, tx *sql.Tx) error {
 		// writers retain payload, history and Dependency validation unchanged.
 		return nil
 	}
-	if err := checkTypeValidationBytes(ctx, tx); err != nil {
+	if err := s.checkTypeValidationBytes(ctx, tx); err != nil {
 		return err
 	}
 	if err := s.checkLinkMappingsInTx(ctx, tx); err != nil {
@@ -225,7 +225,8 @@ func scanTypeValidationBead(rows *sql.Rows) (typeValidationBead, error) {
 const typeValidationBeads = `c.resource_kind='bead' AND c.allocation_state='live' AND
  (c.backing='generic' OR EXISTS(SELECT 1 FROM graph_preview_links l WHERE l.source_path=c.path OR l.target_path=c.path))`
 
-func checkTypeValidationBytes(ctx context.Context, tx *sql.Tx) error {
+func (s *Store) checkTypeValidationBytes(ctx context.Context, tx *sql.Tx) error {
+	limit := s.CapacityLimits().CurrentBytes
 	queries := []currentReadSizeQuery{
 		{"graph_preview_catalog c LEFT JOIN graph_preview_payloads p ON p.path=c.path WHERE " + typeValidationBeads,
 			"c.path,c.type_url,c.backing,CASE WHEN c.backing='generic' THEN p.properties ELSE NULL END", 1},
@@ -242,11 +243,11 @@ func checkTypeValidationBytes(ctx context.Context, tx *sql.Tx) error {
 			fields = append(fields, "COALESCE(OCTET_LENGTH("+strings.TrimSpace(column)+"),0)")
 		}
 		var size uint64
-		if err := tx.QueryRowContext(ctx, "SELECT CAST(LEAST(COALESCE(SUM("+strings.Join(fields, "+")+"),0),?) AS UNSIGNED) FROM "+query.from, PreviewCurrentReadByteLimit+1).Scan(&size); err != nil {
+		if err := tx.QueryRowContext(ctx, "SELECT CAST(LEAST(COALESCE(SUM("+strings.Join(fields, "+")+"),0),?) AS UNSIGNED) FROM "+query.from, limit+1).Scan(&size); err != nil {
 			return err
 		}
-		if size > PreviewCurrentReadByteLimit-used {
-			return fmt.Errorf("%w: Type validation population exceeds its %d-byte acquisition budget", ErrLimitExceeded, PreviewCurrentReadByteLimit)
+		if size > limit-used {
+			return fmt.Errorf("%w: Type validation population exceeds its %d-byte acquisition budget", ErrLimitExceeded, limit)
 		}
 		used += size
 	}
