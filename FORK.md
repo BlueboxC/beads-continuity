@@ -517,3 +517,7 @@ The native federation probe reuses the store's endpoint configuration and final 
 ### CLI pull recovery (#7839 / PR #7849)
 
 Adapted Rongjun GENG (rjgeng) PR7849: declined CLI-transport merge conflicts abort before returning a typed conflict, preserving pre-pull HEAD and subsequent writes. The shared abort fallback is armed only by a known-clean pre-pull state. The adaptation additionally handles determinate settlement rejection and required conflict-read failure; lost commit responses retain their indeterminate marker and do not abort or replay. The native SQL/embedded recovery contracts, engine tuple and graph formats remain unchanged.
+
+### Embedded freeze and commit identity
+
+Adapted Rongjun GENG (rjgeng)’s PR [#7653](https://github.com/gastownhall/beads/pull/7653), including its freeze regressions. Preserve this fork’s stricter server read-only route and existing embedded callers; carry the freeze into the embedded lazy wake and resolve future commit authors only for writes. Pair updates are synchronized, and agent attribution does not borrow an unrelated Git user’s email. Real embedded history checks cover ordinary and explicitly staged commits. In this pinned driver, connection identity alone leaves an ordinary DOLT_COMMIT attributed to root; commitAll now supplies --author too.

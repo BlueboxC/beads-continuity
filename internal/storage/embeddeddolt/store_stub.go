@@ -14,6 +14,9 @@ type EmbeddedDoltStore struct {
 	branch   string
 }
 
+// SetCommitIdentity is a no-op without the embedded engine.
+func SetCommitIdentity(_, _ string) {}
+
 var errNoCGO = errors.New("embeddeddolt: requires CGO (build with CGO_ENABLED=1)")
 
 // Open returns an error when CGO is not enabled.
@@ -32,7 +35,7 @@ func OpenForPreviewCommand(_ context.Context, _, _, _ string) (*EmbeddedDoltStor
 }
 
 // OpenForReadOnlyCommand returns an error when CGO is not enabled.
-func OpenForReadOnlyCommand(_ context.Context, _, _, _ string) (*EmbeddedDoltStore, error) {
+func OpenForReadOnlyCommand(_ context.Context, _, _, _ string, _ ...bool) (*EmbeddedDoltStore, error) {
 	return nil, errNoCGO
 }
 

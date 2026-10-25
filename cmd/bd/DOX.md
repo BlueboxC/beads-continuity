@@ -149,6 +149,8 @@ Root DOX.md and the parent chain remain binding.
 
 - `--graph-profile continuity-v1` explicitly selects per-open capacity for Graph Preview only: 16,384 live Resources, 64 MiB current-graph acquisition, 2,097,152 retained config memory rows/8 GiB. It is never saved or inferred from environment, size or conversion. Explicit graph-convert plans bind it into their private recovery receipts; ordinary native routes refuse it; the viewer and maintain watch pass the explicit choice to their scoped children. Ordinary default capacity, full-plane memory reads, per-input limits and bounded generic traversal remain unchanged. `status --graph` reports the selected limits.
 
+- Pass the invocation migration-freeze result to embedded classified-read opens; expired defers resume waking after thaw. Resolve embedded commit identity before writable opens only, keeping ordinary reads free of Git identity subprocesses. Explicit author values win; an agent actor without an explicit author email uses beads@local instead of another Git user’s address.
+
 ## Work Guidance
 - Routed create adopts a sole metadata-less native database, retaining its prefix and project identity. Refuse ambiguous databases, dirty working sets under committing policy, non-embedded target settings and graph formats before writing selectors. Personal migration shares the guarded adoption; dry-run checks target admission without initialization.
 

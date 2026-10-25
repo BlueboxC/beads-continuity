@@ -132,7 +132,7 @@ func (s *EmbeddedDoltStore) CommitAll(ctx context.Context, message string) (bool
 }
 
 func commitAllInTx(ctx context.Context, tx *sql.Tx, message string, tolerateEmpty bool) (bool, error) {
-	if _, err := tx.ExecContext(ctx, "CALL DOLT_COMMIT('-Am', ?)", message); err != nil {
+	if _, err := tx.ExecContext(ctx, "CALL DOLT_COMMIT('-Am', ?, '--author', ?)", message, commitAuthor()); err != nil {
 		if issueops.IsNothingToCommitError(err) {
 			if tolerateEmpty {
 				return false, nil
@@ -276,9 +276,6 @@ func (s *EmbeddedDoltStore) ListBranches(ctx context.Context) ([]string, error) 
 // Version control operations
 // ---------------------------------------------------------------------------
 
-// commitAuthor returns the author string for merge commits.
-const commitAuthor = commitName + " <" + commitEmail + ">"
-
 func (s *EmbeddedDoltStore) CommitExists(ctx context.Context, commitHash string) (bool, error) {
 	var exists bool
 	err := s.withDBConn(ctx, func(db versioncontrolops.DBConn) error {
@@ -342,7 +339,7 @@ func (s *EmbeddedDoltStore) Merge(ctx context.Context, branch string) ([]storage
 	var conflicts []storage.Conflict
 	err := s.withMutatingDBConn(ctx, func(db versioncontrolops.DBConn) error {
 		var err error
-		conflicts, err = versioncontrolops.Merge(ctx, db, branch, commitAuthor)
+		conflicts, err = versioncontrolops.Merge(ctx, db, branch, commitAuthor())
 		return err
 	})
 	if err == nil && len(conflicts) == 0 && !s.readOnly {
@@ -372,7 +369,7 @@ func (s *EmbeddedDoltStore) MergeWithStrategy(ctx context.Context, branch, strat
 	var conflicts []storage.Conflict
 	err := s.withMutatingPinnedDBConn(ctx, func(db versioncontrolops.DBConn) error {
 		var err error
-		conflicts, err = versioncontrolops.MergeWithStrategy(ctx, db, branch, commitAuthor, strategy)
+		conflicts, err = versioncontrolops.MergeWithStrategy(ctx, db, branch, commitAuthor(), strategy)
 		return err
 	})
 	if err != nil {
@@ -419,7 +416,7 @@ func (s *EmbeddedDoltStore) RecomputeAllBlocked(ctx context.Context) (int, error
 		if err := s.withMutatingDBConn(ctx, func(db versioncontrolops.DBConn) error {
 			return stageAndCommitAfterSQLCommit(ctx, db,
 				versioncontrolops.BlockedRecomputeStagedTables(),
-				versioncontrolops.BlockedRecomputeCommitMsg, commitAuthor)
+				versioncontrolops.BlockedRecomputeCommitMsg, commitAuthor())
 		}); err != nil {
 			return int(changed), err
 		}
@@ -734,7 +731,7 @@ func (s *EmbeddedDoltStore) recomputeBlockedAfterPull(ctx context.Context, preHe
 	}
 	return s.withMutatingDBConn(ctx, func(db versioncontrolops.DBConn) error {
 		return stageAndCommitAfterSQLCommit(ctx, db,
-			map[string]bool{"issues": true}, "bd: recompute is_blocked after pull", commitAuthor)
+			map[string]bool{"issues": true}, "bd: recompute is_blocked after pull", commitAuthor())
 	})
 }
 

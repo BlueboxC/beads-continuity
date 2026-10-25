@@ -365,6 +365,9 @@ type DoltStore struct {
 
 // Config holds Dolt database configuration
 type Config struct {
+	// MigrationFrozen suppresses incidental writes on classified-read opens.
+	MigrationFrozen bool
+
 	Path           string // Path to Dolt database directory
 	BeadsDir       string // Path to .beads directory (for server auto-start when Path is custom)
 	CommitterName  string // Git-style committer name

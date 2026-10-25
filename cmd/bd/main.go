@@ -936,6 +936,25 @@ func getOwner() string {
 	return ""
 }
 
+// resolvedEmbeddedCommitIdentity preserves an explicit author pair and avoids
+// attributing an agent actor to an unrelated Git user's email.
+func resolvedEmbeddedCommitIdentity() (string, string) {
+	name := os.Getenv("GIT_AUTHOR_NAME")
+	email := os.Getenv("GIT_AUTHOR_EMAIL")
+	if name != "" {
+		return name, getOwner()
+	}
+	name, source := resolveActorIdentity()
+	if email == "" {
+		if source == "git" {
+			email = getOwner()
+		} else {
+			email = "beads@local"
+		}
+	}
+	return name, email
+}
+
 func init() {
 	// Initialize viper configuration
 	if err := config.Initialize(); err != nil {
@@ -1645,6 +1664,11 @@ var rootCmd = &cobra.Command{
 		// silently rewritten mid-freeze anyway. Skip both calls under an
 		// active freeze without blocking the read itself. Reuses the single
 		// lookup resolved above rather than repeating the walk.
+		if !useReadOnly {
+			name, email := resolvedEmbeddedCommitIdentity()
+			embeddeddolt.SetCommitIdentity(name, email)
+		}
+
 		frozenForMaintenance := policy.runMaintenance && commandFreeze.Frozen()
 
 		// Track bd version changes unless strict readonly forbids repository mutation.
@@ -1709,6 +1733,7 @@ var rootCmd = &cobra.Command{
 		doltPath := doltserver.ResolveDoltDir(beadsDir)
 		doltCfg := &dolt.Config{
 			ReadOnly:         useReadOnly,
+			MigrationFrozen:  commandFreeze.Frozen(),
 			Preview:          previewMode,
 			DisableAutoStart: policy.disableAutoStart,
 			BeadsDir:         beadsDir,

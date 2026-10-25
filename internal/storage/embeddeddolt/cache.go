@@ -38,8 +38,10 @@ func Open(ctx context.Context, beadsDir, database, branch string) (*EmbeddedDolt
 // not reads, and server mode's read-only opens already skip migration. The
 // returned store is otherwise a normal writable store (read-only commands
 // can still write incidentally, e.g. the post-command autocommit net).
-func OpenForReadOnlyCommand(ctx context.Context, beadsDir, database, branch string) (*EmbeddedDoltStore, error) {
-	return openCached(ctx, beadsDir, database, branch, openReadOnlyCommand)
+// frozen suppresses the lazy defer-wake write during a migration freeze.
+// Omission retains the historical unfrozen behavior.
+func OpenForReadOnlyCommand(ctx context.Context, beadsDir, database, branch string, frozen ...bool) (*EmbeddedDoltStore, error) {
+	return openCached(ctx, beadsDir, database, branch, openReadOnlyCommand, frozen...)
 }
 
 // OpenForWorkingSetReconcile opens like Open, except that a schema.
@@ -67,7 +69,7 @@ func OpenForRemoteSync(ctx context.Context, beadsDir, database, branch string) (
 	return openCached(ctx, beadsDir, database, branch, openRemoteSync)
 }
 
-func openCached(ctx context.Context, beadsDir, database, branch string, intent openIntent) (*EmbeddedDoltStore, error) {
+func openCached(ctx context.Context, beadsDir, database, branch string, intent openIntent, frozen ...bool) (*EmbeddedDoltStore, error) {
 	key, err := cacheKey(beadsDir)
 	if err != nil {
 		return nil, err
@@ -75,7 +77,7 @@ func openCached(ctx context.Context, beadsDir, database, branch string, intent o
 
 	cacheMu.Lock()
 	if entry, ok := cache[key]; ok {
-		// Cache hit: the requested intent is ignored - the store keeps
+		// Cache hit: the requested intent/freeze is ignored - the store keeps
 		// whatever intent it was opened with on the slow path below. This is
 		// safe today because intent is derived once per process from the
 		// command classification (isReadOnlyCommand /
@@ -95,7 +97,7 @@ func openCached(ctx context.Context, beadsDir, database, branch string, intent o
 	cacheMu.Unlock()
 
 	// Slow path: create a new store outside the lock.
-	s, err := newStore(ctx, beadsDir, database, branch, intent)
+	s, err := newStore(ctx, beadsDir, database, branch, intent, frozen...)
 	if err != nil {
 		return nil, err
 	}

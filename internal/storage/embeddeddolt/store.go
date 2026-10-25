@@ -62,7 +62,8 @@ type EmbeddedDoltStore struct {
 	// as fatal. Unlike readOnly, a non-strict intent still allows writes
 	// (e.g. the post-command autocommit net, or the commit itself) - only the
 	// migration step is skipped.
-	intent openIntent
+	intent          openIntent
+	migrationFrozen bool
 }
 
 // openIntent classifies why a store is being opened. openStrict fails the
@@ -151,7 +152,7 @@ func (s *EmbeddedDoltStore) IsClosed() bool {
 // The dolthub/driver/v2 handles its own concurrency internally. File-level locking
 // is only used during bd init (via util.TryLock in the init command) to protect
 // one-time initialization steps — the store itself does not hold any lock.
-func newStore(ctx context.Context, beadsDir, database, branch string, intent openIntent) (*EmbeddedDoltStore, error) {
+func newStore(ctx context.Context, beadsDir, database, branch string, intent openIntent, frozen ...bool) (*EmbeddedDoltStore, error) {
 	if database == "" {
 		return nil, fmt.Errorf("embeddeddolt: database name must not be empty (caller should default to %q)", "beads")
 	}
@@ -169,11 +170,12 @@ func newStore(ctx context.Context, beadsDir, database, branch string, intent ope
 	}
 
 	s := &EmbeddedDoltStore{
-		dataDir:  dataDir,
-		beadsDir: absBeadsDir,
-		database: database,
-		branch:   branch,
-		intent:   intent,
+		dataDir:         dataDir,
+		beadsDir:        absBeadsDir,
+		database:        database,
+		branch:          branch,
+		intent:          intent,
+		migrationFrozen: len(frozen) > 0 && frozen[0],
 	}
 
 	if err := s.initSchema(ctx); err != nil {

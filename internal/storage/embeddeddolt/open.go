@@ -11,6 +11,7 @@ import (
 	"os"
 	"regexp"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/cenkalti/backoff/v4"
@@ -22,10 +23,33 @@ import (
 // variable identifiers (@@<db>_head_ref) where hyphens are invalid.
 var validIdentifier = regexp.MustCompile(`^[a-zA-Z_][a-zA-Z0-9_]*$`)
 
-const (
-	commitName  = "beads"
-	commitEmail = "beads@local"
+var (
+	commitIdentityMu   sync.RWMutex
+	defaultAuthorName  = "beads"
+	defaultAuthorEmail = "beads@local"
 )
+
+// SetCommitIdentity sets the pair used by subsequent embedded connections.
+// Empty components retain the existing pair. Call before opening a store.
+func SetCommitIdentity(name, email string) {
+	if name == "" || email == "" {
+		return
+	}
+	commitIdentityMu.Lock()
+	defer commitIdentityMu.Unlock()
+	defaultAuthorName, defaultAuthorEmail = name, email
+}
+
+func currentCommitIdentity() (string, string) {
+	commitIdentityMu.RLock()
+	defer commitIdentityMu.RUnlock()
+	return defaultAuthorName, defaultAuthorEmail
+}
+
+func commitAuthor() string {
+	name, email := currentCommitIdentity()
+	return name + " <" + email + ">"
+}
 
 // OpenSQL opens an embedded Dolt database at dir. The returned cleanup
 // function closes both the *sql.DB and the underlying connector.
@@ -97,8 +121,9 @@ func OpenSQL(ctx context.Context, dir, database, branch string) (*sql.DB, func()
 
 func buildDSN(dir, database string) string {
 	v := url.Values{}
-	v.Set(doltembed.CommitNameParam, commitName)
-	v.Set(doltembed.CommitEmailParam, commitEmail)
+	name, email := currentCommitIdentity()
+	v.Set(doltembed.CommitNameParam, name)
+	v.Set(doltembed.CommitEmailParam, email)
 	v.Set(doltembed.MultiStatementsParam, "true")
 	if strings.TrimSpace(database) != "" {
 		v.Set(doltembed.DatabaseParam, database)
