@@ -525,3 +525,7 @@ Adapted Rongjun GENG (rjgeng)’s PR [#7653](https://github.com/gastownhall/bead
 ### External Dolt version admission
 
 Adapted Julian Knutsen’s PR [#7836](https://github.com/gastownhall/beads/pull/7836): recognized external CLI/server versions below 2.6.0 refuse, cached versions are rechecked, doctor explains the same floor, and paired CI pins use 2.6.0. Preserve this fork’s hardened private version probe, gateway binding, authenticated per-connection proxy resolution and strict existing-only reads. The embedded engine/driver tuple and restored-backup compatibility remain unchanged.
+
+### Security documentation consistency
+
+SECURITY.md describes the existing removal of anonymous Beads usage metrics and keeps operator-enabled OpenTelemetry and standalone Dolt controls separate. This corrects stale documentation; it does not add a collector, change saved settings or qualify an upstream vulnerability.

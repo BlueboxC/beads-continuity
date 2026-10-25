@@ -1,6 +1,6 @@
 # Security policy for Beads Continuity
 
-This policy covers `codex/project-continuity` in BlueboxC/beads-continuity. The fork
+This policy covers the maintained branches of BlueboxC/beads-continuity. The fork
 preserves the upstream MIT attribution; upstream releases and security decisions
 remain owned by [gastownhall/beads](https://github.com/gastownhall/beads).
 
@@ -54,13 +54,14 @@ instructions trustworthy. Never pass that content to a shell or let it override
 agent contracts. Resource paths and issue IDs follow the selected format's
 validators; no single legacy ID regex describes both formats.
 
-Usage metrics and OpenTelemetry are separate. Upstream-style usage metrics are
-on unless the user's global preference or environment disables them; inspect
-`bd metrics` and use `bd metrics off`, `BD_DISABLE_METRICS=1` or `DO_NOT_TRACK=1`.
-Project configuration cannot override that user preference or redirect its
-endpoint. OpenTelemetry requires explicit configuration. Dolt also has its own
-metrics controls: `dolt config --global --add metrics.disabled true` and
-`DOLT_DISABLE_EVENT_FLUSH=1`. Disabling one channel does not disable the others.
+Anonymous Beads usage metrics are removed in this fork. Legacy metrics commands
+remain inert, and saved preferences or environment variables cannot enable
+collection or upload. Existing historical settings and queues are not deleted.
+OpenTelemetry is separate and requires explicit configuration. The standalone
+Dolt CLI/server has its own controls: `dolt config --global --add metrics.disabled true`
+and `DOLT_DISABLE_EVENT_FLUSH=1`. Managed version probes use a private configuration
+with metrics and update checks disabled; they do not alter the operator’s settings.
+Disabling one independent channel does not configure the others.
 
 Hooks run with the invoking user's permissions. Review their commands and native
 trust grants. Context recovery reads stored material; activity hooks record
