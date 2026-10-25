@@ -109,6 +109,14 @@ func graphConversionActivationPaths(receipt graphConversionReceipt) (source, sta
 	if err != nil {
 		return "", "", "", err
 	}
+	if receipt.Plan.Store.SourceSchema == 8 {
+		// Schema8 keeps its authority, including older matched recovery paths.
+		seal, err := graphConversionFileHash(filepath.Join(receipt.Directory, "receipt.json"))
+		if err != nil {
+			return "", "", "", err
+		}
+		id += "-" + seal
+	}
 	return o.DataDir, filepath.Join(workspace, "graph-conversion-"+id+"-candidate"), filepath.Join(workspace, "graph-conversion-"+id+"-native"), nil
 }
 

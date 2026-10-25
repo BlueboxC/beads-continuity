@@ -75,6 +75,15 @@ func TestSchema8WorkspaceInterruptedPublicationAndRecovery(t *testing.T) {
 	if err = closeDB(); err != nil {
 		t.Fatal(err)
 	}
+	// A prior native-to-schema8 conversion kept this authority and its recovery.
+	historical := filepath.Join(workspace, "graph-conversion-"+authority+"-native")
+	if err := os.Mkdir(historical, 0700); err != nil {
+		t.Fatal(err)
+	}
+	const sentinel = "prior matched recovery must remain untouched"
+	if err := os.WriteFile(filepath.Join(historical, "prior-recovery"), []byte(sentinel), 0600); err != nil {
+		t.Fatal(err)
+	}
 	metadata := map[string]any{"backend": "dolt", "dolt_mode": "embedded", "dolt_database": "graph", "graph_mode": "link", "graph_schema_version": 8, "graph_ready": true, "graph_scope_url": "https://schema8.example.invalid/", "graph_authority_id": authority, "graph_workspace": workspace}
 	if err = graphConversionWriteNew(filepath.Join(workspace, "metadata.json"), metadata); err != nil {
 		t.Fatal(err)
@@ -130,6 +139,9 @@ func TestSchema8WorkspaceInterruptedPublicationAndRecovery(t *testing.T) {
 	marker, err := os.ReadFile(filepath.Join(workspace, graphPreviewMarker))
 	if err != nil || string(marker) != "link-preview-v7\n" {
 		t.Fatalf("source marker recovery: %v", err)
+	}
+	if got, err := os.ReadFile(filepath.Join(historical, "prior-recovery")); err != nil || string(got) != sentinel {
+		t.Fatalf("historical recovery changed: %v", err)
 	}
 	o := graphConversionOptions(plan)
 	if _, err = graphstore.PlanSchema8Conversion(context.Background(), o); err == nil {
