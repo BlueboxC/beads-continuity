@@ -33,7 +33,7 @@ func openKnowledge() (memoryops.Memories, *knowledge.Reader, error) {
 }
 
 func readKnowledge(memories memoryops.Memories, reader *knowledge.Reader) (knowledge.State, error) {
-	result, err := memories.List(rootCtx, knowledgeMemorySelection())
+	result, err := readKnowledgeMemories(rootCtx, memories, nil)
 	if err != nil {
 		return knowledge.State{}, err
 	}
@@ -63,7 +63,7 @@ var knowledgeScanCmd = &cobra.Command{
 		}
 		defer func() { _ = reader.Close() }()
 		if len(args) == 0 {
-			plane, err := memories.List(rootCtx, knowledgeMemorySelection())
+			plane, err := readKnowledgeMemories(rootCtx, memories, nil)
 			if err != nil {
 				return err
 			}

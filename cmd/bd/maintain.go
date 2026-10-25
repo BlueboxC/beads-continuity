@@ -183,14 +183,7 @@ func maintainDerived(ctx context.Context, memories memoryops.Memories, workspace
 	var plane memoryops.ListResult
 	var index codeindex.Index
 	var err error
-	if graphPreviewActive {
-		plane, err = memories.List(ctx, memoryops.ListRequest{})
-		if err == nil {
-			index, err = codeindex.Load(plane.Memories)
-		}
-	} else {
-		plane, index, err = readIndexedMemories(ctx, memories)
-	}
+	plane, index, err = readCodeMemories(ctx, memories)
 	if err != nil {
 		return result, err
 	}

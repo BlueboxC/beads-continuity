@@ -10,6 +10,8 @@ Commands, flags, help, output and CLI fixtures.
 
 ## Local Contracts
 
+- Code and maintenance use the current-index continuity profile; knowledge reads fetch only cited/requested activity origins, and learning preparation streams bounded session observations with full counts. General memory enumeration and explicit prune retain their existing bounds and semantics. Preserve raw origin hashes, snapshot guards, saved selections and all retained generations.
+
 Root DOX.md and the parent chain remain binding.
 
 - Root --version and -V remain store-free before graph metadata, marker or route admission. They do not provision, migrate or read a database, including incomplete/future/corrupt workspaces; data commands retain their admission guards.

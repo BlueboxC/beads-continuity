@@ -25,13 +25,9 @@ func openCodeIndex() (memoryops.Memories, *codeindex.Reader, map[string]string, 
 	if beadsDir == "" {
 		return nil, nil, nil, codeindex.Index{}, ErrNoBeadsDatabase
 	}
-	plane, err := memories.List(rootCtx, memoryops.ListRequest{})
+	plane, index, err := readCodeMemories(rootCtx, memories)
 	if err != nil {
 		return nil, nil, nil, codeindex.Index{}, err
-	}
-	index, err := codeindex.Load(plane.Memories)
-	if err != nil {
-		return nil, nil, nil, index, err
 	}
 	reader, err := codeindex.Open(filepath.Dir(beadsDir))
 	return memories, reader, plane.Memories, index, err

@@ -1,6 +1,7 @@
 package main
 
 import (
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -114,7 +115,15 @@ func init() {
 		if len(data) > 24*1024 {
 			return errors.New("proposal record JSON exceeds 24 KiB")
 		}
-		plane, err := memories.List(rootCtx, knowledgeMemorySelection())
+		ids, _ := cmd.Flags().GetStringArray("activity-event")
+		requested := append([]string(nil), ids...)
+		var draft knowledge.LearningDraft
+		if json.Unmarshal(data, &draft) == nil {
+			for _, ref := range draft.ActivityEvents {
+				requested = append(requested, ref.ID)
+			}
+		}
+		plane, err := readKnowledgeMemories(rootCtx, memories, requested)
 		if err != nil {
 			return err
 		}
@@ -129,7 +138,6 @@ func init() {
 		if err = validateProposalRelations(record, state); err != nil {
 			return err
 		}
-		ids, _ := cmd.Flags().GetStringArray("activity-event")
 		if len(ids) > 0 {
 			if len(refs) > 0 {
 				return errors.New("draft already pins origins; omit --activity-event")

@@ -11,16 +11,24 @@ func init() {
 			return err
 		}
 		defer func() { _ = reader.Close() }()
-		plane, err := memories.List(rootCtx, knowledgeMemorySelection())
-		if err != nil {
-			return err
-		}
 		session, _ := cmd.Flags().GetString("session")
 		turn, _ := cmd.Flags().GetString("turn")
 		ids, _ := cmd.Flags().GetStringArray("activity-event")
+		plane, observed, err := readLearningMemories(rootCtx, memories, session, turn, ids)
+		if err != nil {
+			return err
+		}
 		packet, err := reader.PrepareLearning(plane.Memories, args, session, turn, ids)
 		if err != nil {
 			return err
+		}
+		if observed != nil {
+			packet.Activity.Enabled = observed.Enabled
+			packet.Activity.Invalid = observed.Invalid
+			if session != "" {
+				packet.Activity.Total = observed.Total
+			}
+			packet.OmittedEvents = packet.Activity.Total - len(packet.Activity.Events)
 		}
 		return outputJSON(packet)
 	}}

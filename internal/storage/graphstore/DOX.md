@@ -10,6 +10,8 @@ Graph Preview storage.
 
 ## Local Contracts
 
+- Operational code/knowledge reads combine non-code/non-activity context, selected current code and exact cited/requested event envelopes in one read-only transaction. They share the existing cumulative 65,536-row/64 MiB bound; learning streams up to 16 selected events with full counts and original raw origin bytes. General List, input/write limits and stored history remain unchanged.
+
 Root and parent DOX contracts remain binding.
 
 - Init creates a fresh schema11/generation13 database only. The fixed Preview3 Memory catalog and concrete native families coexist with three frozen schema8 informational Types. OpenExisting validates exact binding and format without DDL, descriptor replacement or migration; upstream generation12 is not this fork format.

@@ -7,6 +7,8 @@ import (
 	"time"
 
 	"github.com/spf13/cobra"
+	"github.com/steveyegge/beads/internal/activity"
+	"github.com/steveyegge/beads/internal/codeindex"
 	"github.com/steveyegge/beads/internal/storage/contextinfo"
 	"github.com/steveyegge/beads/internal/storage/domain"
 	"github.com/steveyegge/beads/internal/storage/graphstore"
@@ -58,6 +60,42 @@ func (graphContinuityRole) List(ctx context.Context, req memoryops.ListRequest) 
 }
 func (graphContinuityRole) Apply(ctx context.Context, req memoryops.BatchRequest) (memoryops.BatchResult, error) {
 	return graphContinuityCall(ctx, true, func(m *graphstore.ContinuityMemories) (memoryops.BatchResult, error) { return m.Apply(ctx, req) })
+}
+
+func (graphContinuityRole) ReadCodeContinuity(ctx context.Context) (memoryops.ListResult, codeindex.Index, error) {
+	type result struct {
+		plane memoryops.ListResult
+		index codeindex.Index
+	}
+	v, err := graphContinuityCall(ctx, false, func(m *graphstore.ContinuityMemories) (result, error) {
+		plane, index, err := m.ReadCodeContinuity(ctx)
+		return result{plane, index}, err
+	})
+	return v.plane, v.index, err
+}
+
+func (graphContinuityRole) ReadKnowledgeContinuity(ctx context.Context, ids []string) (memoryops.ListResult, error) {
+	return graphContinuityCall(ctx, false, func(m *graphstore.ContinuityMemories) (memoryops.ListResult, error) {
+		return m.ReadKnowledgeContinuity(ctx, ids)
+	})
+}
+
+func (graphContinuityRole) ReadLearningContinuity(ctx context.Context, session, turn string, ids []string) (memoryops.ListResult, activity.View, error) {
+	type result struct {
+		plane    memoryops.ListResult
+		observed activity.View
+	}
+	v, err := graphContinuityCall(ctx, false, func(m *graphstore.ContinuityMemories) (result, error) {
+		plane, observed, err := m.ReadLearningContinuity(ctx, session, turn, ids)
+		return result{plane, observed}, err
+	})
+	return v.plane, v.observed, err
+}
+
+func (graphContinuityRole) ReadObservedActivity(ctx context.Context, session, turn string, limit int) (activity.View, error) {
+	return graphContinuityCall(ctx, false, func(m *graphstore.ContinuityMemories) (activity.View, error) {
+		return m.ReadObservedActivity(ctx, session, turn, limit)
+	})
 }
 
 func continuityWorkspaceInfo(ctx context.Context, cwd string) (domain.ContextInfo, error) {

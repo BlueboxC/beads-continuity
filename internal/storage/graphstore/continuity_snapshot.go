@@ -35,11 +35,11 @@ type continuityReader struct {
 	rows, bytes uint64
 }
 
-func (r *continuityReader) charge(ctx context.Context, req memoryops.ListRequest, exact bool) error {
+func (r *continuityReader) charge(ctx context.Context, req memoryops.ListRequest, exact bool, excluded ...string) error {
 	if !r.active.Load() {
 		return sql.ErrTxDone
 	}
-	n, b, err := r.memories.selectionUsageInTx(ctx, r.tx, req, exact)
+	n, b, err := r.memories.selectionUsageInTx(ctx, r.tx, req, exact, excluded...)
 	if err != nil {
 		return err
 	}

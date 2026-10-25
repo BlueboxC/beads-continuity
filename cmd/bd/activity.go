@@ -58,15 +58,24 @@ func init() {
 				return err
 			}
 			defer func() { _ = closeStore(false) }()
-			plane, err := m.List(rootCtx, memoryops.ListRequest{KeyPrefix: activity.Prefix})
-			if err != nil {
-				return err
-			}
 			session, _ := cmd.Flags().GetString("session")
 			turn, _ := cmd.Flags().GetString("turn")
 			limit, _ := cmd.Flags().GetInt("limit")
 			if limit < 1 || limit > 1000 {
 				return errors.New("limit must be 1-1000")
+			}
+			if selected, ok := m.(interface {
+				ReadObservedActivity(context.Context, string, string, int) (activity.View, error)
+			}); ok {
+				observed, err := selected.ReadObservedActivity(rootCtx, session, turn, limit)
+				if err != nil {
+					return err
+				}
+				return outputJSON(observed)
+			}
+			plane, err := m.List(rootCtx, memoryops.ListRequest{KeyPrefix: activity.Prefix})
+			if err != nil {
+				return err
 			}
 			return outputJSON(activity.Read(plane.Memories, session, turn, limit))
 		}}

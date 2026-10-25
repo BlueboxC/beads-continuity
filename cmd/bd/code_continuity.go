@@ -9,6 +9,7 @@ import (
 	"github.com/steveyegge/beads/internal/codeindex"
 	"github.com/steveyegge/beads/internal/configfile"
 	"github.com/steveyegge/beads/internal/ui"
+	"github.com/steveyegge/beads/memoryops"
 )
 
 func init() {
@@ -76,6 +77,11 @@ func init() {
 				return err
 			}
 			defer func() { _ = reader.Close() }()
+			full, err := memories.List(rootCtx, memoryops.ListRequest{})
+			if err != nil {
+				return err
+			}
+			plane = full.Memories
 			plan, err := codeindex.PlanPrune(plane)
 			if apply {
 				plan, err = codeindex.ApplyPrune(rootCtx, memories, plane)

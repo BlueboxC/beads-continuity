@@ -53,6 +53,12 @@ func (m *ContinuityMemories) transaction(ctx context.Context, write bool, fn fun
 }
 
 func (m *ContinuityMemories) resolve(ctx context.Context, tx *sql.Tx, key string) (string, bool, error) {
+	if derivedContinuityKey(key) {
+		r := m.operationalReader(tx)
+		defer r.active.Store(false)
+		value, err := r.recallDerived(ctx, key)
+		return value.Value, value.Found, err
+	}
 	if err := m.checkSelectionInTx(ctx, tx, memoryops.ListRequest{KeyPrefix: key}, true); err != nil {
 		return "", false, err
 	}
