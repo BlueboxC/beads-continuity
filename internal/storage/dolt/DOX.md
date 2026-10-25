@@ -36,6 +36,8 @@ Root DOX.md and the parent chain remain binding.
 - Server probe/clone callers reuse the store’s port resolution; preserve explicit init overrides and shared-server provenance.
 - IPv6 loopback never auto-starts the managed IPv4 server, adopts its local data directory or persists its port file.
 
+- CLI-transport pull settlement aborts declined conflicts and unrepaired constraints, matching SQL-route recovery. Capture a known-clean pre-pull working set before permitting the shared hard-reset fallback. Determinate settlement rejections and required conflict-read errors also clean up; indeterminate commit responses preserve state and never abort/replay.
+
 ## Work Guidance
 
 Metadata field conversion delegates to shared issueops parsing; YAML numeric types, enum fallback and adapter-specific warning/error modes remain unchanged.

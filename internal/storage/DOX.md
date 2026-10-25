@@ -37,6 +37,8 @@ Root DOX.md and the parent chain remain binding.
 
 - Shared server-address construction accepts bare, bracketed and surrounding-space-padded IPv6, including a managed proxy backend's TCP Dial. Preserve socket transport and keep IPv6 loopback outside managed IPv4 lifecycle/data ownership.
 
+- The shared merge-abort helper permits hard-reset fallback only for a known-clean pre-merge working set; preserve dirty or unreadable preconditions. CLI pull callers retain indeterminate-commit refusal and do not replay writes.
+
 ## Work Guidance
 
 Memory namespace selectors preserve exact prefix semantics across adapters. All three adapters select namespaces in SQL before transferring values; the unit-of-work adapter uses ConfigUseCase/repository within its existing read transaction. Case-insensitive memory search remains in Go.

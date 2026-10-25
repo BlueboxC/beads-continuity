@@ -513,3 +513,7 @@ The isolated Preview3 branch adds the per-open `continuity-v1` capacity profile 
 ### Federation probe legacy port follow-up (PR #7724)
 
 The native federation probe reuses the store's endpoint configuration and final port rule, including `BEADS_DOLT_PORT`. A real loopback regression checks that the read-only store configuration and probe select the same legacy environment port. Config-file, refused and unconfigured endpoint controls remain covered. This adapts randlee's endpoint correction in PR #7724 (`85f656fc`) to the fork's existing native configuration API; socket-only probing remains outside this change.
+
+### CLI pull recovery (#7839 / PR #7849)
+
+Adapted Rongjun GENG (rjgeng) PR7849: declined CLI-transport merge conflicts abort before returning a typed conflict, preserving pre-pull HEAD and subsequent writes. The shared abort fallback is armed only by a known-clean pre-pull state. The adaptation additionally handles determinate settlement rejection and required conflict-read failure; lost commit responses retain their indeterminate marker and do not abort or replay. The native SQL/embedded recovery contracts, engine tuple and graph formats remain unchanged.

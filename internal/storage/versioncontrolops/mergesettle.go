@@ -367,6 +367,12 @@ func MergeWithStrategy(ctx context.Context, db DBConn, ref, author, strategy str
 // REFUSED TO START on a dirty working set; hard-resetting there would
 // destroy uncommitted data the merge never touched (bd-578h9.2).
 // Best-effort: the caller's error is what matters.
+// AbortMerge restores merge state after a declined CLI pull. Its hard-reset
+// fallback is permitted only when the pre-pull working set was known clean.
+func AbortMerge(ctx context.Context, db DBConn, preMergeClean bool) {
+	abortMerge(ctx, db, preMergeClean)
+}
+
 func abortMerge(ctx context.Context, db DBConn, preMergeClean bool) {
 	if _, err := db.ExecContext(ctx, "CALL DOLT_MERGE('--abort')"); err != nil && preMergeClean {
 		_, _ = db.ExecContext(ctx, "CALL DOLT_RESET('--hard')")
