@@ -22,10 +22,23 @@ import (
 // PlanSchema8Conversion accepts only an explicit copy outside the bound workspace.
 // The target binding is schema11; source discovery remains a non-migrating read.
 func PlanSchema8Conversion(ctx context.Context, o Options) (plan ConversionPlan, err error) {
+	return planSchema8Conversion(ctx, o, false)
+}
+
+// PlanSchema8WorkspaceConversion is a readonly plan for explicit gated publication.
+// Conversion still writes only a separately restored candidate.
+func PlanSchema8WorkspaceConversion(ctx context.Context, o Options) (ConversionPlan, error) {
+	if o.DataDir != filepath.Join(o.Binding.WorkspaceID, "embeddeddolt") {
+		return ConversionPlan{}, ErrInvalidStore
+	}
+	return planSchema8Conversion(ctx, o, true)
+}
+
+func planSchema8Conversion(ctx context.Context, o Options, workspace bool) (plan ConversionPlan, err error) {
 	if err = validateConversionOptions(o); err != nil {
 		return plan, err
 	}
-	if withinPath(o.DataDir, o.Binding.WorkspaceID) {
+	if !workspace && withinPath(o.DataDir, o.Binding.WorkspaceID) {
 		return plan, fmt.Errorf("%w: schema8 rehearsal requires an isolated copy", ErrCapabilityUnavailable)
 	}
 	s, err := openBackend(ctx, o, o.Database)

@@ -173,7 +173,12 @@ func graphConversionGraphState(ctx context.Context, receipt graphConversionRecei
 	if !reflect.DeepEqual(observed, receipt.CandidateState) {
 		return errors.New("graph changed since rehearsal; refusing to overwrite later writes")
 	}
-	state, err := graphstore.VerifyConversionCandidate(ctx, o, graphConversionAdoptionPlan(receipt))
+	var state graphstore.ConversionState
+	if receipt.Plan.Store.SourceSchema == 8 {
+		state, err = graphstore.VerifySchema8Candidate(ctx, o, receipt.Plan.Store)
+	} else {
+		state, err = graphstore.VerifyConversionCandidate(ctx, o, graphConversionAdoptionPlan(receipt))
+	}
 	if err != nil {
 		return err
 	}
@@ -249,7 +254,7 @@ func graphConversionActivationIntent(receipt graphConversionReceipt) (intent gra
 	return intent, graphConversionSyncDir(receipt.Directory)
 }
 
-func graphConversionMarker(workspace string) ([]byte, error) {
+func graphConversionMarker(workspace string, original ...string) ([]byte, error) {
 	marker, err := os.ReadFile(filepath.Join(workspace, graphPreviewMarker)) // #nosec G304 -- fixed format marker in the canonical operator workspace
 	if os.IsNotExist(err) {
 		return nil, nil
@@ -257,7 +262,7 @@ func graphConversionMarker(workspace string) ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
-	if string(marker) != graphConversionPending && string(marker) != graphPreviewGeneration {
+	if string(marker) != graphConversionPending && string(marker) != graphPreviewGeneration && !(len(original) == 1 && original[0] == "link-preview-v7\n" && string(marker) == original[0]) {
 		return nil, errors.New("unknown conversion format marker; refusing recovery")
 	}
 	return marker, nil
@@ -266,8 +271,8 @@ func graphConversionMarker(workspace string) ([]byte, error) {
 // Recovery infers the next step only from the sealed intent and exact engine
 // fingerprints. Every filesystem transition is repeatable after interruption.
 func runGraphConversionActivate(ctx context.Context, receipt graphConversionReceipt, after func(string) error) (err error) {
-	if receipt.Plan.Store.SourceSchema == 8 {
-		return errors.New("schema8-copy is rehearsal-only; activation is not qualified")
+	if receipt.Plan.Store.SourceSchema == 8 && (receipt.Phase != "prepared" || receipt.Plan.OriginalMarker != "link-preview-v7\n") {
+		return errors.New("schema8-copy is rehearsal-only; activation requires a workspace-bound plan")
 	}
 	if runtime.GOOS == "windows" {
 		return errors.New("conversion activation is not qualified on Windows")
@@ -308,7 +313,7 @@ func runGraphConversionActivate(ctx context.Context, receipt graphConversionRece
 	if err != nil {
 		return err
 	}
-	marker, err := graphConversionMarker(workspace)
+	marker, err := graphConversionMarker(workspace, receipt.Plan.OriginalMarker)
 	if err != nil {
 		return err
 	}
@@ -318,6 +323,9 @@ func runGraphConversionActivate(ctx context.Context, receipt graphConversionRece
 		}
 		if err := graphConversionNativeState(ctx, receipt, source); err != nil {
 			return err
+		}
+		if string(marker) != receipt.Plan.OriginalMarker && string(marker) != graphConversionPending {
+			return errors.New("source format changed since rehearsal")
 		}
 		hash, err := graphConversionFileHash(filepath.Join(workspace, configfile.ConfigFileName))
 		if err != nil || hash != receipt.Plan.MetadataSHA256 {
@@ -335,7 +343,7 @@ func runGraphConversionActivate(ctx context.Context, receipt graphConversionRece
 		return errors.New("candidate layout is incomplete or ambiguous")
 	}
 	if candidateExists {
-		if originalExists || stagedExists || len(marker) != 0 {
+		if originalExists || stagedExists || string(marker) != receipt.Plan.OriginalMarker {
 			return errors.New("unexpected prepared candidate layout")
 		}
 		if err := graphConversionGraphState(ctx, receipt, candidate); err != nil {
@@ -379,7 +387,14 @@ func runGraphConversionActivate(ctx context.Context, receipt graphConversionRece
 		}
 	}
 	markerPath := filepath.Join(workspace, graphPreviewMarker)
-	if len(marker) == 0 {
+	if string(marker) == receipt.Plan.OriginalMarker && receipt.Plan.OriginalMarker != "" {
+		if err := graphConversionReplace(markerPath, []byte(graphConversionPending)); err != nil {
+			return err
+		}
+		if err := graphConversionStep(after, "fenced"); err != nil {
+			return err
+		}
+	} else if len(marker) == 0 {
 		f, err := os.OpenFile(markerPath, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0600) // #nosec G304 -- fixed marker in the validated workspace; exclusive creation refuses replacement
 		if err != nil {
 			return err
@@ -460,7 +475,7 @@ func runGraphConversionActivate(ctx context.Context, receipt graphConversionRece
 }
 
 func runGraphConversionRollback(ctx context.Context, receipt graphConversionReceipt, after func(string) error) (err error) {
-	if receipt.Plan.Store.SourceSchema == 8 {
+	if receipt.Plan.Store.SourceSchema == 8 && (receipt.Phase != "prepared" || receipt.Plan.OriginalMarker != "link-preview-v7\n") {
 		return errors.New("schema8-copy never activates a workspace; restore its native checkpoint to a new isolated destination")
 	}
 	if runtime.GOOS == "windows" {
@@ -489,7 +504,7 @@ func runGraphConversionRollback(ctx context.Context, receipt graphConversionRece
 	if intent, err = graphConversionActivationIntent(receipt); err != nil {
 		return err
 	}
-	marker, err := graphConversionMarker(workspace)
+	marker, err := graphConversionMarker(workspace, receipt.Plan.OriginalMarker)
 	if err != nil {
 		return err
 	}
@@ -597,7 +612,11 @@ func runGraphConversionRollback(ctx context.Context, receipt graphConversionRece
 	if err := graphConversionNativeState(ctx, receipt, source); err != nil {
 		return err
 	}
-	if err := os.Remove(filepath.Join(workspace, graphPreviewMarker)); err != nil && !os.IsNotExist(err) {
+	if receipt.Plan.OriginalMarker != "" {
+		if err := graphConversionReplace(filepath.Join(workspace, graphPreviewMarker), []byte(receipt.Plan.OriginalMarker)); err != nil {
+			return err
+		}
+	} else if err := os.Remove(filepath.Join(workspace, graphPreviewMarker)); err != nil && !os.IsNotExist(err) {
 		return err
 	}
 	if err := graphConversionSyncDir(workspace); err != nil {
@@ -657,4 +676,15 @@ func graphConversionPublicationCommand(rollback bool) *cobra.Command {
 	cmd.Flags().String("receipt", "", "Private completed rehearsal receipt")
 	cmd.Flags().Bool("writers-stopped", false, "Assert all clients/hooks/viewers are stopped; does not stop them")
 	return cmd
+}
+
+func graphConversionSourceMarker(workspace string, plan graphConversionPlan) error {
+	marker, err := graphConversionMarker(workspace, plan.OriginalMarker)
+	if err != nil {
+		return err
+	}
+	if string(marker) != plan.OriginalMarker {
+		return errors.New("workspace format changed since planning")
+	}
+	return nil
 }

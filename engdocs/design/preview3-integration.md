@@ -1,7 +1,7 @@
 # Preview3 integration and preservation contract
 
-This is an isolated integration, with no installed upgrade or real database
-activation. Production provider source is donnabox/beads PR291
+This integration supports isolated qualification and a separately authorized
+installation/publication phase. Production provider source is donnabox/beads PR291
 `0c4dc1f0d68a371e56b3e461b968e828e4ea254c`; compatible native seams were checked
 against `79450c2d67ccab326b20b07cc3d66179fa148ec0`. The fork baseline is
 `173568d48e16e992b19c3ec21a227ca95347573b`.
@@ -163,3 +163,22 @@ headroom and supply the explicit profile to each writer launcher/hook; this phas
 does not rewrite existing hooks or silently raise their default capacity. Conversion receipts from this copy-only phase cannot activate or roll
 back a real selector; later writes require a new recovery checkpoint. Activation
 and installation need their separate authorized work phase.
+
+## Explicit workspace publication
+
+With separate owner authorization, `graph-convert plan` accepts the existing
+embedded native or schema8 workspace, exact Scope and optional explicit
+`--graph-profile continuity-v1`. The private plan binds that profile, the original
+selector/marker, binary and complete database state. Schema8 retains its authority.
+`prepare --actor NAME --writers-stopped` checkpoints and independently restores
+a complete native backup, converts only the restored candidate and seals it.
+It changes neither the live engine nor selector.
+
+`activate --receipt FILE --writers-stopped` uses the existing exclusive gates,
+same-filesystem atomic renames and interruption fence. Both formats retain their
+original engine and selector; schema8 rollback restores its exact old marker.
+Interrupted publication and rollback resume only against matching sealed states.
+Rollback refuses all later writes; after activation, pair the new binary with a
+fresh native checkpoint for later recovery. Copy-only schema8 receipts remain
+ineligible for publication. No hot restore, project execution, hook trust change,
+implicit capacity selection or history pruning is added.

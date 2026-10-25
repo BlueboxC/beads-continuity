@@ -27,6 +27,8 @@ import (
 
 type graphConversionPlan struct {
 	Version        int                       `json:"version"`
+	Profile        string                    `json:"profile,omitempty"`
+	OriginalMarker string                    `json:"original_marker,omitempty"`
 	BinarySHA256   string                    `json:"binary_sha256"`
 	MetadataSHA256 string                    `json:"metadata_sha256"`
 	Store          graphstore.ConversionPlan `json:"store"`
@@ -54,7 +56,7 @@ Initial support requires current embedded native schema and main as the only dir
 		initCommandContext()
 		setRootContext(setupGracefulShutdown())
 		applyNoColorFlag()
-		allowed := map[string]bool{"json": true, "actor": true, "quiet": true, "no-color": true, "readonly": true, "sandbox": true, "workspace": true, "scope-url": true, "out": true, "plan": true, "receipt": true, "writers-stopped": true, "prune-obsolete-code": true, "source": true, "metadata": true}
+		allowed := map[string]bool{"json": true, "actor": true, "quiet": true, "no-color": true, "readonly": true, "sandbox": true, "workspace": true, "scope-url": true, "out": true, "plan": true, "receipt": true, "writers-stopped": true, "prune-obsolete-code": true, "source": true, "metadata": true, "graph-profile": true}
 		var bad string
 		cmd.Flags().Visit(func(f *pflag.Flag) {
 			if !allowed[f.Name] && bad == "" {
@@ -100,7 +102,7 @@ func init() {
 			if err != nil {
 				return err
 			}
-			ctx, cancel := context.WithTimeout(getRootContext(), 5*time.Minute)
+			ctx, cancel := context.WithTimeout(getRootContext(), 15*time.Minute)
 			defer cancel()
 			result, err := graphConversionVerifyReceipt(ctx, receipt)
 			if err != nil {
@@ -114,7 +116,7 @@ func init() {
 }
 
 func graphConversionOptions(plan graphConversionPlan) graphstore.Options {
-	return graphstore.Options{Backend: "embedded", DataDir: plan.Store.SourceDataDir, Database: plan.Store.Database, Branch: "main", Binding: plan.Store.Binding}
+	return graphstore.Options{OperationalProfile: plan.Profile, Backend: "embedded", DataDir: plan.Store.SourceDataDir, Database: plan.Store.Database, Branch: "main", Binding: plan.Store.Binding}
 }
 
 func graphConversionFileHash(path string) (hash string, err error) {
@@ -242,10 +244,17 @@ func runGraphConversionPlan(cmd *cobra.Command) (result graphConversionPlan, err
 	if err := json.Unmarshal(raw, &cfg); err != nil {
 		return result, err
 	}
-	if cfg.DoltMode != "embedded" || cfg.GetBackend() != configfile.BackendDolt || cfg.GraphMode != "" && cfg.GraphMode != "dependency" || cfg.DoltDataDir != "" || cfg.DoltTeamServer {
-		return result, errors.New("conversion requires explicit native embedded metadata without custom/shared/proxy routing")
+	schema8 := cfg.GraphMode == "link" && cfg.GraphSchemaVersion == 8 && cfg.GraphReady && cfg.GraphWorkspace == workspace
+	if cfg.DoltMode != "embedded" || cfg.GetBackend() != configfile.BackendDolt || (!schema8 && cfg.GraphMode != "" && cfg.GraphMode != "dependency") || cfg.DoltDataDir != "" || cfg.DoltTeamServer {
+		return result, errors.New("conversion requires current native or schema8 embedded metadata without custom/shared/proxy routing")
 	}
-	if _, err := os.Lstat(filepath.Join(workspace, graphPreviewMarker)); !os.IsNotExist(err) {
+	marker, markerErr := os.ReadFile(filepath.Join(workspace, graphPreviewMarker)) // #nosec G304 -- fixed format sentinel under the explicit canonical workspace; exact source bytes required
+	if schema8 {
+		if markerErr != nil || string(marker) != "link-preview-v7\n" {
+			return result, errors.New("schema8 conversion requires its exact source format marker")
+		}
+		result.OriginalMarker = string(marker)
+	} else if !os.IsNotExist(markerErr) {
 		return result, errors.New("existing graph/incomplete-format marker blocks native conversion")
 	}
 	data, err := graphConversionCanonicalPath(filepath.Join(workspace, "embeddeddolt"))
@@ -261,14 +270,21 @@ func runGraphConversionPlan(cmd *cobra.Command) (result graphConversionPlan, err
 		return result, err
 	}
 	result.Version = 1
+	result.Profile = graphOperationalProfile
 	result.BinarySHA256, err = graphConversionBinaryHash()
 	if err != nil {
 		return result, err
 	}
 	h := sha256.Sum256(raw)
 	result.MetadataSHA256 = hex.EncodeToString(h[:])
-	o := graphstore.Options{Backend: "embedded", DataDir: data, Database: cfg.GetDoltDatabase(), Branch: "main", Binding: graphstore.Binding{WorkspaceID: workspace, ScopeURL: scope, AuthorityID: hex.EncodeToString(token[:]), SchemaVersion: graphstore.SchemaVersion}}
-	ctx, cancel := context.WithTimeout(getRootContext(), 5*time.Minute)
+	o := graphstore.Options{OperationalProfile: result.Profile, Backend: "embedded", DataDir: data, Database: cfg.GetDoltDatabase(), Branch: "main", Binding: graphstore.Binding{WorkspaceID: workspace, ScopeURL: scope, AuthorityID: hex.EncodeToString(token[:]), SchemaVersion: graphstore.SchemaVersion}}
+	if schema8 {
+		if scope != cfg.GraphScopeURL {
+			return result, errors.New("schema8 conversion must preserve the existing Scope")
+		}
+		o.Binding.AuthorityID = cfg.GraphAuthorityID
+	}
+	ctx, cancel := context.WithTimeout(getRootContext(), 15*time.Minute)
 	defer cancel()
 	handle, err := acquireExclusiveWorkspaceGates(ctx, workspace, "graph-convert consistent plan", data)
 	if err != nil {
@@ -276,7 +292,14 @@ func runGraphConversionPlan(cmd *cobra.Command) (result graphConversionPlan, err
 	}
 	defer func() { err = errors.Join(err, handle.Release()) }()
 	prune, _ := cmd.Flags().GetBool("prune-obsolete-code")
-	result.Store, err = graphConversionNativePlan(ctx, o, prune)
+	if schema8 {
+		if prune {
+			return result, errors.New("schema8 conversion preserves every derived generation")
+		}
+		result.Store, err = graphstore.PlanSchema8WorkspaceConversion(ctx, o)
+	} else {
+		result.Store, err = graphConversionNativePlan(ctx, o, prune)
+	}
 	if err != nil {
 		return result, err
 	}
@@ -284,8 +307,8 @@ func runGraphConversionPlan(cmd *cobra.Command) (result graphConversionPlan, err
 	if err != nil || currentSelector != result.MetadataSHA256 {
 		return result, errors.New("workspace selector changed during planning")
 	}
-	if _, err := os.Lstat(filepath.Join(workspace, graphPreviewMarker)); !os.IsNotExist(err) {
-		return result, errors.New("workspace format changed during planning")
+	if err := graphConversionSourceMarker(workspace, result); err != nil {
+		return result, err
 	}
 	out, _ := cmd.Flags().GetString("out")
 	out, err = graphConversionNewPath(out)
@@ -342,19 +365,27 @@ func runGraphConversionPrepare(cmd *cobra.Command) (receipt graphConversionRecei
 	if out == workspace || strings.HasPrefix(out, workspace+string(filepath.Separator)) {
 		return receipt, errors.New("rehearsal directory must stay outside the original workspace")
 	}
-	ctx, cancel := context.WithTimeout(getRootContext(), 5*time.Minute)
+	ctx, cancel := context.WithTimeout(getRootContext(), 15*time.Minute)
 	defer cancel()
 	handle, err := acquireExclusiveWorkspaceGates(ctx, workspace, "graph-convert checkpoint/rehearsal", o.DataDir)
 	if err != nil {
 		return receipt, err
 	}
 	defer func() { err = errors.Join(err, handle.Release()) }()
-	// Recheck the selector after acquiring the same gate held throughout capture.
+	// Recheck selectors after acquiring the same gate held throughout capture.
+	if err := graphConversionSourceMarker(workspace, receipt.Plan); err != nil {
+		return receipt, err
+	}
 	hash, err = graphConversionFileHash(metadata)
 	if err != nil || hash != receipt.Plan.MetadataSHA256 {
 		return receipt, errors.New("workspace selector changed before checkpoint")
 	}
-	current, err := graphConversionNativePlan(ctx, o, receipt.Plan.Store.PruneObsoleteCode)
+	var current graphstore.ConversionPlan
+	if receipt.Plan.Store.SourceSchema == 8 {
+		current, err = graphstore.PlanSchema8WorkspaceConversion(ctx, o)
+	} else {
+		current, err = graphConversionNativePlan(ctx, o, receipt.Plan.Store.PruneObsoleteCode)
+	}
 	if err != nil {
 		return receipt, err
 	}
@@ -407,10 +438,17 @@ func runGraphConversionPrepare(cmd *cobra.Command) (receipt graphConversionRecei
 			return receipt, err
 		}
 	}
-	if err := graphstore.AdoptConversionCandidate(ctx, o, graphConversionAdoptionPlan(receipt), actor); err != nil {
-		return receipt, err
+	if receipt.Plan.Store.SourceSchema == 8 {
+		err = graphstore.UpgradeSchema8Candidate(ctx, o, receipt.Plan.Store, actor)
+		if err == nil {
+			receipt.CandidateState, err = graphstore.VerifySchema8Candidate(ctx, o, receipt.Plan.Store)
+		}
+	} else {
+		err = graphstore.AdoptConversionCandidate(ctx, o, graphConversionAdoptionPlan(receipt), actor)
+		if err == nil {
+			receipt.CandidateState, err = graphstore.VerifyConversionCandidate(ctx, o, graphConversionAdoptionPlan(receipt))
+		}
 	}
-	receipt.CandidateState, err = graphstore.VerifyConversionCandidate(ctx, o, graphConversionAdoptionPlan(receipt))
 	if err != nil {
 		return receipt, err
 	}
@@ -541,8 +579,8 @@ func cloneStringMap(in map[string]string) map[string]string {
 }
 
 func graphConversionVerifyReceipt(ctx context.Context, receipt graphConversionReceipt) (result map[string]any, err error) {
-	if receipt.Plan.Store.SourceSchema == 8 {
-		if receipt.Phase != "prepared-schema8-copy" {
+	if receipt.Phase == "prepared-schema8-copy" {
+		if receipt.Plan.Store.SourceSchema != 8 {
 			return nil, errors.New("schema8 copy receipt phase differs")
 		}
 		hash, err := graphConversionDirectoryHash(filepath.Join(receipt.Directory, "backup"))
@@ -625,11 +663,11 @@ func graphConversionVerifyReceipt(ctx context.Context, receipt graphConversionRe
 	if err != nil || selector != expectedSelector {
 		return nil, errors.New("selector changed before verification")
 	}
-	marker, err := graphConversionMarker(workspace)
+	marker, err := graphConversionMarker(workspace, receipt.Plan.OriginalMarker)
 	if err != nil {
 		return nil, err
 	}
-	if converted && string(marker) != graphPreviewGeneration || !converted && len(marker) != 0 {
+	if converted && string(marker) != graphPreviewGeneration || !converted && string(marker) != receipt.Plan.OriginalMarker {
 		return nil, errors.New("conversion format publication is incomplete")
 	}
 	if converted {

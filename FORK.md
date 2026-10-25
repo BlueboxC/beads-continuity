@@ -494,7 +494,7 @@ Adopt Anthropic SDK1.83.0 and the reviewed x/mod0.42.0, x/net0.61.0, x/crypto0.5
 
 The tuple incorporates GMS PRs #4062, #4058 and #4059 for Dolt #12205: LATERAL scopes retain legal ON predicates; EXIT handlers execute their entire body; and session select limits no longer truncate the input to DISTINCT/window expressions. The handler loop additionally preserves its instruction counter through IF/WHILE branches, with true/false and tail-operation regressions. Existing exact-decimal, Full-Text, storage and merge protections remain. Embedded normal/prepared qualification covers 22 cases, supplemented by the contributor engine suites and the Beads regression suite. Multiple procedure result sets (Dolt #12199) remain outside this correction. Engine upgrades retain matched data/binary recovery and native backup checks; the driver, schemas, capacities, hooks and external CLI/server policy are unchanged.
 
-## Preview3 isolated integration
+## Preview3 integration and explicit activation
 
 The isolated `codex/preview3-integration-20261024` branch adapts the provider and typed Memory catalog from [donnabox/beads PR291](https://github.com/donnabox/beads/pull/291), production source `0c4dc1f0d68a371e56b3e461b968e828e4ea254c`, with compatible native seams checked against `79450c2d67ccab326b20b07cc3d66179fa148ec0`. The fork keeps the v1.3.1 native API, qualified Dolt tuple, telemetry removal, supervised learning, indexing, activity, current-context recovery and viewer.
 
@@ -504,8 +504,8 @@ Explicit native adoption and `bd graph-convert schema8-copy --source <copied-eng
 
 Prime and project reads select current code generations without loading obsolete blobs; activity retains full counts while selecting bounded recent events/handoffs. Ordinary complete snapshots keep 2,048 Resources/16 MiB; the fork project profile has separate explicit graph/current-code budgets. Larger preserved datasets do not silently gain ordinary write capacity: no already oversized acquisition dimension may grow, and other dimensions retain their existing caps.
 
-No real database conversion, installation, Preview3 activation or graph-clone merge is included. Schema8 copy receipts refuse activation. See the [integration and recovery contract](engdocs/design/preview3-integration.md).
+Real installation requires separate operator authorization and fresh matched recovery. Workspace-bound native/schema8 plans support sealed publication, interruption recovery and rollback only before later writes. Schema8 copy receipts still refuse activation; graph-clone merge remains unqualified. See the [integration and recovery contract](engdocs/design/preview3-integration.md).
 
 ### Preview3 explicit operational capacity
 
-The isolated Preview3 branch adds the per-open `continuity-v1` capacity profile and exact public-identity BDP read routing. Ordinary limits, the pinned engine, full history, human knowledge, selected continuity projections and fork customizations remain intact. See `engdocs/design/preview3-integration.md` for finite limits, admitted routes and copy-only activation gates.
+The isolated Preview3 branch adds the per-open `continuity-v1` capacity profile and exact public-identity BDP read routing. Ordinary limits, the pinned engine, full history, human knowledge, selected continuity projections and fork customizations remain intact. See `engdocs/design/preview3-integration.md` for finite limits, admitted routes and separate copy and explicit workspace activation gates.
