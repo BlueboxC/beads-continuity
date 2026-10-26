@@ -109,14 +109,14 @@ func renderStaleResult(result *StaleResult, blockingOnly bool) {
 
 		if mol.BlockingCount > 0 {
 			fmt.Printf("  %s  %s  (%s) [blocking %d]\n",
-				ui.RenderID(printedIssueID(mol.ID)), printedValue(mol.Title), progress, mol.BlockingCount)
+				ui.RenderID(printedIssueID(mol.ID)), printedValue(ui.SanitizeForTerminal(mol.Title)), progress, mol.BlockingCount)
 			fmt.Printf("       → Close with: bd close %s%s\n", arg, note)
 			if mol.BlockingCount <= 3 {
 				fmt.Printf("       → Blocking: [%s]\n", printedIssueIDs(mol.BlockingIssues))
 			}
 		} else {
 			fmt.Printf("  %s  %s  (%s)\n",
-				ui.RenderID(printedIssueID(mol.ID)), printedValue(mol.Title), progress)
+				ui.RenderID(printedIssueID(mol.ID)), printedValue(ui.SanitizeForTerminal(mol.Title)), progress)
 			fmt.Printf("       → Close with: bd close %s%s\n", arg, note)
 		}
 		fmt.Println()

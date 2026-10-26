@@ -85,5 +85,5 @@ func printedFeedbackID(id, title string) string {
 	if title == "" {
 		return printedIssueID(id)
 	}
-	return printedIssueID(id) + " — " + printedValue(title)
+	return printedIssueID(id) + " — " + printedValue(ui.SanitizeForTerminal(title))
 }
