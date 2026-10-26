@@ -379,7 +379,14 @@ func (c *Client) UpdateIssue(ctx context.Context, iid int, updates map[string]in
 
 // GetIssueLinks retrieves issue links for the specified issue IID.
 func (c *Client) GetIssueLinks(ctx context.Context, iid int) ([]IssueLink, error) {
-	urlStr := c.buildURL("/projects/"+c.projectPath()+"/issues/"+strconv.Itoa(iid)+"/links", nil)
+	return c.GetProjectIssueLinks(ctx, c.ProjectID, iid)
+}
+
+// GetProjectIssueLinks retrieves the links of issue iid in projectID, which
+// need not be the configured project: a group listing spans the group's
+// projects, and IIDs repeat across them.
+func (c *Client) GetProjectIssueLinks(ctx context.Context, projectID string, iid int) ([]IssueLink, error) {
+	urlStr := c.buildURL("/projects/"+url.PathEscape(projectID)+"/issues/"+strconv.Itoa(iid)+"/links", nil)
 	respBody, _, err := c.doRequest(ctx, http.MethodGet, urlStr, nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get issue links: %w", err)

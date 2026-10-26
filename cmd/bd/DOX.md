@@ -133,6 +133,7 @@ Root DOX.md and the parent chain remain binding.
 - History compact reports its actual post-rewrite log count; failed readback omits the count and emits an advisory without relabeling a successful rewrite as failed. Dry-run estimates retain the initial commit. Existing embedded exclusivity and server/proxy refusal stay in force.
 
 - Printed remedies use portable quoted values or placeholders with reversible escaped names; displayed paths cannot emit terminal controls.
+- GitLab link publication checks both dependency endpoints against the configured project, reports excluded edges separately and retains dry-run behavior. Epic-child milestone repair applies the same project scope before API reads or writes; parent/type/issue filters remain in force.
 - Probe, clone, finalization and warmup resolve the target workspace endpoint consistently. An established missing server database uses the blocked plan and refuses initialization.
 - Reuse setup’s exact Claude plugin and hook resolution in doctor/tips; detection never installs integrations.
 

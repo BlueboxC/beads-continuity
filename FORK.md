@@ -21,6 +21,13 @@ The retained snapshot-filter algorithm can reimport its deletion commit on the n
 
 ## Ownership and bootstrap follow-ups
 
+PR #7866 adds qualified GitLab pull keys, rename-stable project-ID/IID
+matching and dependency identities without widening the fork's mutation or
+credential scope. The adaptation also guards epic-child milestone repair,
+distinguishes same-IID links carrying different project IDs without URLs, and
+excludes known foreign-project links from local convergence. HTTP fixtures keep
+web/API origins coherent and direct every request to owned loopback servers.
+
 PR #7871 prevents routed create, its preview and personal migration from
 initializing over a nonempty JSONL-only historical clone. Discovery's local
 workspace predicate is reused, unreadable exports refuse, and recovery remains
