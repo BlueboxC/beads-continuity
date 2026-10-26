@@ -15,6 +15,10 @@ Upstream attribution and the MIT license remain intact. Fork additions are
 available on `codex/project-continuity`; upstream installation channels do not
 contain them. See [installation and workflow](docs/core-concepts/fork-continuity.md).
 
+## Reviewed federation filtering safety (7873)
+
+The retained snapshot-filter algorithm can reimport its deletion commit on the next sync and leaves excluded rows readable in ancestry. Public server and embedded Sync therefore reject nonempty `federation.exclude_types` before committing, fetching, merging or pushing. The historical default `[wisp]` is preserved and now refuses; `[]` deliberately selects unfiltered synchronization. Review existing peers/history before changing that setting. The guard does not scrub previously exported history or implement private filtered replication. Real Dolt2.6/file-remote reproduction demonstrates both round-two deletion and retained ancestor data; adapter admission regressions require refusal before store access. Report: gastownhall/beads#7873.
+
 ## Ownership and bootstrap follow-ups
 
 The follow-ups to upstream PRs #7797, #7803, #7798 and #7804 preserve real

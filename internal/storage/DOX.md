@@ -41,6 +41,8 @@ Root DOX.md and the parent chain remain binding.
 
 ## Work Guidance
 
+Federation Sync rejects nonempty requested exclusions before committing or transferring on both adapters. Historical staging deletions can merge back and do not remove ancestor data; never present them as a privacy boundary. Empty exclusions explicitly request unfiltered sync. Existing exported history requires separate operator review and is never rewritten by this guard.
+
 Memory namespace selectors preserve exact prefix semantics across adapters. All three adapters select namespaces in SQL before transferring values; the unit-of-work adapter uses ConfigUseCase/repository within its existing read transaction. Case-insensitive memory search remains in Go.
 
 Embedded Memories offers an optional read snapshot with a callback-scoped reader for Recall/List. It shares one read transaction and engine acquisition across a complete current-generation read; the borrowed reader exposes no writes and fails after the callback. Other adapters retain their existing reads.

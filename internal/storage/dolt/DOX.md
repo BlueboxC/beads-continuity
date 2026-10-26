@@ -42,6 +42,8 @@ Root DOX.md and the parent chain remain binding.
 
 ## Work Guidance
 
+Public Sync with requested exclusions refuses before commit/fetch/merge/push. Retained staging helpers and their historical regression tests do not qualify safe filtered replication. Do not silently bypass the refusal or reset existing peer history.
+
 Metadata field conversion delegates to shared issueops parsing; YAML numeric types, enum fallback and adapter-specific warning/error modes remain unchanged.
 
 Use shared storage contracts; verify actual durability and transaction behavior at the real backend boundary.

@@ -349,6 +349,11 @@ func (s *DoltStore) Sync(ctx context.Context, peer string, strategy string) (*Sy
 		Peer:      peer,
 		StartTime: time.Now(),
 	}
+	excludeTypes := config.GetFederationConfig().ExcludeTypes
+	if err := versioncontrolops.CheckFederationExclusions(excludeTypes); err != nil {
+		result.Error = err
+		return result, err
+	}
 
 	// GH#2474: match PullFrom — commit pending changes before the merge,
 	// INCLUDING config (where kv.memory.* rows live). Plain Commit excludes
@@ -428,7 +433,6 @@ func (s *DoltStore) Sync(ctx context.Context, peer string, strategy string) (*Sy
 	}
 
 	// Step 5: Push our changes to peer, filtering excluded types.
-	excludeTypes := config.GetFederationConfig().ExcludeTypes
 	if err := s.filteredPushToPeer(ctx, peer, excludeTypes); err != nil {
 		// Push failure is not fatal - peer may not accept pushes
 		result.PushError = err

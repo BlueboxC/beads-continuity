@@ -17,6 +17,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/steveyegge/beads/internal/config"
 	"github.com/steveyegge/beads/internal/storage"
 	"github.com/steveyegge/beads/internal/storage/issueops"
 	"github.com/steveyegge/beads/internal/storage/versioncontrolops"
@@ -293,6 +294,10 @@ func (s *EmbeddedDoltStore) Sync(ctx context.Context, peer string, strategy stri
 	result := &storage.SyncResult{
 		Peer:      peer,
 		StartTime: time.Now(),
+	}
+	if err := versioncontrolops.CheckFederationExclusions(config.GetFederationConfig().ExcludeTypes); err != nil {
+		result.Error = err
+		return result, err
 	}
 
 	// GH#2474 / bd-578h9.2: commit pending changes before the merge, matching

@@ -302,7 +302,7 @@ func initialize(beadsDirSetting string) error {
 	v.SetDefault("federation.remote", "")                          // e.g., dolthub://org/beads, gs://bucket/beads, s3://bucket/beads, az://account.blob.core.windows.net/container/beads
 	v.SetDefault("federation.sovereignty", "")                     // T1 | T2 | T3 | T4 (empty = no restriction)
 	v.SetDefault("federation.allowed-remote-patterns", []string{}) // glob patterns restricting allowed remote URLs (enterprise lockdown)
-	v.SetDefault("federation.exclude_types", []string{"wisp"})     // issue types excluded from federation push (privacy filter)
+	v.SetDefault("federation.exclude_types", []string{"wisp"})     // requested exclusions; nonempty values make Sync refuse unsafe snapshot filtering
 
 	// Push configuration defaults
 	v.SetDefault("no-push", false)
@@ -1094,7 +1094,7 @@ func NodeID() string {
 type FederationConfig struct {
 	Remote       string      // dolthub://org/beads, gs://bucket/beads, s3://bucket/beads
 	Sovereignty  Sovereignty // T1, T2, T3, T4
-	ExcludeTypes []string    // issue types excluded from federation push (e.g. ["wisp"])
+	ExcludeTypes []string    // requested exclusions (nonempty values make Sync refuse)
 }
 
 // GetFederationConfig returns the current federation configuration.

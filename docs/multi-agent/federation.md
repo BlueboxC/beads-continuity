@@ -7,6 +7,15 @@ Federation enables peer-to-peer synchronization of beads databases between
 multiple workspaces using Dolt remotes. Each workspace maintains its own database
 while sharing work items with configured peers.
 
+## Fork filtering boundary
+
+This fork refuses `federation sync` when `federation.exclude_types` is nonempty,
+including the historical default `[wisp]`, before any commit or transfer. The
+snapshot-filter deletion can merge back into its sender and does not erase
+excluded data from ancestor commits. After reviewing existing peers and history,
+`exclude_types: []` explicitly selects synchronization of the complete history.
+The refusal neither scrubs previous exports nor implements private replication.
+
 ## Overview
 
 Federation uses Dolt's distributed version control capabilities to sync issue
