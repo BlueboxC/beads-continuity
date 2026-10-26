@@ -21,6 +21,8 @@ The retained snapshot-filter algorithm can reimport its deletion commit on the n
 
 ## Ownership and bootstrap follow-ups
 
+PR #7860 is extended to the source fallback: both release/source installer routes stage a uniquely named executable in the destination filesystem, set 0755 and rename it into place, cleaning handled failed stages. Optional local signing happens on the candidate before publication. Download/build temporary cleanup and caller-directory restoration cover failure paths; the private installed launcher is unchanged.
+
 PRs #7863/#7867 are reconciled with typed gitignore permission failures: synced bootstrap warns only after required patterns are present and continues persisting its remote. Other read/write errors still abort. Complete private files retain owner bits; tightening only removes group/other access, preserves local patterns and skips synthetic Windows modes. HTTP connect remains outside fork admission.
 
 PR #7859 closes the remaining jj secondary-workspace discovery boundary: explicit `-C` selection uses its primary store before unrelated ancestors, ignores nested jj ownership inside a linked Git worktree and retains explicit worktree redirects. Existing separate-database and fallback-free discovery remain supported.

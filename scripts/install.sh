@@ -285,13 +285,37 @@ create_beads_alias() {
     log_success "Created 'beads' alias -> bd"
 }
 
+# Publish only a complete executable, using a rename within the destination filesystem.
+# The subshell keeps cleanup traps local to this one publication attempt.
+publish_binary() (
+    local source=$1 install_dir=$2 staged_bd=""
+    local -a runner=()
+    if [[ -d "$install_dir/bd" ]]; then
+        return 1
+    fi
+    if [[ ! -w "$install_dir" ]]; then
+        runner=(sudo)
+    fi
+    trap '[ -z "$staged_bd" ] || "${runner[@]}" rm -f "$staged_bd"' EXIT
+    trap '[ -z "$staged_bd" ] || "${runner[@]}" rm -f "$staged_bd"; staged_bd=""; exit 1' HUP INT TERM
+    if ! staged_bd=$("${runner[@]}" mktemp "$install_dir/.bd.install.tmp.XXXXXXXX"); then
+        return 1
+    fi
+    if ! { "${runner[@]}" cp "$source" "$staged_bd" &&
+           "${runner[@]}" chmod 0755 "$staged_bd" &&
+           "${runner[@]}" mv -f "$staged_bd" "$install_dir/bd"; }; then
+        return 1
+    fi
+    staged_bd=""
+)
+
 # Download and install from GitHub releases
 install_from_release() {
     log_info "Installing bd from GitHub releases..."
 
     local platform=$1
-    local tmp_dir
-    tmp_dir=$(mktemp -d)
+    local tmp_dir original_dir=$PWD
+    if ! tmp_dir=$(mktemp -d); then return 1; fi
 
     # Get latest release version
     log_info "Fetching latest release..."
@@ -300,11 +324,12 @@ install_from_release() {
     local release_json
 
     if command -v curl &> /dev/null; then
-        release_json=$(curl -fsSL "$latest_url")
+        if ! release_json=$(curl -fsSL "$latest_url"); then rm -rf "$tmp_dir"; return 1; fi
     elif command -v wget &> /dev/null; then
-        release_json=$(wget -qO- "$latest_url")
+        if ! release_json=$(wget -qO- "$latest_url"); then rm -rf "$tmp_dir"; return 1; fi
     else
         log_error "Neither curl nor wget found. Please install one of them."
+        rm -rf "$tmp_dir"
         return 1
     fi
 
@@ -312,6 +337,7 @@ install_from_release() {
 
     if [ -z "$version" ]; then
         log_error "Failed to fetch latest version"
+        rm -rf "$tmp_dir"
         return 1
     fi
 
@@ -329,17 +355,17 @@ install_from_release() {
     
     log_info "Downloading $archive_name..."
     
-    cd "$tmp_dir"
+    if ! cd "$tmp_dir"; then rm -rf "$tmp_dir"; return 1; fi
     if ! download_file "$download_url" "$archive_name"; then
         log_error "Download failed"
-        cd - > /dev/null || cd "$HOME"
+        cd "$original_dir" || cd "$HOME"
         rm -rf "$tmp_dir"
         return 1
     fi
 
     log_info "Verifying release checksum..."
     if ! verify_release_checksum "$release_json" "$version" "$archive_name" "$archive_name"; then
-        cd - > /dev/null || cd "$HOME"
+        cd "$original_dir" || cd "$HOME"
         rm -rf "$tmp_dir"
         return 1
     fi
@@ -348,6 +374,7 @@ install_from_release() {
     log_info "Extracting archive..."
     if ! tar -xzf "$archive_name"; then
         log_error "Failed to extract archive"
+        cd "$original_dir" || cd "$HOME"
         rm -rf "$tmp_dir"
         return 1
     fi
@@ -355,7 +382,7 @@ install_from_release() {
     local extracted_bd
     if ! extracted_bd=$(find_extracted_bd "$tmp_dir"); then
         log_error "Extracted archive does not contain an executable 'bd' binary"
-        cd - > /dev/null || cd "$HOME"
+        cd "$original_dir" || cd "$HOME"
         rm -rf "$tmp_dir"
         return 1
     fi
@@ -369,26 +396,15 @@ install_from_release() {
         mkdir -p "$install_dir"
     fi
 
-    # Install binary
+    # Re-sign the disposable candidate before publishing it, when opted in.
+    resign_for_macos "$extracted_bd"
     log_info "Installing to $install_dir..."
-    if [[ -w "$install_dir" ]]; then
-        if ! mv "$extracted_bd" "$install_dir/bd"; then
-            log_error "Failed to install bd to $install_dir"
-            cd - > /dev/null || cd "$HOME"
-            rm -rf "$tmp_dir"
-            return 1
-        fi
-    else
-        if ! sudo mv "$extracted_bd" "$install_dir/bd"; then
-            log_error "Failed to install bd to $install_dir"
-            cd - > /dev/null || cd "$HOME"
-            rm -rf "$tmp_dir"
-            return 1
-        fi
+    if ! publish_binary "$extracted_bd" "$install_dir"; then
+        log_error "Failed to install bd to $install_dir"
+        cd "$original_dir" || cd "$HOME"
+        rm -rf "$tmp_dir"
+        return 1
     fi
-
-    # Optional local ad-hoc re-sign for macOS (off by default)
-    resign_for_macos "$install_dir/bd"
 
     # Create 'beads' alias symlink
     create_beads_alias "$install_dir"
@@ -408,7 +424,7 @@ install_from_release() {
         echo ""
     fi
 
-    cd - > /dev/null || cd "$HOME"
+    cd "$original_dir" || cd "$HOME"
     rm -rf "$tmp_dir"
     return 0
 }
@@ -526,19 +542,19 @@ install_with_go() {
 build_from_source() {
     log_info "Building bd from source..."
 
-    local tmp_dir
-    tmp_dir=$(mktemp -d)
+    local tmp_dir original_dir=$PWD
+    if ! tmp_dir=$(mktemp -d); then return 1; fi
 
-    cd "$tmp_dir"
+    if ! cd "$tmp_dir"; then rm -rf "$tmp_dir"; return 1; fi
     log_info "Cloning repository..."
 
     if git clone --depth 1 https://github.com/gastownhall/beads.git; then
-        cd beads
+        if ! cd beads; then cd "$original_dir" || cd "$HOME"; rm -rf "$tmp_dir"; return 1; fi
         log_info "Building binary..."
 
         if CGO_ENABLED=1 go build -tags gms_pure_go -o bd ./cmd/bd; then
             if ! verify_binary_has_cgo "./bd" "source build"; then
-                cd - > /dev/null || cd "$HOME"
+                cd "$original_dir" || cd "$HOME"
                 rm -rf "$tmp_dir"
                 return 1
             fi
@@ -552,15 +568,14 @@ build_from_source() {
                 mkdir -p "$install_dir"
             fi
 
+            resign_for_macos "./bd"
             log_info "Installing to $install_dir..."
-            if [[ -w "$install_dir" ]]; then
-                mv bd "$install_dir/"
-            else
-                sudo mv bd "$install_dir/"
+            if ! publish_binary "./bd" "$install_dir"; then
+                log_error "Failed to install bd to $install_dir"
+                cd "$original_dir" || cd "$HOME"
+                rm -rf "$tmp_dir"
+                return 1
             fi
-
-            # Optional local ad-hoc re-sign for macOS (off by default)
-            resign_for_macos "$install_dir/bd"
 
             # Create 'beads' alias symlink
             create_beads_alias "$install_dir"
@@ -579,19 +594,19 @@ build_from_source() {
                 echo ""
             fi
 
-            cd - > /dev/null || cd "$HOME"
+            cd "$original_dir" || cd "$HOME"
             rm -rf "$tmp_dir"
             return 0
         else
             log_error "Build failed"
             print_missing_build_deps_help
-            cd - > /dev/null || cd "$HOME"
-            cd - > /dev/null
+            cd "$original_dir" || cd "$HOME"
             rm -rf "$tmp_dir"
             return 1
         fi
     else
         log_error "Failed to clone repository"
+        cd "$original_dir" || cd "$HOME"
         rm -rf "$tmp_dir"
         return 1
     fi

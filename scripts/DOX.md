@@ -24,6 +24,8 @@ Root DOX.md and the parent chain remain binding.
 
 - Paired standalone CLI, Docker fixture and proxied-smoke pins are Dolt 2.6.0, at or above the enforced external floor. Keep the embedded engine and independent backup qualification separate.
 
+- Public release and source-fallback installs copy into a unique owned temporary in the destination directory, set executable mode and publish by same-filesystem rename. Handled publication failures/signals retire that stage and retain the previous binary. Sign disposable candidates before publication; preserve checksum checks, opt-in signing and private installed launchers. Restore the caller directory before retiring download/build temporaries.
+
 ## Work Guidance
 
 Generated CLI freshness checks compare generated pages while excluding DOX.md work contracts; DOX reachability is checked separately.
