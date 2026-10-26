@@ -21,6 +21,11 @@ The retained snapshot-filter algorithm can reimport its deletion commit on the n
 
 ## Ownership and bootstrap follow-ups
 
+PR #7871 prevents routed create, its preview and personal migration from
+initializing over a nonempty JSONL-only historical clone. Discovery's local
+workspace predicate is reused, unreadable exports refuse, and recovery remains
+an explicit `bd init --from-jsonl` in the target repository.
+
 PR #7869 is adapted to the existing conservative cleanup guards. A shared
 positive runtime-file plan preserves project material and legacy version
 witnesses; it never recursively removes a redirect stub. Diagnostics mark only

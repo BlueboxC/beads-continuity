@@ -717,6 +717,12 @@ func hasBeadsProjectFiles(beadsDir string) bool {
 	return false
 }
 
+// HasProjectFiles exposes discovery's existing local workspace predicate.
+// It neither follows redirects nor initializes or opens storage.
+func HasProjectFiles(beadsDir string) bool {
+	return hasBeadsProjectFiles(beadsDir)
+}
+
 // hasBeadsDatabase is the strict counterpart to hasBeadsProjectFiles: it
 // returns true only when beadsDir contains an actual database — a dolt/
 // directory, an embeddeddolt/ directory, or a non-backup *.db file. Mere

@@ -8,6 +8,7 @@ import (
 	"slices"
 	"strings"
 
+	"github.com/steveyegge/beads/internal/beads"
 	"github.com/steveyegge/beads/internal/config"
 	"github.com/steveyegge/beads/internal/configfile"
 	"github.com/steveyegge/beads/internal/storage"
@@ -38,6 +39,16 @@ func refuseUninitializableTarget(beadsDir string) error {
 	}
 	if err := guardLegacyUpgradeWorkspace(beadsDir); err != nil {
 		return err
+	}
+	// Initializing and creating the first issue would suppress empty-store
+	// auto-import and hide the only surviving historical export.
+	info, err := os.Stat(filepath.Join(beadsDir, defaultImportJSONLPath))
+	if err != nil && !os.IsNotExist(err) {
+		return fmt.Errorf("cannot inspect target historical export: %w", err)
+	}
+	if err == nil && info.Mode().IsRegular() && info.Size() > 0 &&
+		!beads.HasProjectFiles(beadsDir) && beads.FollowRedirect(beadsDir) == beadsDir {
+		return fmt.Errorf("%w at %s: nonempty issues.jsonl is the only workspace data; refusing to hide it behind a new database. Run `bd init --from-jsonl` in %s, then retry", ErrNoBeadsDatabase, printedValue(beadsDir), printedValue(filepath.Dir(beadsDir)))
 	}
 	if databases := embeddeddolt.Databases(beadsDir); len(databases) > 1 {
 		return fmt.Errorf("target %s has no metadata.json and holds several databases (%s); name the intended database in metadata.json before routing writes", printedValue(filepath.Dir(beadsDir)), strings.Join(databases, ", "))
