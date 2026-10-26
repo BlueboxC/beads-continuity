@@ -167,7 +167,7 @@ updated Go 1.26 devcontainer. The fork has no Bazel setup to transplant.
 The embedded engine keeps `driver/v2 v2.4.1`, starting from coffeegoddd's
 [upstream proposal #7254](https://github.com/gastownhall/beads/pull/7254).
 It pins Dolt v2.6.0 plus the retained storage corrections, catalog and SQL fixes at
-[BlueboxC/dolt `212be23824de`](https://github.com/BlueboxC/dolt/commit/212be23824def28adfbfb25cd89be67ed91349ae),
+[BlueboxC/dolt `471ea90de825`](https://github.com/BlueboxC/dolt/commit/471ea90de8258ed0862f61ea3ad61d384839c004),
 with the [SQL analyzer correction](https://github.com/BlueboxC/go-mysql-server/commit/1aa8b38f5b78da630065da597096598bd17df318) on base `38a1fb50b434`. The engine remains a Go dependency;
 Beads does not implement engine-specific SQL workarounds.
 
@@ -581,3 +581,7 @@ The inherited macOS managed-listener fixture advertises admitted Dolt 2.6.0 and 
 ### Security documentation consistency
 
 SECURITY.md describes the existing removal of anonymous Beads usage metrics and keeps operator-enabled OpenTelemetry and standalone Dolt controls separate. This corrects stale documentation; it does not add a collector, change saved settings or qualify an upstream vulnerability.
+
+### Remote branch log traversal (Dolt #12209)
+
+The pinned engine includes local/remote branch heads, deduplicated starting commits and HEAD decoration in `DOLT_LOG('--all')`. Mixed --all/two-dot/three-dot arguments refuse before traversal; ordinary ranges, exclusions, table filters and the every-common-ancestor three-dot guard remain qualified in normal/prepared execution. Native old/new backup round trips include remote refs, new writes, full GC and old-engine cold reads. Driver, analyzer, schema, Graph Preview history admission and external CLI/server policy are unchanged.
