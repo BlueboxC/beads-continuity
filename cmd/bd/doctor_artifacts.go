@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"os"
 	"strings"
 
 	"github.com/steveyegge/beads/cmd/bd/doctor"
@@ -30,7 +31,7 @@ func runArtifactsCheck(path string, clean bool, yes bool) error {
 	if jsonOutput {
 		// GH#2438: When --clean is also set, perform cleanup before outputting JSON.
 		if clean && report.SafeDeleteCount > 0 {
-			if err := fix.ClassicArtifacts(path); err != nil {
+			if err := fix.ClassicArtifacts(path, os.Stderr); err != nil {
 				return HandleError("during cleanup: %v", err)
 			}
 			report, err = doctor.ScanForArtifacts(path)
@@ -82,7 +83,7 @@ func runArtifactsCheck(path string, clean bool, yes bool) error {
 	}
 
 	if len(report.CruftBeadsDirs) > 0 {
-		fmt.Printf("Cruft .beads Directories (%d):\n", len(report.CruftBeadsDirs))
+		fmt.Printf("Redirect-stub findings (%d):\n", len(report.CruftBeadsDirs))
 		for _, f := range report.CruftBeadsDirs {
 			safeTag := ""
 			if f.SafeDelete {
@@ -123,7 +124,7 @@ func runArtifactsCheck(path string, clean bool, yes bool) error {
 		}
 	}
 
-	if err := fix.ClassicArtifacts(path); err != nil {
+	if err := fix.ClassicArtifacts(path, os.Stdout); err != nil {
 		return HandleError("during cleanup: %v", err)
 	}
 	return nil

@@ -2,6 +2,7 @@ package fix
 
 import (
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -13,12 +14,12 @@ import (
 // Only removes artifacts that are safe to delete:
 // - JSONL export artifacts (not issues.jsonl itself)
 // - SQLite WAL/SHM files and backup databases in positively identified Dolt workspaces
-// - Extra files in redirect-only .beads directories
+// - Positively identified runtime leftovers in redirect-only stubs
 //
 // It never migrates a .beads directory's metadata, and leaves a .beads
 // directory in a format this build cannot open untouched (see
 // cleanBeadsDirArtifacts).
-func ClassicArtifacts(path string) error {
+func ClassicArtifacts(path string, out io.Writer) error {
 	var removed, skipped, errCount int
 
 	// Walk the directory tree looking for .beads/ directories
@@ -38,7 +39,7 @@ func ClassicArtifacts(path string) error {
 			return nil
 		}
 
-		r, s, e := cleanBeadsDirArtifacts(walkPath)
+		r, s, e := cleanBeadsDirArtifacts(walkPath, out)
 		removed += r
 		skipped += s
 		errCount += e
@@ -50,10 +51,10 @@ func ClassicArtifacts(path string) error {
 	}
 
 	// Report summary
-	fmt.Printf("  Artifact cleanup: %d removed, %d skipped, %d errors\n", removed, skipped, errCount)
+	fmt.Fprintf(out, "  Artifact cleanup: %d removed, %d skipped, %d errors\n", removed, skipped, errCount)
 
 	if skipped > 0 {
-		fmt.Println("  Skipped items may need manual review (e.g., issues.jsonl in dolt dirs, beads.db files)")
+		fmt.Fprintln(out, "  Skipped items need manual review: retained project material or storage")
 	}
 
 	if errCount > 0 {
@@ -74,7 +75,7 @@ func ClassicArtifacts(path string) error {
 // config.json, dropping keys it does not know, and the cleanup below would
 // remove files, the format marker among them, whose meaning this build does
 // not know.
-func cleanBeadsDirArtifacts(beadsDir string) (removed, skipped, errCount int) {
+func cleanBeadsDirArtifacts(beadsDir string, out io.Writer) (removed, skipped, errCount int) {
 	cfg, err := configfile.LoadNativeForDiscovery(beadsDir)
 	if err != nil {
 		return
@@ -88,25 +89,23 @@ func cleanBeadsDirArtifacts(beadsDir string) (removed, skipped, errCount int) {
 
 	// 1. Clean JSONL artifacts in dolt-native directories
 	if hasDolt {
-		r, s, e := cleanJSONLArtifacts(beadsDir)
+		r, s, e := cleanJSONLArtifacts(beadsDir, out)
 		removed += r
 		skipped += s
 		errCount += e
 	}
 
 	// 2. Clean SQLite artifacts
-	r, s, e := cleanSQLiteArtifacts(beadsDir, cfg)
+	r, s, e := cleanSQLiteArtifacts(beadsDir, cfg, out)
 	removed += r
 	skipped += s
 	errCount += e
 
-	// 3. Clean cruft .beads directories (if redirect is expected)
-	// Clean even when the redirect file is missing — stale cruft files
-	// (config.yaml, metadata.json, README.md, issues.jsonl, etc.) prevent
-	// the redirect from being created and should be removed regardless.
+	// Preserve project material; delete only individually planned runtime files.
 	if isRedirectExpected {
-		r, e := cleanCruftBeadsDirFiles(beadsDir)
+		r, k, e := cleanCruftBeadsDirFiles(beadsDir, out)
 		removed += r
+		skipped += k
 		errCount += e
 	}
 
@@ -165,7 +164,7 @@ func isRedirectExpectedLocation(beadsDir string) bool {
 }
 
 // cleanJSONLArtifacts removes stale JSONL files from a dolt-native .beads directory.
-func cleanJSONLArtifacts(beadsDir string) (removed, skipped, errCount int) {
+func cleanJSONLArtifacts(beadsDir string, out io.Writer) (removed, skipped, errCount int) {
 	// Safe to delete (not the primary data source)
 	safeFiles := []string{
 		"issues.jsonl.new",
@@ -177,11 +176,11 @@ func cleanJSONLArtifacts(beadsDir string) (removed, skipped, errCount int) {
 			continue
 		}
 		if err := os.Remove(path); err != nil {
-			fmt.Printf("  Error removing %s: %v\n", path, err)
+			fmt.Fprintf(out, "  Error removing %s: %v\n", path, err)
 			errCount++
 			continue
 		}
-		fmt.Printf("  Removed: %s (JSONL artifact)\n", path)
+		fmt.Fprintf(out, "  Removed: %s (JSONL artifact)\n", path)
 		removed++
 	}
 
@@ -190,14 +189,14 @@ func cleanJSONLArtifacts(beadsDir string) (removed, skipped, errCount int) {
 	if info, err := os.Stat(interPath); err == nil {
 		if info.Size() == 0 {
 			if err := os.Remove(interPath); err != nil {
-				fmt.Printf("  Error removing %s: %v\n", interPath, err)
+				fmt.Fprintf(out, "  Error removing %s: %v\n", interPath, err)
 				errCount++
 			} else {
-				fmt.Printf("  Removed: %s (empty interactions log)\n", interPath)
+				fmt.Fprintf(out, "  Removed: %s (empty interactions log)\n", interPath)
 				removed++
 			}
 		} else {
-			fmt.Printf("  Skip (not empty): %s\n", interPath)
+			fmt.Fprintf(out, "  Skip (not empty): %s\n", interPath)
 			skipped++
 		}
 	}
@@ -205,7 +204,7 @@ func cleanJSONLArtifacts(beadsDir string) (removed, skipped, errCount int) {
 	// issues.jsonl in dolt-native directory - skip (needs manual review)
 	issuesPath := filepath.Join(beadsDir, "issues.jsonl")
 	if _, err := os.Stat(issuesPath); err == nil {
-		fmt.Printf("  Skip (needs review): %s (issues.jsonl in dolt-native dir)\n", issuesPath)
+		fmt.Fprintf(out, "  Skip (needs review): %s (issues.jsonl in dolt-native dir)\n", issuesPath)
 		skipped++
 	}
 
@@ -264,7 +263,7 @@ func CanCleanRedirectDirectory(beadsDir string, cfg *configfile.Config) bool {
 }
 
 // cleanSQLiteArtifacts removes only files in a positively identified Dolt workspace.
-func cleanSQLiteArtifacts(beadsDir string, cfg *configfile.Config) (removed, skipped, errCount int) {
+func cleanSQLiteArtifacts(beadsDir string, cfg *configfile.Config, out io.Writer) (removed, skipped, errCount int) {
 	if !SelectsDolt(beadsDir, cfg) {
 		return
 	}
@@ -284,11 +283,11 @@ func cleanSQLiteArtifacts(beadsDir string, cfg *configfile.Config) (removed, ski
 		if name == "beads.db-shm" || name == "beads.db-wal" {
 			path := filepath.Join(beadsDir, name)
 			if err := os.Remove(path); err != nil {
-				fmt.Printf("  Error removing %s: %v\n", path, err)
+				fmt.Fprintf(out, "  Error removing %s: %v\n", path, err)
 				errCount++
 				continue
 			}
-			fmt.Printf("  Removed: %s (SQLite WAL/SHM)\n", path)
+			fmt.Fprintf(out, "  Removed: %s (SQLite WAL/SHM)\n", path)
 			removed++
 			continue
 		}
@@ -296,7 +295,7 @@ func cleanSQLiteArtifacts(beadsDir string, cfg *configfile.Config) (removed, ski
 		// beads.db - skip (needs manual review, could be active)
 		if name == "beads.db" {
 			path := filepath.Join(beadsDir, name)
-			fmt.Printf("  Skip (needs review): %s\n", path)
+			fmt.Fprintf(out, "  Skip (needs review): %s\n", path)
 			skipped++
 			continue
 		}
@@ -305,11 +304,11 @@ func cleanSQLiteArtifacts(beadsDir string, cfg *configfile.Config) (removed, ski
 		if strings.HasPrefix(name, "beads.backup-") && strings.HasSuffix(name, ".db") {
 			path := filepath.Join(beadsDir, name)
 			if err := os.Remove(path); err != nil {
-				fmt.Printf("  Error removing %s: %v\n", path, err)
+				fmt.Fprintf(out, "  Error removing %s: %v\n", path, err)
 				errCount++
 				continue
 			}
-			fmt.Printf("  Removed: %s (pre-migration backup)\n", path)
+			fmt.Fprintf(out, "  Removed: %s (pre-migration backup)\n", path)
 			removed++
 		}
 	}
@@ -317,73 +316,25 @@ func cleanSQLiteArtifacts(beadsDir string, cfg *configfile.Config) (removed, ski
 	return
 }
 
-// cleanCruftBeadsDirFiles removes everything from a .beads directory except
-// the redirect file, .gitkeep, and (when a redirect file is present) the
-// directory's own metadata: metadata.json, or a legacy config.json, which
-// this walk does not migrate. The Classic Artifacts scan
-// (doctor.scanCruftBeadsDir) reports exactly the entries this removes.
-func cleanCruftBeadsDirFiles(beadsDir string) (removed, errCount int) {
-	entries, err := os.ReadDir(beadsDir)
+// cleanCruftBeadsDirFiles never recursively removes a directory or follows a
+// symlink. Scan and cleanup use the same positive runtime-file plan.
+func cleanCruftBeadsDirFiles(beadsDir string, out io.Writer) (removed, skipped, errCount int) {
+	remove, kept, err := PlanRedirectStub(beadsDir)
 	if err != nil {
-		return 0, 1
+		return 0, 0, 1
 	}
-
-	// gastownhall/beads#4692: a co-located redirect and metadata.json is a
-	// documented, supported topology (see fb51196f7 / docs/reference/
-	// advanced.md "Database Redirects" -- a server-mode source rig's own
-	// metadata.json supplies its dolt_database while the redirect points at
-	// the shared Gas Town root). Deleting metadata.json here would corrupt
-	// that source rig's identity while leaving the redirect itself intact,
-	// so never delete it when a redirect is present in the same directory.
-	// A legacy config.json there is kept too, unmigrated, but it is inert:
-	// ResolveRedirect reads the source's dolt_database only from
-	// metadata.json, and this walk no longer migrates (see
-	// cleanBeadsDirArtifacts). bd wrote config.json only before its rename
-	// to metadata.json, which predates dolt_database, so one bd wrote names
-	// no database to route to. It is kept because the cleanup cannot vouch
-	// for what it holds, not for routing.
-	hasRedirect := false
-	for _, entry := range entries {
-		if entry.Name() == "redirect" {
-			hasRedirect = true
-			break
-		}
+	if len(kept) > 0 {
+		fmt.Fprintf(out, "  Skip (needs review): %s: %s\n", beadsDir, strings.Join(kept, ", "))
+		skipped++
 	}
-
-	for _, entry := range entries {
-		name := entry.Name()
-		// Keep redirect and .gitkeep
-		if name == "redirect" || name == ".gitkeep" {
+	for _, path := range remove {
+		if err := os.Remove(path); err != nil {
+			fmt.Fprintf(out, "  Error removing %s: %v\n", path, err)
+			errCount++
 			continue
 		}
-		if (name == "metadata.json" || name == "config.json") && hasRedirect {
-			continue
-		}
-
-		entryPath := filepath.Join(beadsDir, name)
-
-		// Validate path doesn't escape
-		rel, err := filepath.Rel(beadsDir, entryPath)
-		if err != nil || rel == ".." || strings.HasPrefix(rel, ".."+string(os.PathSeparator)) {
-			continue
-		}
-
-		if entry.IsDir() {
-			if err := os.RemoveAll(entryPath); err != nil {
-				fmt.Printf("  Error removing %s: %v\n", entryPath, err)
-				errCount++
-				continue
-			}
-		} else {
-			if err := os.Remove(entryPath); err != nil {
-				fmt.Printf("  Error removing %s: %v\n", entryPath, err)
-				errCount++
-				continue
-			}
-		}
-		fmt.Printf("  Removed: %s (cruft in redirect-only dir)\n", entryPath)
+		fmt.Fprintf(out, "  Removed: %s (runtime leftover in redirect-only dir)\n", path)
 		removed++
 	}
-
 	return
 }

@@ -2,6 +2,7 @@ package doctor
 
 import (
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -119,15 +120,13 @@ func TestScanForArtifacts_CruftBeadsDir(t *testing.T) {
 		t.Errorf("expected 1 cruft beads dir, got %d", len(report.CruftBeadsDirs))
 	}
 
-	if len(report.CruftBeadsDirs) > 0 && !report.CruftBeadsDirs[0].SafeDelete {
-		t.Error("cruft beads dir with redirect should be safe to delete")
+	if len(report.CruftBeadsDirs) > 0 && report.CruftBeadsDirs[0].SafeDelete {
+		t.Error("mixed redirect directory must require review")
 	}
 }
 
 func TestScanForArtifacts_CruftBeadsDirNoRedirect(t *testing.T) {
-	// Cruft dir without redirect should be detected AND safe to delete.
-	// With no local storage present, stale non-database files
-	// can still be removed before the redirect is created.
+	// A redirect-expected path alone establishes no deletion authority.
 	dir := t.TempDir()
 	polecatsDir := filepath.Join(dir, "polecats", "testpolecat")
 	beadsDir := filepath.Join(polecatsDir, ".beads")
@@ -149,8 +148,8 @@ func TestScanForArtifacts_CruftBeadsDirNoRedirect(t *testing.T) {
 	if len(report.CruftBeadsDirs) != 1 {
 		t.Errorf("expected 1 cruft beads dir, got %d", len(report.CruftBeadsDirs))
 	}
-	if len(report.CruftBeadsDirs) > 0 && !report.CruftBeadsDirs[0].SafeDelete {
-		t.Error("cruft beads dir in redirect-expected location should be safe to delete")
+	if len(report.CruftBeadsDirs) > 0 && report.CruftBeadsDirs[0].SafeDelete {
+		t.Error("unknown files require review even in redirect-expected locations")
 	}
 }
 
@@ -550,13 +549,8 @@ func TestScanForArtifacts_DoesNotMigrateLegacyConfig(t *testing.T) {
 	}
 }
 
-// TestScanForArtifacts_MetadataAlongsideRedirectIsNotCruft pins that the scan
-// reports in a redirect-only .beads exactly what the cleanup removes there.
-// Beside a redirect the cleanup keeps the directory's own metadata, a
-// metadata.json or a legacy config.json not yet migrated into one
-// (gastownhall/beads#4692), so the scan lists only the unrelated file, the
-// cleanup leaves the metadata byte-identical, and a second scan has nothing
-// left to report. Without a redirect the metadata is cruft like the rest.
+// TestScanForArtifacts_MetadataAlongsideRedirectIsNotCruft checks that
+// retained project material stays byte-identical and keeps its review finding.
 func TestScanForArtifacts_MetadataAlongsideRedirectIsNotCruft(t *testing.T) {
 	const metadata = `{"dolt_mode":"server","dolt_database":"lola","future_key":"keep-me"}`
 	const redirect = "../../mayor/rig/.beads\n"
@@ -564,31 +558,26 @@ func TestScanForArtifacts_MetadataAlongsideRedirectIsNotCruft(t *testing.T) {
 		name  string
 		files map[string]string // the polecat's .beads
 		cruft string            // what the scan reports it contains
-		after map[string]string // the .beads after the cleanup
 	}{
 		{
 			name:  "metadata.json with redirect",
 			files: map[string]string{"redirect": redirect, configfile.ConfigFileName: metadata, "extra.txt": "cruft"},
 			cruft: "extra.txt",
-			after: map[string]string{".": "/", "redirect": redirect, configfile.ConfigFileName: metadata},
 		},
 		{
 			name:  "legacy config.json with redirect",
 			files: map[string]string{"redirect": redirect, "config.json": metadata, "extra.txt": "cruft"},
 			cruft: "extra.txt",
-			after: map[string]string{".": "/", "redirect": redirect, "config.json": metadata},
 		},
 		{
 			name:  "metadata.json without redirect",
 			files: map[string]string{configfile.ConfigFileName: metadata, "extra.txt": "cruft"},
 			cruft: "extra.txt, metadata.json",
-			after: map[string]string{".": "/"},
 		},
 		{
 			name:  "legacy config.json without redirect",
 			files: map[string]string{"config.json": metadata, "extra.txt": "cruft"},
 			cruft: "config.json, extra.txt",
-			after: map[string]string{".": "/"},
 		},
 	}
 	for _, tc := range cases {
@@ -597,24 +586,25 @@ func TestScanForArtifacts_MetadataAlongsideRedirectIsNotCruft(t *testing.T) {
 			writeArtifactTree(t, filepath.Join(root, "mayor", "rig", ".beads"), map[string]string{configfile.ConfigFileName: `{"backend":"dolt"}`})
 			beadsDir := filepath.Join(root, "polecats", "p1", ".beads")
 			writeArtifactTree(t, beadsDir, tc.files)
+			before := snapshotBeadsDir(t, beadsDir)
 
 			report, err := ScanForArtifacts(root)
 			if err != nil {
 				t.Fatalf("ScanForArtifacts: %v", err)
 			}
-			want := []ArtifactFinding{{Path: beadsDir, Type: "cruft-beads", Description: "should be redirect-only but contains: " + tc.cruft, SafeDelete: true}}
+			want := []ArtifactFinding{{Path: beadsDir, Type: "cruft-beads", Description: "retained project material; review manually: " + tc.cruft}}
 			if report.TotalCount != 1 || !reflect.DeepEqual(report.CruftBeadsDirs, want) {
 				t.Fatalf("ScanForArtifacts = %+v, want only the cruft finding %+v", report, want)
 			}
 
-			if err := fix.ClassicArtifacts(root); err != nil {
+			if err := fix.ClassicArtifacts(root, io.Discard); err != nil {
 				t.Fatalf("fix.ClassicArtifacts: %v", err)
 			}
-			if got := snapshotBeadsDir(t, beadsDir); !reflect.DeepEqual(got, tc.after) {
-				t.Fatalf("fix.ClassicArtifacts left %s as\n %q\nwant %q", beadsDir, got, tc.after)
+			if got := snapshotBeadsDir(t, beadsDir); !reflect.DeepEqual(got, before) {
+				t.Fatalf("fix.ClassicArtifacts left %s as\n %q\nwant %q", beadsDir, got, before)
 			}
-			if report, err = ScanForArtifacts(root); err != nil || report.TotalCount != 0 {
-				t.Fatalf("ScanForArtifacts after the cleanup = %+v (err %v), want nothing to report", report, err)
+			if report, err = ScanForArtifacts(root); err != nil || !reflect.DeepEqual(report.CruftBeadsDirs, want) {
+				t.Fatalf("ScanForArtifacts after the cleanup = %+v (err %v), want the same retained-material review finding", report, err)
 			}
 		})
 	}
@@ -637,7 +627,7 @@ func TestScanForArtifacts_SkipsWorkspaceWithUnloadableMetadata(t *testing.T) {
 	if report.TotalCount != 0 {
 		t.Fatalf("unreadable workspace must remain unclassified: %+v", report)
 	}
-	if err := fix.ClassicArtifacts(root); err != nil {
+	if err := fix.ClassicArtifacts(root, io.Discard); err != nil {
 		t.Fatal(err)
 	}
 	if after := snapshotBeadsDir(t, beadsDir); !reflect.DeepEqual(before, after) {
@@ -724,7 +714,7 @@ func TestScanForArtifacts_CleanupRemovesOnlyReportedSQLiteFiles(t *testing.T) {
 				t.Fatalf("ScanForArtifacts = %+v\nwant only the SQLite findings (path: safe to delete) %v", report, want)
 			}
 
-			if err := fix.ClassicArtifacts(root); err != nil {
+			if err := fix.ClassicArtifacts(root, io.Discard); err != nil {
 				t.Fatalf("fix.ClassicArtifacts: %v", err)
 			}
 			after := map[string]string{}

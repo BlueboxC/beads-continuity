@@ -21,6 +21,12 @@ The retained snapshot-filter algorithm can reimport its deletion commit on the n
 
 ## Ownership and bootstrap follow-ups
 
+PR #7869 is adapted to the existing conservative cleanup guards. A shared
+positive runtime-file plan preserves project material and legacy version
+witnesses; it never recursively removes a redirect stub. Diagnostics mark only
+individual disposable files safe, and artifact `--clean --json` sends progress
+to stderr. General `doctor --fix --json` progress remains a separate contract.
+
 PR #7870 is adapted with a stronger configured-port check: CLI transfers and
 remote recovery require live workspace ownership of the selected TCP port,
 including ports supplied directly in configuration. Gateway/proxied, TLS,

@@ -1,6 +1,7 @@
 package fix
 
 import (
+	"io"
 	"path/filepath"
 	"reflect"
 	"testing"
@@ -25,7 +26,7 @@ func TestClassicArtifactsPreservesStorageInRedirectLocations(t *testing.T) {
 				fixture.files["extra.txt"] = "project-owned"
 				writeBeadsTree(t, dir, fixture.files)
 				before := snapshotBeadsTree(t, dir)
-				if err := ClassicArtifacts(root); err != nil {
+				if err := ClassicArtifacts(root, io.Discard); err != nil {
 					t.Fatal(err)
 				}
 				if got := snapshotBeadsTree(t, dir); !reflect.DeepEqual(got, before) {

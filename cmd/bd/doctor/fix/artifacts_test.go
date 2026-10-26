@@ -2,6 +2,7 @@ package fix
 
 import (
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -19,7 +20,7 @@ func TestClassicArtifacts_NoArtifacts(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	err := ClassicArtifacts(dir)
+	err := ClassicArtifacts(dir, io.Discard)
 	if err != nil {
 		t.Errorf("expected no error, got: %v", err)
 	}
@@ -40,7 +41,7 @@ func TestClassicArtifacts_RemovesSQLiteWAL(t *testing.T) {
 		}
 	}
 
-	err := ClassicArtifacts(dir)
+	err := ClassicArtifacts(dir, io.Discard)
 	if err != nil {
 		t.Errorf("expected no error, got: %v", err)
 	}
@@ -65,7 +66,7 @@ func TestClassicArtifacts_SkipsBeadsDB(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	err := ClassicArtifacts(dir)
+	err := ClassicArtifacts(dir, io.Discard)
 	if err != nil {
 		t.Errorf("expected no error, got: %v", err)
 	}
@@ -89,7 +90,7 @@ func TestClassicArtifacts_RemovesBackupDBs(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	err := ClassicArtifacts(dir)
+	err := ClassicArtifacts(dir, io.Discard)
 	if err != nil {
 		t.Errorf("expected no error, got: %v", err)
 	}
@@ -124,7 +125,7 @@ func TestClassicArtifacts_CleansJSONLInDoltDir(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	err := ClassicArtifacts(dir)
+	err := ClassicArtifacts(dir, io.Discard)
 	if err != nil {
 		t.Errorf("expected no error, got: %v", err)
 	}
@@ -142,7 +143,7 @@ func TestClassicArtifacts_CleansJSONLInDoltDir(t *testing.T) {
 	}
 }
 
-func TestClassicArtifacts_CleansCruftBeadsDir(t *testing.T) {
+func TestClassicArtifacts_PreservesUnknownStubEntries(t *testing.T) {
 	dir := t.TempDir()
 	polecatsDir := filepath.Join(dir, "polecats", "test")
 	beadsDir := filepath.Join(polecatsDir, ".beads")
@@ -168,7 +169,7 @@ func TestClassicArtifacts_CleansCruftBeadsDir(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	err := ClassicArtifacts(dir)
+	err := ClassicArtifacts(dir, io.Discard)
 	if err != nil {
 		t.Errorf("expected no error, got: %v", err)
 	}
@@ -183,12 +184,12 @@ func TestClassicArtifacts_CleansCruftBeadsDir(t *testing.T) {
 		t.Error(".gitkeep should NOT have been removed")
 	}
 
-	// cruft should be removed
-	if _, err := os.Stat(filepath.Join(beadsDir, "extra.txt")); !os.IsNotExist(err) {
-		t.Error("extra.txt should have been removed")
+	// Unknown files and directories are project-owned, regardless of location.
+	if _, err := os.Stat(filepath.Join(beadsDir, "extra.txt")); err != nil {
+		t.Errorf("extra.txt must be preserved: %v", err)
 	}
-	if _, err := os.Stat(filepath.Join(beadsDir, "cruft-subdir")); !os.IsNotExist(err) {
-		t.Error("cruft-subdir should have been removed")
+	if _, err := os.Stat(filepath.Join(beadsDir, "cruft-subdir")); err != nil {
+		t.Errorf("cruft-subdir must be preserved: %v", err)
 	}
 }
 
@@ -212,12 +213,12 @@ func TestClassicArtifacts_PreservesMetadataJSONAlongsideRedirect(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(beadsDir, "metadata.json"), []byte(`{"dolt_mode":"server","dolt_database":"lola"}`), 0644); err != nil {
 		t.Fatal(err)
 	}
-	// Still remove unrelated cruft in the same pass.
+	// Unknown files remain beside the metadata.
 	if err := os.WriteFile(filepath.Join(beadsDir, "extra.txt"), []byte("cruft"), 0644); err != nil {
 		t.Fatal(err)
 	}
 
-	if err := ClassicArtifacts(dir); err != nil {
+	if err := ClassicArtifacts(dir, io.Discard); err != nil {
 		t.Fatalf("expected no error, got: %v", err)
 	}
 
@@ -227,17 +228,13 @@ func TestClassicArtifacts_PreservesMetadataJSONAlongsideRedirect(t *testing.T) {
 	if _, err := os.Stat(filepath.Join(beadsDir, "metadata.json")); os.IsNotExist(err) {
 		t.Error("metadata.json should NOT have been removed while a redirect is present")
 	}
-	if _, err := os.Stat(filepath.Join(beadsDir, "extra.txt")); !os.IsNotExist(err) {
-		t.Error("extra.txt should have been removed")
+	if _, err := os.Stat(filepath.Join(beadsDir, "extra.txt")); err != nil {
+		t.Errorf("extra.txt must be preserved: %v", err)
 	}
 }
 
-func TestClassicArtifacts_CleansCruftWithoutRedirectFile(t *testing.T) {
-	// Regression test: when a redirect-expected location has cruft files but
-	// NO redirect file, the fix should still clean up the cruft.
-	// Previously, the fix required both isRedirectExpected AND hasRedirect,
-	// leaving stale files (config.yaml, metadata.json, README.md, issues.jsonl)
-	// in .git/beads-worktrees/*/.beads/ directories.
+func TestClassicArtifacts_PreservesProjectFilesWithoutRedirect(t *testing.T) {
+	// A path naming convention does not make project files disposable.
 	dir := t.TempDir()
 
 	// Simulate .git/beads-worktrees/master/.beads/ (redirect-expected location)
@@ -258,15 +255,15 @@ func TestClassicArtifacts_CleansCruftWithoutRedirectFile(t *testing.T) {
 		}
 	}
 
-	err := ClassicArtifacts(dir)
+	err := ClassicArtifacts(dir, io.Discard)
 	if err != nil {
 		t.Errorf("expected no error, got: %v", err)
 	}
 
-	// All cruft files should be removed
+	// Every project file must remain byte-preserved.
 	for _, name := range cruftFiles {
-		if _, err := os.Stat(filepath.Join(worktreeBeads, name)); !os.IsNotExist(err) {
-			t.Errorf("%s should have been removed (cruft in redirect-expected dir without redirect file)", name)
+		if _, err := os.Stat(filepath.Join(worktreeBeads, name)); err != nil {
+			t.Errorf("%s must remain without a redirect: %v", name, err)
 		}
 	}
 }
@@ -388,7 +385,7 @@ func TestClassicArtifacts_SkipsUnsupportedWorkspaceFormat(t *testing.T) {
 			writeBeadsTree(t, beadsDir, entries)
 			want := snapshotBeadsTree(t, beadsDir)
 
-			if err := ClassicArtifacts(root); err != nil {
+			if err := ClassicArtifacts(root, io.Discard); err != nil {
 				t.Fatalf("ClassicArtifacts: %v", err)
 			}
 			if got := snapshotBeadsTree(t, beadsDir); !reflect.DeepEqual(got, want) {
@@ -418,7 +415,7 @@ func TestClassicArtifacts_DoesNotMigrateLegacyConfig(t *testing.T) {
 		"issues.jsonl.new": `{"id":"x"}`,
 	})
 
-	if err := ClassicArtifacts(root); err != nil {
+	if err := ClassicArtifacts(root, io.Discard); err != nil {
 		t.Fatalf("ClassicArtifacts: %v", err)
 	}
 	if got, err := os.ReadFile(filepath.Join(beadsDir, "config.json")); err != nil || string(got) != legacy {
@@ -440,7 +437,7 @@ func TestClassicArtifacts_DoesNotMigrateLegacyConfig(t *testing.T) {
 // The walk no longer migrates it into a metadata.json the cleanup keeps, so
 // the cleanup keeps the config.json itself, byte-identical with its
 // dolt_database and keys bd does not know, while unrelated cruft beside it is
-// still removed. Without a redirect it is cruft like the rest.
+// retained. Both redirected and unredirected metadata remain project-owned.
 func TestClassicArtifacts_PreservesLegacyConfigJSONAlongsideRedirect(t *testing.T) {
 	const legacy = `{"dolt_mode":"server","dolt_database":"lola","future_key":"keep-me"}`
 	cases := []struct {
@@ -451,12 +448,12 @@ func TestClassicArtifacts_PreservesLegacyConfigJSONAlongsideRedirect(t *testing.
 		{
 			name:  "with redirect",
 			files: map[string]string{"redirect": "../../mayor/rig/.beads", "config.json": legacy, "extra.txt": "cruft"},
-			want:  map[string]string{".": "/", "redirect": "../../mayor/rig/.beads", "config.json": legacy},
+			want:  map[string]string{".": "/", "redirect": "../../mayor/rig/.beads", "config.json": legacy, "extra.txt": "cruft"},
 		},
 		{
 			name:  "without redirect",
 			files: map[string]string{"config.json": legacy, "extra.txt": "cruft"},
-			want:  map[string]string{".": "/"},
+			want:  map[string]string{".": "/", "config.json": legacy, "extra.txt": "cruft"},
 		},
 	}
 	for _, tc := range cases {
@@ -465,7 +462,7 @@ func TestClassicArtifacts_PreservesLegacyConfigJSONAlongsideRedirect(t *testing.
 			beadsDir := filepath.Join(root, "polecats", "p1", ".beads")
 			writeBeadsTree(t, beadsDir, tc.files)
 
-			if err := ClassicArtifacts(root); err != nil {
+			if err := ClassicArtifacts(root, io.Discard); err != nil {
 				t.Fatalf("ClassicArtifacts: %v", err)
 			}
 			if got := snapshotBeadsTree(t, beadsDir); !reflect.DeepEqual(got, tc.want) {
@@ -535,7 +532,7 @@ func TestClassicArtifacts_LeavesOtherBackendsSQLiteFiles(t *testing.T) {
 			writeBeadsTree(t, beadsDir, ws.files)
 			want := snapshotBeadsTree(t, beadsDir)
 
-			if err := ClassicArtifacts(root); err != nil {
+			if err := ClassicArtifacts(root, io.Discard); err != nil {
 				t.Fatalf("ClassicArtifacts: %v", err)
 			}
 			if got := snapshotBeadsTree(t, beadsDir); !reflect.DeepEqual(got, want) {
@@ -565,7 +562,7 @@ func TestClassicArtifacts_PreservesAmbiguousSQLiteFiles(t *testing.T) {
 				}
 			}
 			before := snapshotBeadsTree(t, dir)
-			if err := ClassicArtifacts(root); err != nil {
+			if err := ClassicArtifacts(root, io.Discard); err != nil {
 				t.Fatal(err)
 			}
 			if got := snapshotBeadsTree(t, dir); !reflect.DeepEqual(got, before) {

@@ -61,7 +61,7 @@ func CheckClassicArtifacts(path string) DoctorCheck {
 		parts = append(parts, fmt.Sprintf("%d SQLite artifact(s)", len(report.SQLiteArtifacts)))
 	}
 	if len(report.CruftBeadsDirs) > 0 {
-		parts = append(parts, fmt.Sprintf("%d cruft .beads dir(s)", len(report.CruftBeadsDirs)))
+		parts = append(parts, fmt.Sprintf("%d redirect-stub finding(s)", len(report.CruftBeadsDirs)))
 	}
 	if len(report.RedirectIssues) > 0 {
 		parts = append(parts, fmt.Sprintf("%d redirect issue(s)", len(report.RedirectIssues)))
@@ -312,60 +312,23 @@ func scanSQLiteArtifacts(beadsDir string, cfg *configfile.Config, report *Artifa
 	}
 }
 
-// scanCruftBeadsDir checks if a .beads directory that should be redirect-only
-// contains extra files beyond the redirect file. It passes over every entry
-// the cleanup (fix.ClassicArtifacts) keeps there, so it reports only files
-// that cleanup removes.
+// scanCruftBeadsDir reports runtime files individually. A mixed stub's
+// directory is for review and never carries a safe-delete promise.
 func scanCruftBeadsDir(beadsDir string, report *ArtifactReport) {
-	entries, err := os.ReadDir(beadsDir)
+	remove, kept, err := fix.PlanRedirectStub(beadsDir)
 	if err != nil {
 		return
 	}
-
-	hasRedirect := false
-	for _, entry := range entries {
-		if entry.Name() == "redirect" {
-			hasRedirect = true
-			break
-		}
+	if len(kept) > 0 {
+		report.CruftBeadsDirs = append(report.CruftBeadsDirs, ArtifactFinding{
+			Path: beadsDir, Type: "cruft-beads", Description: "retained project material; review manually: " + strings.Join(kept, ", "),
+		})
 	}
-
-	// Count non-redirect entries
-	var extraFiles []string
-	for _, entry := range entries {
-		name := entry.Name()
-		// redirect file is expected
-		if name == "redirect" {
-			continue
-		}
-		// .gitkeep is harmless
-		if name == ".gitkeep" {
-			continue
-		}
-		// Beside a redirect the cleanup keeps the directory's own metadata,
-		// metadata.json or an unmigrated, inert legacy config.json
-		// (gastownhall/beads#4692; see fix.cleanCruftBeadsDirFiles)
-		if (name == "metadata.json" || name == "config.json") && hasRedirect {
-			continue
-		}
-		extraFiles = append(extraFiles, name)
+	for _, path := range remove {
+		report.CruftBeadsDirs = append(report.CruftBeadsDirs, ArtifactFinding{
+			Path: path, Type: "cruft-beads", Description: "runtime leftover in redirect-only directory", SafeDelete: true,
+		})
 	}
-
-	if len(extraFiles) == 0 {
-		return
-	}
-
-	desc := fmt.Sprintf("should be redirect-only but contains: %s", strings.Join(extraFiles, ", "))
-	if len(extraFiles) > 5 {
-		desc = fmt.Sprintf("should be redirect-only but contains %d extra files", len(extraFiles))
-	}
-
-	report.CruftBeadsDirs = append(report.CruftBeadsDirs, ArtifactFinding{
-		Path:        beadsDir,
-		Type:        "cruft-beads",
-		Description: desc,
-		SafeDelete:  true, // Safe: location is redirect-expected, extra files are cruft
-	})
 }
 
 // validateRedirect checks that a redirect file points to a valid target.
