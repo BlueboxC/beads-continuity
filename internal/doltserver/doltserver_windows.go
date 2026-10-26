@@ -128,3 +128,7 @@ func gracefulStop(pid int, timeout time.Duration) error {
 }
 
 func killStartedGroup(int) {}
+
+func isSignalableProcess(pid int) bool { return isProcessAlive(pid) }
+
+func terminateStartedProcess(process *os.Process) error { return process.Kill() }

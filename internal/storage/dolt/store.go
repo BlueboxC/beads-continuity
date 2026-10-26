@@ -1855,10 +1855,10 @@ func newServerMode(ctx context.Context, cfg *Config) (*DoltStore, error) {
 	var dialErr error
 	if cfg.ServerSocket != "" {
 		addr = cfg.ServerSocket
-		conn, dialErr = net.DialTimeout("unix", cfg.ServerSocket, 500*time.Millisecond)
+		conn, dialErr = dialServer("unix", cfg.ServerSocket, 500*time.Millisecond)
 	} else {
 		addr = doltutil.ServerAddr(cfg.ServerHost, cfg.ServerPort)
-		conn, dialErr = net.DialTimeout("tcp", addr, 500*time.Millisecond)
+		conn, dialErr = dialServer("tcp", addr, 500*time.Millisecond)
 	}
 	if dialErr != nil {
 		// Auto-start: if enabled and connecting locally via TCP, start a server.
@@ -1933,9 +1933,7 @@ func newServerMode(ctx context.Context, cfg *Config) (*DoltStore, error) {
 					// unreachable").
 					if cfg.ServerPortSharedServer {
 						undoRejectedAutoStart(serverDir, startedByUs, autoStartedDir, portFileSnap, snapErr)
-						if breaker != nil {
-							breaker.RecordFailure()
-						}
+						recordDialFailure(breaker, dialErr)
 						return nil, fmt.Errorf(
 							"Shared Dolt server configured at port %d (source: %s) is unreachable; "+
 								"auto-start started a repo-local server on port %d instead, but bd will "+
@@ -1949,9 +1947,7 @@ func newServerMode(ctx context.Context, cfg *Config) (*DoltStore, error) {
 					}
 					if cfg.ServerPortSource.IsAuthoritative() {
 						undoRejectedAutoStart(serverDir, startedByUs, autoStartedDir, portFileSnap, snapErr)
-						if breaker != nil {
-							breaker.RecordFailure()
-						}
+						recordDialFailure(breaker, dialErr)
 						return nil, fmt.Errorf(
 							"Dolt server configured at port %d (source: %s) is unreachable; "+
 								"auto-start started a new server on port %d, but bd will not "+
@@ -1974,22 +1970,19 @@ func newServerMode(ctx context.Context, cfg *Config) (*DoltStore, error) {
 				breaker = maybeNewCircuitBreaker(cfg.ServerHost, cfg.ServerPort, cfg.Database)
 			}
 			// Retry connection with longer timeout (server just started)
-			conn, dialErr = net.DialTimeout("tcp", addr, 2*time.Second)
+			conn, dialErr = dialServer("tcp", addr, 2*time.Second)
 			if dialErr != nil {
 				// Release auto-start ref on connection failure
-				if autoStartedDir != "" {
+				if startedByUs {
+					undoRejectedAutoStart(serverDir, true, autoStartedDir, portFileSnap, snapErr)
+				} else if autoStartedDir != "" {
 					_ = autoStartRelease(autoStartedDir)
 				}
-				if breaker != nil {
-					breaker.RecordFailure()
-				}
-				return nil, fmt.Errorf("Dolt server auto-started but still unreachable at %s: %w\n\n"+
-					"Check logs: %s", addr, dialErr, doltserver.LogPath(resolvedBeadsDir))
+				recordDialFailure(breaker, dialErr)
+				return nil, autoStartRedialError(addr, dialErr, startedByUs, doltserver.LogPath(resolvedBeadsDir))
 			}
 		} else {
-			if breaker != nil {
-				breaker.RecordFailure()
-			}
+			recordDialFailure(breaker, dialErr)
 			if err := unresolvedServerPortError(cfg, resolvedBeadsDir); err != nil {
 				return nil, err
 			}
@@ -2261,6 +2254,7 @@ func warnRemoteSyncOpenRefusal(err error) bool {
 }
 
 var (
+	dialServer              = net.DialTimeout
 	cleanServerCircuitState = cleanStaleCircuitBreakerFilesOnce
 	newServerCircuitBreaker = maybeNewCircuitBreaker
 	ensureResolvedPortFile  = doltserver.EnsurePortFile
@@ -5637,3 +5631,18 @@ type DoltStatus = storage.Status
 
 // StatusEntry is an alias for storage.StatusEntry.
 type StatusEntry = storage.StatusEntry
+
+// An adopted server was not auto-started; a local refusal is not its failure.
+func autoStartRedialError(addr string, dialErr error, startedByUs bool, logPath string) error {
+	what := "Dolt server unreachable"
+	if startedByUs {
+		what = "Dolt server auto-started but still unreachable"
+	}
+	advice := "Check logs: " + logPath
+	if isLocalDialRefusal(dialErr) {
+		advice = "A local policy refused the connection; server health is unverified."
+	} else if !startedByUs {
+		advice += "\nIf the recorded server is gone, clear its state: bd dolt stop"
+	}
+	return fmt.Errorf("%s at %s: %w\n\n%s", what, addr, dialErr, advice)
+}

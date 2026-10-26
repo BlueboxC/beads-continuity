@@ -12,7 +12,7 @@ Private packages, templates, services and adapters. Storage has its own contract
 
 Root DOX.md and the parent chain remain binding.
 
-- Dolt server process probes distinguish failed inspection from a confirmed non-Dolt process. Preserve a live pid/port when `ps` fails; EPERM from a liveness probe means alive. Stop refuses to signal an unverifiable or recycled PID and retains state for diagnosis.
+- Dolt server process probes distinguish failed inspection from a confirmed non-Dolt process. Preserve a live pid/port when `ps` fails; Unix EPERM means alive but is not workspace ownership proof. Stop refuses unverifiable or recycled PIDs unless a retained launch handle matches the workspace, PID and port; stop/reap that exact child and preserve state on failure. Adopted processes never acquire this exception.
 - On macOS, a newly launched managed Dolt server is ready only after a greeting and bounded `lsof`/`ps` proof that every listed port holder is the child or its descendant. Unknown ownership waits until the configured readiness deadline and fails without publishing pid/port; a proven foreign holder retries only an ephemeral port. Failed startup kills/reaps only its launched child/group. Other platforms retain greeting-based readiness. Existing-server adoption and Stop inspection contracts remain separate.
 
 

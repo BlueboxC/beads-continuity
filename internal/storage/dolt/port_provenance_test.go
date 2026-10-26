@@ -112,7 +112,7 @@ func TestNewServerMode_AllAuthoritativeSources_FailClosed(t *testing.T) {
 // against the UX regression: bd's own port-file bookkeeping must keep
 // today's silent-retarget-with-warning behavior. Since the retargeted port
 // (54323) is not a real server either, the open still ultimately fails, but
-// via the old "auto-started but still unreachable" path, not the new
+// via the adopted-server reachability error, not the
 // fail-closed error — proving cfg.ServerPort was updated and a connection
 // was attempted on the new port.
 func TestNewServerMode_PortFileSource_RetargetedPort_StillRetargets(t *testing.T) {
@@ -128,8 +128,8 @@ func TestNewServerMode_PortFileSource_RetargetedPort_StillRetargets(t *testing.T
 	if strings.Contains(err.Error(), "will not silently use") {
 		t.Fatalf("port-file source must not trigger the fail-closed path, got: %v", err)
 	}
-	if !strings.Contains(err.Error(), "auto-started but still unreachable") {
-		t.Fatalf("expected the existing auto-start-unreachable error, got: %v", err)
+	if !strings.Contains(err.Error(), "Dolt server unreachable") || strings.Contains(err.Error(), "auto-started") {
+		t.Fatalf("expected the adopted-server reachability error, got: %v", err)
 	}
 	if cfg.ServerPort != newPort {
 		t.Errorf("cfg.ServerPort = %d, want retargeted to %d", cfg.ServerPort, newPort)

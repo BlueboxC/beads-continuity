@@ -25,6 +25,7 @@ Root DOX.md and the parent chain remain binding.
 - Wisp retries encompass the whole SQL transaction. Delete/sweep history-publication errors retain the SQL-commit uncertainty marker; never replay an unknown outcome.
 - Peer credentials fall back only for storage.ErrNotFound; lookup, decryption and authorization failures remain fatal.
 - Circuit housekeeping runs at most once per process and expires only closed files older than 24 hours. Explicit doctor maintenance retains its own sweep.
+- Local EPERM/EACCES dial refusals neither count as server failures nor rewrite open/half-open circuit state. Keep ordinary connection-failure accounting and handshake draining. A failed auto-start redial cleans only its newly launched child and restores its prior port bytes; adopted server state remains intact.
 - Closed-file cleanup regressions use literal 23-hour retention and 25-hour expiration examples, independently of the TTL constant, for both legacy and live directories.
 
 - A TCP open without any resolved port reports the missing endpoint separately from a failed connection; socket and explicit-port paths retain existing diagnostics. Do not suggest a fresh database as reconnection. An unreachable named externally managed port identifies its declaring setting and never recommends starting a different local server; preserve owned/shared-server advice and the underlying dial error.

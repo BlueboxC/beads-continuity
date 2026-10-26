@@ -21,6 +21,15 @@ The retained snapshot-filter algorithm can reimport its deletion commit on the n
 
 ## Ownership and bootstrap follow-ups
 
+PR #7864's remaining connection-policy delta keeps local EPERM/EACCES
+refusals out of shared circuit health and preserves open/half-open state.
+Unix permission-only liveness cannot establish workspace ownership. A stop
+with unavailable process inspection may use only a retained child handle
+matching the workspace, PID and port; adopted and mismatched processes retain
+their refusal. Failed redials clean their newly launched child and restore
+the prior port record without stopping an adopted server. Existing startup
+listener proof and process-state preservation remain in force.
+
 PR #7866 adds qualified GitLab pull keys, rename-stable project-ID/IID
 matching and dependency identities without widening the fork's mutation or
 credential scope. The adaptation also guards epic-child milestone repair,

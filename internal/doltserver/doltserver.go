@@ -659,7 +659,7 @@ func ManagesLiveServerOnPort(beadsDir string, port int) bool {
 	if err != nil || pid <= 0 {
 		return false
 	}
-	return isProcessAlive(pid)
+	return isSignalableProcess(pid)
 }
 
 // PortFileSnapshot captures the exact prior contents of a project's port
@@ -1652,6 +1652,8 @@ func Start(beadsDir string) (*State, error) {
 		return nil, fmt.Errorf("writing port file: %w", err)
 	}
 
+	rememberStartedServer(beadsDir, actualPort, started)
+
 	return &State{
 		Running: true,
 		PID:     pid,
@@ -1787,6 +1789,8 @@ func FlushWorkingSet(host string, port int) error {
 	return nil
 }
 
+var flushWorkingSetBeforeStop = FlushWorkingSet
+
 // Stop is idempotent: when the server is already stopped it returns
 // ErrServerNotRunning after cleaning up any leftover state files.
 // Callers should use errors.Is(err, ErrServerNotRunning) to distinguish
@@ -1812,9 +1816,13 @@ func StopWithForce(beadsDir string, force bool) error {
 
 	// IsRunning keeps the tracked state when the process list cannot be read,
 	// so the PID is not confirmed to be a dolt server and may be a stale PID
-	// reused by an unrelated process. Do not signal it, and leave the files for
-	// a bd that can read the process list.
+	// reused by an unrelated process. Only a retained launch handle for this
+	// exact workspace, PID and port can substitute for process inspection.
+	owned := locallyStartedServer(beadsDir, state.PID, state.Port)
 	isDolt, known := doltProcessStatus(state.PID)
+	if !known && owned != nil {
+		isDolt, known = true, true
+	}
 	if !known {
 		return fmt.Errorf("not stopping PID %d: the process list could not be read, "+
 			"so it is not confirmed to be a dolt sql-server", state.PID)
@@ -1829,11 +1837,15 @@ func StopWithForce(beadsDir string, force bool) error {
 	// Flush uncommitted working set changes before stopping the server.
 	// This prevents data loss when changes have been written but not yet committed.
 	cfg := DefaultConfig(beadsDir)
-	if flushErr := FlushWorkingSet(cfg.Host, state.Port); flushErr != nil {
+	if flushErr := flushWorkingSetBeforeStop(cfg.Host, state.Port); flushErr != nil {
 		fmt.Fprintf(os.Stderr, "Warning: could not flush working set before stop: %v\n", flushErr)
 	}
 
-	if err := gracefulStop(state.PID, 5*time.Second); err != nil {
+	if owned != nil {
+		if err := owned.stop(5 * time.Second); err != nil {
+			return err
+		}
+	} else if err := gracefulStop(state.PID, 5*time.Second); err != nil {
 		return errors.Join(err, cleanupStateFiles(beadsDir))
 	}
 

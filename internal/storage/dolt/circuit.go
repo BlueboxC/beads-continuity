@@ -10,11 +10,10 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
+	"syscall"
 	"time"
 
 	mysql "github.com/go-sql-driver/mysql"
-
-	"github.com/steveyegge/beads/internal/doltserver"
 )
 
 // Circuit breaker states.
@@ -187,13 +186,17 @@ func (cb *circuitBreaker) Allow() bool {
 	case circuitOpen:
 		if time.Since(state.TrippedAt) >= circuitCooldown {
 			// Cooldown elapsed — actively probe the server
-			if cb.probe() {
+			probeErr := cb.probe()
+			if probeErr == nil {
 				state.State = circuitClosed
 				state.Failures = 0
 				state.FirstFailure = time.Time{}
 				cb.writeState(state)
 				log.Printf("[circuit-breaker] %s:%d/%s: open → closed (active probe succeeded)", cb.host, cb.port, cb.database)
 				return true
+			}
+			if isLocalDialRefusal(probeErr) {
+				return false
 			}
 			// Probe failed — stay open, reset the tripped timer
 			state.TrippedAt = time.Now()
@@ -205,13 +208,17 @@ func (cb *circuitBreaker) Allow() bool {
 	case circuitHalfOpen:
 		// Legacy state from older breaker versions — treat as open with
 		// immediate probe since we no longer use half-open passively.
-		if cb.probe() {
+		probeErr := cb.probe()
+		if probeErr == nil {
 			state.State = circuitClosed
 			state.Failures = 0
 			state.FirstFailure = time.Time{}
 			cb.writeState(state)
 			log.Printf("[circuit-breaker] %s:%d/%s: half-open → closed (active probe succeeded)", cb.host, cb.port, cb.database)
 			return true
+		}
+		if isLocalDialRefusal(probeErr) {
+			return false
 		}
 		state.State = circuitOpen
 		state.TrippedAt = time.Now()
@@ -229,10 +236,20 @@ func (cb *circuitBreaker) Allow() bool {
 // close still applies — it avoids sending the dolt sql-server a TCP RST that
 // it would interpret as an aborted MySQL handshake (gastownhall/beads#4132,
 // #4133).
-func (cb *circuitBreaker) probe() bool {
+func (cb *circuitBreaker) probe() error {
 	addr := net.JoinHostPort(cb.host, fmt.Sprintf("%d", cb.port))
-	_, err := doltserver.ProbeSQLServer("tcp", addr, 1*time.Second)
-	return err == nil
+	return dialProbe("tcp", addr, 1*time.Second)
+}
+
+// A locally denied connection provides no evidence of server failure.
+func isLocalDialRefusal(err error) bool {
+	return errors.Is(err, syscall.EPERM) || errors.Is(err, syscall.EACCES)
+}
+
+func recordDialFailure(breaker *circuitBreaker, err error) {
+	if breaker != nil && err != nil && !isLocalDialRefusal(err) {
+		breaker.RecordFailure()
+	}
 }
 
 // RecordSuccess records a successful connection. Resets the breaker to closed.
@@ -489,7 +506,7 @@ func cleanStaleCircuitBreakerFilesIn(dir string) {
 // unreachable or down. Only these errors trip the circuit breaker — query-level
 // errors (syntax, missing table, etc.) do not.
 func isConnectionError(err error) bool {
-	if err == nil {
+	if err == nil || isLocalDialRefusal(err) {
 		return false
 	}
 	// A typed 1105 is a semantic response from Dolt, not evidence that the

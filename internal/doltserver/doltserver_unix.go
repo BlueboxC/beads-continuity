@@ -130,14 +130,22 @@ func isProcessInDir(pid int, dir string) bool {
 // Uses signal 0 which doesn't send a signal but checks process existence.
 // EPERM means the process exists but may not be signaled by this user, so
 // it counts as alive; only "no such process" means dead.
-func isProcessAlive(pid int) bool {
+var signalZero = func(pid int) error {
 	process, err := os.FindProcess(pid)
 	if err != nil {
-		return false
+		return err
 	}
-	err = process.Signal(syscall.Signal(0))
+	return process.Signal(syscall.Signal(0))
+}
+
+func isProcessAlive(pid int) bool {
+	err := signalZero(pid)
 	return err == nil || errors.Is(err, syscall.EPERM)
 }
+
+func isSignalableProcess(pid int) bool { return signalZero(pid) == nil }
+
+func terminateStartedProcess(process *os.Process) error { return process.Signal(syscall.SIGTERM) }
 
 // gracefulStop sends SIGTERM, waits for the process to exit, then SIGKILL if needed.
 // Used by reclaimPort and StopWithForce where data has already been flushed.
