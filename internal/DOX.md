@@ -66,6 +66,8 @@ Root DOX.md and the parent chain remain binding.
 
 - Recognized external Dolt binaries and SQL servers below 2.6.0 refuse before startup or schema work. Unknown/custom versions remain advisory; cache hits reapply the current floor. Preserve private-cwd/config, bounded version probes and escaped diagnostics. This policy does not change the embedded dependency tuple.
 
+- GitHub creates a closed local issue, then closes the created remote issue. A failed follow-up retains the created reference and reports a warning. When ContentEqual is provided, the sync engine records a create baseline only after the returned remote fields agree; the next push retries the same reference. Closed GitHub hashes invalidate prior create-only baselines once, preserving open-issue cache behavior. External creation and local reference persistence remain separate operations.
+
 ## Work Guidance
 
 Tracker adapters share configuration resolution: local integration credentials never query Dolt, including Notion authentication; authenticated tracker endpoints use explicit local YAML/environment. If no local destination exists, a historical nonempty synced endpoint or store failure refuses connection instead of choosing a public default. Ordinary values keep storage-first/environment fallback including store errors. Credential classification also recognizes case and surrounding-space variants without normalizing ordinary stored keys.

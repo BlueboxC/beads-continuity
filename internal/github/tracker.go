@@ -144,7 +144,19 @@ func (t *Tracker) CreateIssue(ctx context.Context, issue *types.Issue) (*tracker
 		return nil, err
 	}
 
+	// Creation cannot set GitHub state. Preserve the created reference even
+	// when the follow-up close fails, so the next push updates that issue.
+	var warnings []string
+	if issue.Status == types.StatusClosed {
+		closed, err := t.client.UpdateIssue(ctx, created.Number, map[string]interface{}{"state": "closed"})
+		if err != nil {
+			warnings = append(warnings, fmt.Sprintf("created GitHub issue %d but failed to close it (left open): %v", created.Number, err))
+		} else {
+			created = closed
+		}
+	}
 	ti := githubToTrackerIssue(created)
+	ti.Warnings = warnings
 	return &ti, nil
 }
 

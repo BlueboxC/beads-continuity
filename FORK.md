@@ -21,6 +21,8 @@ The retained snapshot-filter algorithm can reimport its deletion commit on the n
 
 ## Ownership and bootstrap follow-ups
 
+PR #7851 preserves closed state through a follow-up GitHub update. On a failed close it retains the created reference, reports a warning and withholds a create baseline until returned fields converge, so an unchanged next push updates the same issue. Closed GitHub fingerprints invalidate older create-only baselines once; open fingerprints remain unchanged. HTTP fixtures cover success, partial failure, retry, old-cache reconciliation and subsequent no-op behavior; external creation and local-link persistence are not crash-atomic.
+
 PR #7868 reuses the fork diagnostic printer for store-derived molecule, duplicate and recipe command arguments, platform-specific quoting/refusal and escaped placeholders. Persisted cold-start names/URLs are display-escaped; no new SQL recovery command or route authority is added. Structured IDs and mutation behavior remain unchanged.
 
 PR #7860 is extended to the source fallback: both release/source installer routes stage a uniquely named executable in the destination filesystem, set 0755 and rename it into place, cleaning handled failed stages. Optional local signing happens on the candidate before publication. Download/build temporary cleanup and caller-directory restoration cover failure paths; the private installed launcher is unchanged.

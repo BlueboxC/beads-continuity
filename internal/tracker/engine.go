@@ -1244,8 +1244,11 @@ func (e *Engine) doPush(ctx context.Context, opts SyncOptions, skipIDs, forceIDs
 			for _, w := range created.Warnings {
 				e.warn("%s (%s)", w, issue.ID)
 			}
-			// Remember what we just pushed so the next sync can skip the fetch.
-			e.recordPushHash(ctx, issue, ref)
+			// A create can partially succeed. Retain its reference, but do not
+			// suppress the next fetch/update when the returned fields differ.
+			if e.PushHooks == nil || e.PushHooks.ContentEqual == nil || e.PushHooks.ContentEqual(issue, created) {
+				e.recordPushHash(ctx, issue, ref)
+			}
 			stats.Created++
 		} else if !opts.CreateOnly || forceIDs[issue.ID] {
 			// Update existing external issue

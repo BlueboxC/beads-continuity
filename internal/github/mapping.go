@@ -235,8 +235,8 @@ func PushFieldsEqual(local *types.Issue, remote *Issue, config *MappingConfig) b
 // local_metadata after each push and compares it before fetching the remote
 // issue, so an unchanged issue is skipped without any API call
 // (gastownhall/beads#4214). It is derived from the same fields PushFieldsEqual
-// compares, so the two agree on what "unchanged" means. Fields are
-// length-prefixed before hashing so distinct field boundaries cannot collide.
+// compares. Closed issues carry a format marker so pre-close creation
+// baselines miss once and the remote state is checked again.
 func PushContentHash(local *types.Issue, config *MappingConfig) string {
 	if local == nil {
 		return ""
@@ -255,6 +255,9 @@ func PushContentHash(local *types.Issue, config *MappingConfig) string {
 	for _, s := range []string{local.Title, local.Description, desiredState, strings.Join(sortedLabels, "\x00")} {
 		_, _ = h.Write([]byte(s))
 		_, _ = h.Write([]byte{0})
+	}
+	if local.Status == types.StatusClosed {
+		_, _ = h.Write([]byte("closed-create-v2\x00"))
 	}
 	return hex.EncodeToString(h.Sum(nil))
 }
