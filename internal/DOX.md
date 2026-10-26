@@ -53,7 +53,7 @@ Root DOX.md and the parent chain remain binding.
 
 - Workspace gates classify unsupported locks separately from contention and refuse both shared and exclusive admission. A writable first-busy check may probe one private sibling; readonly/existing-only paths create nothing and retain their busy behavior. Preserve OS lock authority and never delete a gate.
 
-- Path-parameterized discovery stops a linked worktree walk at its repository boundary when its main-checkout fallback is usable. An unrelated parent store cannot win over that fallback; ordinary non-worktree walk-up remains unchanged.
+- Path-parameterized discovery stops at a linked Git worktree or jj secondary root when its main/primary fallback is usable. Git worktree ownership takes precedence over nested jj detection, and an accepted per-worktree redirect takes precedence over the main database fallback. An unrelated parent store cannot win over these fallbacks; ordinary walk-up without one remains unchanged.
 
 - Backend recovery messages name the existing metadata.json or legacy config.json without migration. Unsupported metadata-driven opens refuse before migrating selectors or creating gates.
 

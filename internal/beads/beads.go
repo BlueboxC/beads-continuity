@@ -602,23 +602,6 @@ func FindBeadsDirFrom(startDir string) string {
 		repoRoot = utils.CanonicalizePath(out)
 	}
 
-	jjSecondaryRoot := ""
-	jjPrimaryBeadsDir := ""
-	jjPrimaryHasDB := false
-	if root, ok := git.JJSecondaryWorkspaceRootFrom(startDir); ok {
-		jjSecondaryRoot = utils.CanonicalizePath(root)
-		if primaryRoot, err := git.GetJJPrimaryWorkspaceRootFrom(startDir); err == nil && primaryRoot != "" {
-			primaryBeadsDir := filepath.Join(primaryRoot, ".beads")
-			if info, err := os.Stat(primaryBeadsDir); err == nil && info.IsDir() {
-				resolved := FollowRedirect(primaryBeadsDir)
-				if hasBeadsProjectFiles(resolved) {
-					jjPrimaryBeadsDir = resolved
-					jjPrimaryHasDB = hasBeadsDatabase(resolved)
-				}
-			}
-		}
-	}
-
 	fallbackBeadsDir := ""
 	fallbackHasDB := false
 	fallbackHasProjectFiles := false
@@ -633,13 +616,31 @@ func FindBeadsDirFrom(startDir string) string {
 		}
 	}
 
+	// Linked Git worktrees keep their own discovery boundary even with nested jj.
+	jjSecondaryRoot := ""
+	jjPrimaryBeadsDir := ""
+	jjPrimaryHasDB := false
+	if root, ok := git.JJSecondaryWorkspaceRootFrom(startDir); ok && fallbackBeadsDir == "" {
+		jjSecondaryRoot = utils.CanonicalizePath(root)
+		if primaryRoot, err := git.GetJJPrimaryWorkspaceRootFrom(startDir); err == nil && primaryRoot != "" {
+			primaryBeadsDir := filepath.Join(primaryRoot, ".beads")
+			if info, err := os.Stat(primaryBeadsDir); err == nil && info.IsDir() {
+				resolved := FollowRedirect(primaryBeadsDir)
+				if hasBeadsProjectFiles(resolved) {
+					jjPrimaryBeadsDir = resolved
+					jjPrimaryHasDB = hasBeadsDatabase(resolved)
+				}
+			}
+		}
+	}
+
 	for dir := startDir; dir != "/" && dir != "."; {
 		beadsDir := filepath.Join(dir, ".beads")
 		if info, err := os.Stat(beadsDir); err == nil && info.IsDir() {
 			resolved := FollowRedirect(beadsDir)
 			isWorktreeRoot := repoRoot != "" && utils.PathsEqual(dir, repoRoot)
 			isJJSecondaryRoot := jjSecondaryRoot != "" && utils.PathsEqual(dir, jjSecondaryRoot)
-			if isWorktreeRoot && fallbackHasDB && !hasBeadsDatabase(resolved) {
+			if isWorktreeRoot && fallbackHasDB && resolved == beadsDir && !hasBeadsDatabase(resolved) {
 				// A worktree root can contain tracked .beads metadata without
 				// owning the ignored database directory. Match FindBeadsDir by
 				// preferring the shared worktree database in that case.
@@ -655,6 +656,9 @@ func FindBeadsDirFrom(startDir string) string {
 		// A linked worktree belongs to its main checkout, not an unrelated ancestor.
 		if repoRoot != "" && utils.PathsEqual(dir, repoRoot) && fallbackHasProjectFiles {
 			break
+		}
+		if jjPrimaryBeadsDir != "" && utils.PathsEqual(dir, jjSecondaryRoot) {
+			return jjPrimaryBeadsDir
 		}
 
 		parent := filepath.Dir(dir)
