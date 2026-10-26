@@ -1,12 +1,20 @@
 package doctor
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strings"
 )
+
+// ErrGitignorePermissions means required patterns are present but mode restriction failed.
+// Callers may warn; unreadable files and incomplete-pattern failures remain errors.
+var ErrGitignorePermissions = errors.New("could not restrict .beads/.gitignore permissions")
+
+var chmodBeadsGitignore = os.Chmod
 
 // GitignoreTemplate is the canonical .beads/.gitignore content
 const GitignoreTemplate = `# Dolt database (managed by Dolt, not git)
@@ -169,6 +177,11 @@ func CheckGitignore(repoPath string) DoctorCheck {
 		}
 	}
 
+	if info, err := os.Stat(gitignorePath); err != nil {
+		return DoctorCheck{Name: "Gitignore", Status: StatusWarning, Message: "Cannot inspect .beads/.gitignore permissions", Detail: err.Error(), Fix: "Run: bd doctor --fix"}
+	} else if gitignoreModeIsLoose(runtime.GOOS, info.Mode().Perm()) {
+		return DoctorCheck{Name: "Gitignore", Status: StatusWarning, Message: "Unexpected permissions on .beads/.gitignore", Detail: fmt.Sprintf("Mode is %04o; remove group/other access", info.Mode().Perm()), Fix: "Run: bd doctor --fix"}
+	}
 	return DoctorCheck{
 		Name:    "Gitignore",
 		Status:  "ok",
@@ -193,12 +206,12 @@ func EnsureGitignoreForBeadsDir(beadsDir string) error {
 
 	missing := missingGitignorePatterns(string(content))
 	if len(missing) == 0 {
-		return nil
+		return tightenBeadsGitignore(gitignorePath)
 	}
 
 	if info, err := os.Stat(gitignorePath); err == nil {
 		if info.Mode().Perm()&0200 == 0 {
-			if err := os.Chmod(gitignorePath, 0600); err != nil {
+			if err := chmodBeadsGitignore(gitignorePath, 0600); err != nil {
 				return fmt.Errorf("chmod .beads/.gitignore: %w", err)
 			}
 		}
@@ -219,12 +232,26 @@ func EnsureGitignoreForBeadsDir(beadsDir string) error {
 		return fmt.Errorf("ensure .beads/.gitignore: %w", err)
 	}
 
-	// Tighten permissions on pre-existing files: os.WriteFile's mode argument
-	// only applies at creation, and the file may predate the 0600 policy.
-	if err := os.Chmod(gitignorePath, 0600); err != nil {
-		return fmt.Errorf("chmod .beads/.gitignore: %w", err)
-	}
+	return tightenBeadsGitignore(gitignorePath)
+}
 
+func gitignoreModeIsLoose(goos string, mode os.FileMode) bool {
+	return goos != "windows" && mode&0077 != 0
+}
+
+// Tightening never grants owner bits to a complete file. The append path alone
+// may need to enable owner-write before adding missing required patterns.
+func tightenBeadsGitignore(path string) error {
+	info, err := os.Stat(path)
+	if err != nil {
+		return fmt.Errorf("stat .beads/.gitignore: %w", err)
+	}
+	if !gitignoreModeIsLoose(runtime.GOOS, info.Mode().Perm()) {
+		return nil
+	}
+	if err := chmodBeadsGitignore(path, info.Mode().Perm()&0700); err != nil {
+		return fmt.Errorf("%w: %w", ErrGitignorePermissions, err)
+	}
 	return nil
 }
 
@@ -253,7 +280,7 @@ func writeGitignoreTemplate(gitignorePath string) error {
 	// If file exists and is read-only, fix permissions first
 	if info, err := os.Stat(gitignorePath); err == nil {
 		if info.Mode().Perm()&0200 == 0 { // No write permission for owner
-			if err := os.Chmod(gitignorePath, 0600); err != nil {
+			if err := chmodBeadsGitignore(gitignorePath, 0600); err != nil {
 				return err
 			}
 		}
@@ -264,12 +291,7 @@ func writeGitignoreTemplate(gitignorePath string) error {
 		return err
 	}
 
-	// Ensure permissions are set correctly (some systems respect umask)
-	if err := os.Chmod(gitignorePath, 0600); err != nil {
-		return err
-	}
-
-	return nil
+	return tightenBeadsGitignore(gitignorePath)
 }
 
 // CheckRedirectNotTracked verifies that .beads/redirect is NOT tracked by git.

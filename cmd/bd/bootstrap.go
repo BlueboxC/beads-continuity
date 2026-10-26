@@ -1059,6 +1059,8 @@ func printBootstrapRemoteBehindGuidance(w io.Writer, e *schema.RemoteMigrateGate
 			"      re-run `bd bootstrap`, or keep using a bd version that matches the remote.\n\n")
 }
 
+var doctorEnsureGitignoreForBeadsDir = doctor.EnsureGitignoreForBeadsDir
+
 // finalizeSyncedBootstrap writes metadata.json and config.yaml after a
 // successful sync clone, matching the on-disk layout that bd init produces.
 // It is idempotent: re-running over an already-finalized workspace leaves
@@ -1092,8 +1094,11 @@ func finalizeSyncedBootstrap(beadsDir, syncRemote string, cfg *configfile.Config
 	if err := createConfigYaml(beadsDir, false, ""); err != nil {
 		return fmt.Errorf("create config.yaml: %w", err)
 	}
-	if err := doctor.EnsureGitignoreForBeadsDir(beadsDir); err != nil {
-		return fmt.Errorf("ensure .beads/.gitignore: %w", err)
+	if err := doctorEnsureGitignoreForBeadsDir(beadsDir); err != nil {
+		if !errors.Is(err, doctor.ErrGitignorePermissions) {
+			return fmt.Errorf("ensure .beads/.gitignore: %w", err)
+		}
+		WarnError("%v", err)
 	}
 
 	// Persist sync.remote so subsequent fresh clones (and bd bootstrap

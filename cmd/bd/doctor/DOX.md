@@ -28,6 +28,8 @@ Root DOX.md and the parent chain remain binding.
 
 - Doctor runtime reads and TCP fixes share DialConfig precedence and matching port credentials. Fresh-clone and read-only duplicate/FK scans follow the store socket fallback; SQL repair admission and metadata reconciliation refuse a selected socket or unresolved TCP port. Preserve target identity checks, TLS, gateway restrictions and the external version floor. Connection/catalog probes have deadlines.
 
+- Gitignore checks and repair agree on group/other access. Tighten complete files without adding owner permissions; preserve custom rules and stricter private modes. A typed permission-only failure is available only after all required patterns exist. Windows synthetic modes do not trigger POSIX tightening; an incomplete read-only file may require owner-write before appending.
+
 ## Work Guidance
 
 Diagnose before repair; preserve recovery evidence. Use existing doctor operations rather than adding parallel repair commands.

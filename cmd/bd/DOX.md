@@ -154,6 +154,8 @@ Root DOX.md and the parent chain remain binding.
 
 - Runtime status/show and both context routes use DialConfig, including the legacy port fallback without overriding authoritative configured ports. Port-keyed credentials follow that same endpoint. Status/show report the selected socket when present; show reachability tests that transport.
 
+- Synced bootstrap persists its remote after a typed gitignore permission-only warning, only when required patterns are complete. Read/append failures still abort; HTTP connect admission is unchanged.
+
 ## Work Guidance
 - Routed create adopts a sole metadata-less native database, retaining its prefix and project identity. Refuse ambiguous databases, dirty working sets under committing policy, non-embedded target settings and graph formats before writing selectors. Personal migration shares the guarded adoption; dry-run checks target admission without initialization.
 - A routed/planning target holding only a nonempty regular `issues.jsonl` refuses before initialization and names explicit `bd init --from-jsonl` recovery. Preserve bytes and permissions; empty exports, recognized local workspaces and followed redirects retain existing admission. An unreadable export refuses inspection rather than being treated as absent.
