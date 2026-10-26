@@ -21,6 +21,13 @@ The retained snapshot-filter algorithm can reimport its deletion commit on the n
 
 ## Ownership and bootstrap follow-ups
 
+PR #7870 is adapted with a stronger configured-port check: CLI transfers and
+remote recovery require live workspace ownership of the selected TCP port,
+including ports supplied directly in configuration. Gateway/proxied, TLS,
+socket, IPv6 and remote endpoints use SQL rather than a leftover clone.
+Migration admission still sees the clone's recorded remotes conservatively.
+SQL push errors name server-side credential variables without printing values.
+
 The follow-ups to upstream PRs #7797, #7803, #7798 and #7804 preserve real
 storage in redirect-expected folders, refuse externally managed IPv6 local-root
 migration (including prepared retries), admit direct factory backends before

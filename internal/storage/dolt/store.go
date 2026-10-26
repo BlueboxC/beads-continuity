@@ -4015,16 +4015,35 @@ func (s *DoltStore) hasMatchingCLIRemote(remote, expectedURL string) bool {
 	return doltutil.RemoteURLsMatch(doltutil.FindCLIRemote(cliDir, remote), expectedURL)
 }
 
-// hasCLIDatabase reports whether CLIDir points at an initialized Dolt database.
+// hasCLIDatabase reports whether CLIDir is an initialized database belonging
+// to the connected server, rather than a leftover client-side clone.
 // SQL-capable routes use this as a CLI availability check and fall back to SQL
 // when an external-server client has only a placeholder local directory.
 func (s *DoltStore) hasCLIDatabase() bool {
 	cliDir := s.CLIDir()
-	if cliDir == "" {
+	if cliDir == "" || !s.cliDirServesServer() {
 		return false
 	}
 	info, err := os.Stat(filepath.Join(cliDir, ".dolt"))
 	return err == nil && info.IsDir()
+}
+
+// A configured endpoint needs live workspace ownership evidence before a
+// subprocess may operate on local data in place of that server. This also
+// covers config-only ports, beyond upstream's environment-port guard.
+func (s *DoltStore) cliDirServesServer() bool {
+	cfg := s.cfg
+	if cfg == nil {
+		cfg = &Config{}
+	}
+	if cfg.Gateway || cfg.ProxiedServer || cfg.ServerTLS || cfg.ServerSocket != "" ||
+		!isLocalHost(cfg.ServerHost) || configfile.IsIPv6LoopbackHost(cfg.ServerHost) {
+		return false
+	}
+	if cfg.ServerPort == 0 && os.Getenv("BEADS_DOLT_SERVER_PORT") == "" && os.Getenv("BEADS_DOLT_PORT") == "" {
+		return true
+	}
+	return s.beadsDir != "" && doltserver.ManagesLiveServerOnPort(doltserver.ResolveServerDir(s.beadsDir), cfg.ServerPort)
 }
 
 // ensureMatchingCLIRemote materializes the local CLI remote needed before
@@ -4435,6 +4454,13 @@ func (s *DoltStore) pushToRemote(ctx context.Context, remote string, force bool)
 	} else if useCLI {
 		return s.doltCLIPush(ctx, remote, force, creds)
 	}
+	defer func() {
+		if retErr != nil {
+			if note := s.serverEnvCredentialsNote(ctx, remote, creds); note != "" {
+				retErr = fmt.Errorf("%w%s", retErr, note)
+			}
+		}
+	}()
 	if s.remoteUser != "" && remote == s.remote {
 		return withRemoteOperationEnv(creds, s.isS3Remote(ctx, remote), func() error {
 			if force {

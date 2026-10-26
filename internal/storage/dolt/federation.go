@@ -217,19 +217,19 @@ func (s *DoltStore) ListRemotes(ctx context.Context) ([]storage.RemoteInfo, erro
 // fails open (migration is not wedged on unrelated corruption) but is logged,
 // never swallowed (bd-6dnrw.33).
 func (s *DoltStore) hasPersistedCLIRemote() bool {
-	return s.HasPersistedRemote()
+	return len(s.persistedRemoteInfosOnDisk()) > 0
 }
 
-// HasPersistedRemote is the exported on-disk probe for callers that must not
-// trust an empty dolt_remotes table at cold start: the remote-migrate gate
-// and the push/pull "no remote configured" exit-0 skip (bd-578h9.10).
+// HasPersistedRemote supplements an empty SQL remote listing only when the
+// on-disk directory can belong to this server. Migration admission uses the
+// separate conservative hasPersistedCLIRemote probe.
 func (s *DoltStore) HasPersistedRemote() bool {
 	return len(s.PersistedRemoteInfos()) > 0
 }
 
 // PersistedRemoteInfos returns the remotes persisted on disk in
 // .dolt/repo_state.json — names AND urls — searching the same directories in
-// the same order as HasPersistedRemote: the database CLI directory first,
+// the same order as HasPersistedRemote, only for an owned endpoint: the database CLI directory first,
 // then the dolt server root (GH#2118). The first directory that yields any
 // remotes wins, mirroring HasPersistedRemote's first-hit semantics.
 //
@@ -241,6 +241,15 @@ func (s *DoltStore) HasPersistedRemote() bool {
 // HasPersistedRemote behavior — callers only consult this after a SUCCESSFUL
 // (empty) ListRemotes, so a read failure here never masquerades as evidence.
 func (s *DoltStore) PersistedRemoteInfos() []storage.RemoteInfo {
+	if !s.cliDirServesServer() {
+		return nil
+	}
+	return s.persistedRemoteInfosOnDisk()
+}
+
+// Migration admission conservatively examines leftover copies too; their
+// remotes must not become authoritative for operations on a different server.
+func (s *DoltStore) persistedRemoteInfosOnDisk() []storage.RemoteInfo {
 	cliDir := s.CLIDir()
 	dirs := []string{cliDir}
 	if s.dbPath != "" && s.dbPath != cliDir {
