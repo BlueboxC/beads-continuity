@@ -3165,6 +3165,7 @@ func getBeadsRole() (string, bool) {
 
 // setBeadsRole writes the beads.role git config value.
 func setBeadsRole(role string) error {
+	// #nosec G702 -- literal git/config key; callers pass the validated maintainer/contributor enum, without a shell.
 	cmd := exec.Command("git", "config", "beads.role", role)
 	return cmd.Run()
 }
