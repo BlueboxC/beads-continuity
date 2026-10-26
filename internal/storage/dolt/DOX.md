@@ -42,6 +42,8 @@ Root DOX.md and the parent chain remain binding.
 
 - External server opens check dolt_version before reads/bootstrap; identified versions below 2.6.0 refuse. Unknown versions keep advisory behavior; preserve gateway project binding and pool cleanup.
 
+- Cold-start remote refusals escape persisted names/URLs without changing retained values, ownership admission, route selection or server-side recovery authority.
+
 ## Work Guidance
 
 Public Sync with requested exclusions refuses before commit/fetch/merge/push. Retained staging helpers and their historical regression tests do not qualify safe filtered replication. Do not silently bypass the refusal or reset existing peer history.

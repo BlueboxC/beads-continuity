@@ -39,6 +39,8 @@ Root DOX.md and the parent chain remain binding.
 
 - The shared merge-abort helper permits hard-reset fallback only for a known-clean pre-merge working set; preserve dirty or unreadable preconditions. CLI pull callers retain indeterminate-commit refusal and do not replay writes.
 
+- Shared diagnostic spelling in doltutil preserves recorded bytes through escaped display and reuses the existing platform shell-quotation refusal policy. A diagnostic is display-only and grants no execution or storage authority.
+
 ## Work Guidance
 
 Federation Sync rejects nonempty requested exclusions before committing or transferring on both adapters. Historical staging deletions can merge back and do not remove ancestor data; never present them as a privacy boundary. Empty exclusions explicitly request unfiltered sync. Existing exported history requires separate operator review and is never rewritten by this guard.

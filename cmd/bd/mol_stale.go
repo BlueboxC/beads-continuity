@@ -105,18 +105,19 @@ func renderStaleResult(result *StaleResult, blockingOnly bool) {
 
 	for _, mol := range result.StaleMolecules {
 		progress := fmt.Sprintf("%d/%d", mol.ClosedChildren, mol.TotalChildren)
+		arg, note := hintCommandArg(mol.ID, "<molecule-id>")
 
 		if mol.BlockingCount > 0 {
 			fmt.Printf("  %s  %s  (%s) [blocking %d]\n",
-				ui.RenderID(mol.ID), ui.SanitizeForTerminal(mol.Title), progress, mol.BlockingCount)
-			fmt.Printf("       → Close with: bd close %s\n", mol.ID)
+				ui.RenderID(printedIssueID(mol.ID)), printedValue(mol.Title), progress, mol.BlockingCount)
+			fmt.Printf("       → Close with: bd close %s%s\n", arg, note)
 			if mol.BlockingCount <= 3 {
-				fmt.Printf("       → Blocking: %v\n", mol.BlockingIssues)
+				fmt.Printf("       → Blocking: [%s]\n", printedIssueIDs(mol.BlockingIssues))
 			}
 		} else {
 			fmt.Printf("  %s  %s  (%s)\n",
-				ui.RenderID(mol.ID), ui.SanitizeForTerminal(mol.Title), progress)
-			fmt.Printf("       → Close with: bd close %s\n", mol.ID)
+				ui.RenderID(printedIssueID(mol.ID)), printedValue(mol.Title), progress)
+			fmt.Printf("       → Close with: bd close %s%s\n", arg, note)
 		}
 		fmt.Println()
 	}

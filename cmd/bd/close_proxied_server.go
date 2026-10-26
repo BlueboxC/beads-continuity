@@ -148,7 +148,7 @@ func runCloseProxiedServer(cmd *cobra.Command, ctx context.Context, args []strin
 			audit.LogFieldChange(o.id, "status", o.auditOld, "closed", actor, o.auditReason)
 		}
 		if !in.jsonOut {
-			fmt.Printf("%s Closed %s: %s\n", ui.RenderPass("✓"), formatFeedbackID(o.after.ID, o.after.Title), closeReasons[i])
+			fmt.Printf("%s Closed %s: %s\n", ui.RenderPass("✓"), printedFeedbackID(o.after.ID, o.after.Title), closeReasons[i])
 		}
 	}
 
@@ -159,19 +159,19 @@ func runCloseProxiedServer(cmd *cobra.Command, ctx context.Context, args []strin
 
 	if !in.jsonOut {
 		if post.autoClosedMol != nil {
-			fmt.Printf("%s Auto-closed completed molecule %s\n", ui.RenderPass("✓"), formatFeedbackID(post.autoClosedMol.ID, post.autoClosedMol.Title))
+			fmt.Printf("%s Auto-closed completed molecule %s\n", ui.RenderPass("✓"), printedFeedbackID(post.autoClosedMol.ID, post.autoClosedMol.Title))
 		}
 		if len(post.unblocked) > 0 {
 			fmt.Printf("\nNewly unblocked:\n")
 			for _, issue := range post.unblocked {
-				fmt.Printf("  • %s (P%d)\n", formatFeedbackID(issue.ID, issue.Title), issue.Priority)
+				fmt.Printf("  • %s (P%d)\n", printedFeedbackID(issue.ID, issue.Title), issue.Priority)
 			}
 		}
 		if post.continueResult != nil {
 			PrintContinueResult(post.continueResult)
 		}
 		if claimedNextIssue != nil {
-			fmt.Printf("%s Auto-claimed next ready issue: %s (P%d)\n", ui.RenderPass("✓"), formatFeedbackID(claimedNextIssue.ID, claimedNextIssue.Title), claimedNextIssue.Priority)
+			fmt.Printf("%s Auto-claimed next ready issue: %s (P%d)\n", ui.RenderPass("✓"), printedFeedbackID(claimedNextIssue.ID, claimedNextIssue.Title), claimedNextIssue.Priority)
 		} else if in.claimNext && len(outcomes) > 0 && !in.continueOn {
 			fmt.Printf("\n%s No ready issues available to claim.\n", ui.RenderWarn("✨"))
 		}
@@ -547,7 +547,7 @@ func autoCloseProxiedCompletedMolecule(ctx context.Context, uw uow.UnitOfWork, c
 
 	params := domain.CloseIssueParams{Reason: "all steps complete", Session: session}
 	if _, err := uw.IssueUseCase().CloseIssue(ctx, moleculeID, params, actorName); err != nil {
-		*warnings = append(*warnings, fmt.Sprintf("could not auto-close completed molecule %s: %v", moleculeID, err))
+		*warnings = append(*warnings, fmt.Sprintf("could not auto-close completed molecule %s: %s", printedIssueID(moleculeID), printedValue(err.Error())))
 		return nil
 	}
 	return root

@@ -526,10 +526,10 @@ func sortStepsByDependencyOrder(steps []*StepStatus, subgraph *TemplateSubgraph)
 
 // printMoleculeProgress prints the progress in human-readable format
 func printMoleculeProgress(mol *MoleculeProgress) {
-	fmt.Printf("You're working on molecule %s\n", ui.RenderAccent(mol.MoleculeID))
-	fmt.Printf("  %s\n", ui.SanitizeForTerminal(mol.MoleculeTitle))
+	fmt.Printf("You're working on molecule %s\n", ui.RenderAccent(printedIssueID(mol.MoleculeID)))
+	fmt.Printf("  %s\n", printedValue(mol.MoleculeTitle))
 	if mol.Assignee != "" {
-		fmt.Printf("  Assigned to: %s\n", ui.SanitizeForTerminal(mol.Assignee))
+		fmt.Printf("  Assigned to: %s\n", printedValue(mol.Assignee))
 	}
 	fmt.Println()
 
@@ -539,15 +539,16 @@ func printMoleculeProgress(mol *MoleculeProgress) {
 		if step.IsCurrent {
 			marker = " <- YOU ARE HERE"
 		}
-		fmt.Printf("  %s %s: %s%s\n", statusIcon, step.Issue.ID, ui.SanitizeForTerminal(step.Issue.Title), marker)
+		fmt.Printf("  %s %s: %s%s\n", statusIcon, printedIssueID(step.Issue.ID), printedValue(step.Issue.Title), marker)
 	}
 
 	fmt.Println()
 	fmt.Printf("Progress: %d/%d steps complete\n", mol.Completed, mol.Total)
 
 	if mol.NextStep != nil && mol.CurrentStep == nil {
-		fmt.Printf("\nNext ready: %s - %s\n", mol.NextStep.ID, ui.SanitizeForTerminal(mol.NextStep.Title))
-		fmt.Printf("  Start with: bd update %s --claim\n", mol.NextStep.ID)
+		fmt.Printf("\nNext ready: %s - %s\n", printedIssueID(mol.NextStep.ID), printedValue(mol.NextStep.Title))
+		arg, note := hintCommandArg(mol.NextStep.ID, "<step-id>")
+		fmt.Printf("  Start with: bd update %s --claim%s\n", arg, note)
 	}
 
 	// Show hint about viewing step instructions
@@ -558,7 +559,7 @@ func printMoleculeProgress(mol *MoleculeProgress) {
 		hintStepID = mol.NextStep.ID
 	}
 	if hintStepID != "" {
-		fmt.Printf("\n%s Run `bd show %s` to see detailed instructions.\n", ui.RenderAccent("💡"), hintStepID)
+		printStepInstructionsHint(hintStepID)
 	}
 }
 
@@ -665,8 +666,9 @@ func PrintContinueResult(result *ContinueResult) {
 	}
 
 	if result.MolComplete {
-		fmt.Printf("\n%s Molecule %s complete! All steps closed.\n", ui.RenderPass("✓"), result.MoleculeID)
-		fmt.Println("Consider: bd mol squash " + result.MoleculeID + " --summary '...'")
+		fmt.Printf("\n%s Molecule %s complete! All steps closed.\n", ui.RenderPass("✓"), printedIssueID(result.MoleculeID))
+		arg, note := hintCommandArg(result.MoleculeID, "<molecule-id>")
+		fmt.Printf("Consider: bd mol squash %s --summary '...'%s\n", arg, note)
 		return
 	}
 
@@ -676,12 +678,13 @@ func PrintContinueResult(result *ContinueResult) {
 	}
 
 	fmt.Printf("\nNext ready in molecule:\n")
-	fmt.Printf("  %s: %s\n", result.NextStep.ID, ui.SanitizeForTerminal(result.NextStep.Title))
+	fmt.Printf("  %s: %s\n", printedIssueID(result.NextStep.ID), printedValue(result.NextStep.Title))
 
 	if result.AutoAdvanced {
 		fmt.Printf("\n%s Marked in_progress (use --no-auto to skip)\n", ui.RenderWarn("→"))
 	} else {
-		fmt.Printf("\nStart with: bd update %s --claim\n", result.NextStep.ID)
+		arg, note := hintCommandArg(result.NextStep.ID, "<step-id>")
+		fmt.Printf("\nStart with: bd update %s --claim%s\n", arg, note)
 	}
 }
 
@@ -726,8 +729,8 @@ func filterStepsByRange(steps []*StepStatus, start, end int) []*StepStatus {
 
 // printLargeMoleculeSummary prints a summary for molecules with many steps.
 func printLargeMoleculeSummary(stats *types.MoleculeProgressStats) {
-	fmt.Printf("Molecule: %s\n", ui.RenderAccent(stats.MoleculeID))
-	fmt.Printf("  %s\n", ui.SanitizeForTerminal(stats.MoleculeTitle))
+	fmt.Printf("Molecule: %s\n", ui.RenderAccent(printedIssueID(stats.MoleculeID)))
+	fmt.Printf("  %s\n", printedValue(stats.MoleculeTitle))
 	fmt.Println()
 
 	// Progress summary
@@ -738,7 +741,7 @@ func printLargeMoleculeSummary(stats *types.MoleculeProgressStats) {
 	fmt.Printf("Progress: %d / %d steps (%.1f%%)\n", stats.Completed, stats.Total, percent)
 
 	if stats.CurrentStepID != "" {
-		fmt.Printf("Current step: %s\n", stats.CurrentStepID)
+		fmt.Printf("Current step: %s\n", printedIssueID(stats.CurrentStepID))
 	} else if stats.InProgress > 0 {
 		fmt.Printf("In progress: %d step(s)\n", stats.InProgress)
 	}
@@ -747,13 +750,14 @@ func printLargeMoleculeSummary(stats *types.MoleculeProgressStats) {
 	fmt.Printf("%s This molecule has %d steps (threshold: %d).\n",
 		ui.RenderWarn("Note:"), stats.Total, LargeMoleculeThreshold)
 	fmt.Println("To view steps, use one of:")
-	fmt.Printf("  bd mol current %s --limit 50        # First 50 steps\n", stats.MoleculeID)
-	fmt.Printf("  bd mol current %s --range 1-50     # Steps 1-50\n", stats.MoleculeID)
-	fmt.Printf("  bd mol progress %s                 # Efficient progress summary\n", stats.MoleculeID)
+	arg, note := hintCommandArg(stats.MoleculeID, "<molecule-id>")
+	fmt.Printf("  bd mol current %s --limit 50        # First 50 steps\n", arg)
+	fmt.Printf("  bd mol current %s --range 1-50     # Steps 1-50\n", arg)
+	fmt.Printf("  bd mol progress %s                 # Efficient progress summary%s\n", arg, note)
 
 	// Show hint about viewing step instructions
 	if stats.CurrentStepID != "" {
-		fmt.Printf("\n%s Run `bd show %s` to see detailed instructions.\n", ui.RenderAccent("💡"), stats.CurrentStepID)
+		printStepInstructionsHint(stats.CurrentStepID)
 	}
 }
 

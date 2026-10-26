@@ -4125,7 +4125,7 @@ func (s *DoltStore) prepareCLIRouteForGitProtocol(ctx context.Context, remote st
 			continue
 		}
 		if !doltutil.IsGitProtocolURL(r.URL) {
-			return false, fmt.Errorf("remote %q (%s) is persisted on disk but not yet visible to this sql-server (GH#2118 cold start); retry shortly, or restart the dolt sql-server if it persists", remote, r.URL)
+			return false, fmt.Errorf("remote %s (%s) is persisted on disk but not yet visible to this sql-server (GH#2118 cold start); retry shortly, or restart the dolt sql-server if it persists", doltutil.EscapedValue(remote), doltutil.EscapedValue(r.URL))
 		}
 		if err := s.ensureMatchingCLIRemote(remote, r.URL); err != nil {
 			return false, fmt.Errorf("remote %q uses git protocol and requires CLI routing: %w", remote, err)

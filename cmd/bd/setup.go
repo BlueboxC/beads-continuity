@@ -165,7 +165,7 @@ func listRecipes() error {
 		if !recipes.IsBuiltin(name) {
 			source = "user"
 		}
-		fmt.Printf("  %-12s  %-25s  (%s)\n", name, r.Description, source)
+		fmt.Printf("  %-12s  %-25s  (%s)\n", printedValue(name), printedValue(r.Description), source)
 	}
 	fmt.Println()
 	if !usingWorkspaceRecipes {
@@ -203,10 +203,11 @@ func addRecipe(name, path string) error {
 		return err
 	}
 
-	fmt.Printf("✓ Added recipe '%s' → %s\n", name, path)
+	fmt.Printf("✓ Added recipe %s → %s\n", recipeRefusalWord(name), printedValue(path))
 	fmt.Printf("  Config: %s/recipes.toml\n", beadsDir)
 	fmt.Println()
-	fmt.Printf("Install with: bd setup %s\n", name)
+	arg, note := hintCommandArg(name, "<recipe>")
+	fmt.Printf("Install with: bd setup %s%s\n", arg, note)
 	return nil
 }
 
@@ -238,7 +239,7 @@ func runRecipe(name string) error {
 	}
 
 	if recipe.Type != recipes.TypeFile && recipe.Type != recipes.TypeMultiFile {
-		return HandleError("recipe '%s' has type '%s' which requires special handling", name, recipe.Type)
+		return HandleError("recipe %s has type %s which requires special handling", recipeRefusalWord(name), recipeRefusalWord(string(recipe.Type)))
 	}
 
 	paths := recipe.Paths
@@ -263,31 +264,33 @@ func runRecipe(name string) error {
 				continue
 			}
 			if err != nil {
-				return HandleError("read %s: %v", path, err)
+				return HandleError("read %s: %s", printedValue(path), printedValue(err.Error()))
 			}
 			if recipe.IsSharedPath(path) && !setup.ContainsManagedSection(string(data)) {
 				unmanaged = append(unmanaged, path)
 			}
 		}
 		if len(missing) > 0 {
-			fmt.Printf("✗ %s integration not installed\n", recipe.Name)
-			fmt.Printf("  Run: bd setup %s\n", name)
+			fmt.Printf("✗ %s integration not installed\n", printedValue(recipe.Name))
+			arg, note := hintCommandArg(name, "<recipe>")
+			fmt.Printf("  Run: bd setup %s%s\n", arg, note)
 			for _, path := range missing {
-				fmt.Printf("  Missing: %s\n", path)
+				fmt.Printf("  Missing: %s\n", printedValue(path))
 			}
 			return SilentExit()
 		}
 		if len(unmanaged) > 0 {
-			fmt.Printf("⚠ %s integration missing its beads section\n", recipe.Name)
-			fmt.Printf("  Run: bd setup %s\n", name)
+			fmt.Printf("⚠ %s integration missing its beads section\n", printedValue(recipe.Name))
+			arg, note := hintCommandArg(name, "<recipe>")
+			fmt.Printf("  Run: bd setup %s%s\n", arg, note)
 			for _, path := range unmanaged {
-				fmt.Printf("  No beads section: %s\n", path)
+				fmt.Printf("  No beads section: %s\n", printedValue(path))
 			}
 			return SilentExit()
 		}
-		fmt.Printf("✓ %s integration installed\n", recipe.Name)
+		fmt.Printf("✓ %s integration installed\n", printedValue(recipe.Name))
 		for _, path := range paths {
-			fmt.Printf("  File: %s\n", path)
+			fmt.Printf("  File: %s\n", printedValue(path))
 		}
 		return nil
 	}
@@ -301,7 +304,7 @@ func runRecipe(name string) error {
 					continue
 				}
 				if err != nil {
-					return HandleError("read %s: %v", path, err)
+					return HandleError("read %s: %s", printedValue(path), printedValue(err.Error()))
 				}
 				remaining, hasUserContent, err := setup.RemoveManagedSection(data)
 				if err != nil {
@@ -316,7 +319,7 @@ func runRecipe(name string) error {
 						return HandleError("%v", err)
 					}
 				} else if err := setup.WriteManagedSectionFile(path, remaining); err != nil {
-					return HandleError("write file: %v", err)
+					return HandleError("write file: %s", printedValue(err.Error()))
 				}
 				removed = true
 				continue
@@ -337,17 +340,17 @@ func runRecipe(name string) error {
 			fmt.Println("No integration files found")
 			return nil
 		}
-		fmt.Printf("✓ Removed %s integration\n", recipe.Name)
+		fmt.Printf("✓ Removed %s integration\n", printedValue(recipe.Name))
 		return nil
 	}
 
-	fmt.Printf("Installing %s integration...\n", recipe.Name)
+	fmt.Printf("Installing %s integration...\n", printedValue(recipe.Name))
 
 	for _, path := range paths {
 		dir := filepath.Dir(path)
 		if dir != "." && dir != "" {
 			if err := os.MkdirAll(dir, 0o755); err != nil {
-				return HandleError("create directory: %v", err)
+				return HandleError("create directory: %s", printedValue(err.Error()))
 			}
 		}
 
@@ -362,22 +365,22 @@ func runRecipe(name string) error {
 			}
 			switch action {
 			case setup.SectionUpdated:
-				fmt.Printf("  ✓ Updated beads section in %s\n", path)
+				fmt.Printf("  ✓ Updated beads section in %s\n", printedValue(path))
 			case setup.SectionAdded:
-				fmt.Printf("  ✓ Added beads section to existing %s\n", path)
+				fmt.Printf("  ✓ Added beads section to existing %s\n", printedValue(path))
 			default:
-				fmt.Printf("  ✓ Created %s with beads section\n", path)
+				fmt.Printf("  ✓ Created %s with beads section\n", printedValue(path))
 			}
 			continue
 		}
 		if err := os.WriteFile(path, []byte(content), 0o644); err != nil { // #nosec G306 -- config files need to be readable
-			return HandleError("write file: %v", err)
+			return HandleError("write file: %s", printedValue(err.Error()))
 		}
 	}
 
-	fmt.Printf("\n✓ %s integration installed\n", recipe.Name)
+	fmt.Printf("\n✓ %s integration installed\n", printedValue(recipe.Name))
 	for _, path := range paths {
-		fmt.Printf("  File: %s\n", path)
+		fmt.Printf("  File: %s\n", printedValue(path))
 	}
 	return nil
 }

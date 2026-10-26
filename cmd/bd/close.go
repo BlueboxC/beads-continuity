@@ -250,7 +250,7 @@ the flags appear in the command line.`,
 					closedIssues = append(closedIssues, closedIssue)
 				}
 			} else {
-				debug.PrintNormal("%s Closed %s: %s\n", ui.RenderPass("✓"), formatFeedbackID(id, issueTitleOrEmpty(issue)), reason)
+				debug.PrintNormal("%s Closed %s: %s\n", ui.RenderPass("✓"), printedFeedbackID(id, issueTitleOrEmpty(issue)), reason)
 			}
 		}
 
@@ -287,7 +287,7 @@ the flags appear in the command line.`,
 				}
 				fmt.Printf("\nNewly unblocked:\n")
 				for _, issue := range unblocked {
-					fmt.Printf("  • %s (P%d)\n", formatFeedbackID(issue.ID, issue.Title), issue.Priority)
+					fmt.Printf("  • %s (P%d)\n", printedFeedbackID(issue.ID, issue.Title), issue.Priority)
 				}
 			}
 		}
@@ -345,7 +345,7 @@ the flags appear in the command line.`,
 				claimedNextIssue = claimedNext.Issue
 				mutatedStores[postCloseStore] = append(mutatedStores[postCloseStore], claimedNextIssue.ID)
 				if !jsonOutput {
-					debug.PrintNormal("%s Auto-claimed next ready issue: %s (P%d)\n", ui.RenderPass("✓"), formatFeedbackID(claimedNextIssue.ID, claimedNextIssue.Title), claimedNextIssue.Priority)
+					debug.PrintNormal("%s Auto-claimed next ready issue: %s (P%d)\n", ui.RenderPass("✓"), printedFeedbackID(claimedNextIssue.ID, claimedNextIssue.Title), claimedNextIssue.Priority)
 				}
 				SetLastTouchedID(claimedNextIssue.ID)
 			} else if !jsonOutput {
@@ -732,12 +732,12 @@ func autoCloseCompletedMolecule(ctx context.Context, s storage.DoltStorage, clos
 
 	// All steps complete — auto-close the molecule root
 	if err := s.CloseIssue(ctx, moleculeID, "all steps complete", actorName, session); err != nil {
-		fmt.Fprintf(os.Stderr, "Warning: could not auto-close completed molecule %s: %v\n", moleculeID, err)
+		fmt.Fprintf(os.Stderr, "Warning: could not auto-close completed molecule %s: %s\n", printedIssueID(moleculeID), printedValue(err.Error()))
 		return ""
 	}
 
 	if !jsonOutput {
-		debug.PrintNormal("%s Auto-closed completed molecule %s\n", ui.RenderPass("✓"), formatFeedbackID(moleculeID, root.Title))
+		debug.PrintNormal("%s Auto-closed completed molecule %s\n", ui.RenderPass("✓"), printedFeedbackID(moleculeID, root.Title))
 	}
 	return moleculeID
 }

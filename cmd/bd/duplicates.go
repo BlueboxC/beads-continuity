@@ -124,12 +124,7 @@ func outputDuplicates(duplicateGroups [][]*types.Issue, refCounts map[string]int
 				sources = append(sources, issue.ID)
 			}
 		}
-		cmd := fmt.Sprintf("# Duplicate: %s (same content as %s)\n# Suggested action: bd close %s && bd dep add %s %s --type related",
-			strings.Join(sources, " "),
-			target.ID,
-			strings.Join(sources, " "),
-			strings.Join(sources, " "),
-			target.ID)
+		cmd := fmt.Sprintf("# Duplicate: %s (same content as %s)\n# Suggested action: %s", printedIssueIDs(sources), printedIssueID(target.ID), duplicateMergeCommand(sources, target.ID))
 		mergeCommands = append(mergeCommands, cmd)
 	}
 
@@ -149,7 +144,7 @@ func outputDuplicates(duplicateGroups [][]*types.Issue, refCounts map[string]int
 	fmt.Printf("%s Found %d duplicate group(s):\n\n", ui.RenderWarn("🔍"), len(duplicateGroups))
 	for i, group := range duplicateGroups {
 		target := chooseMergeTarget(group, refCounts, structuralScores)
-		fmt.Printf("%s Group %d: %s\n", ui.RenderAccent("━━"), i+1, ui.SanitizeForTerminal(group[0].Title))
+		fmt.Printf("%s Group %d: %s\n", ui.RenderAccent("━━"), i+1, printedValue(group[0].Title))
 		for _, issue := range group {
 			refs := refCounts[issue.ID]
 			weight := 0
@@ -161,7 +156,7 @@ func outputDuplicates(duplicateGroups [][]*types.Issue, refCounts map[string]int
 				marker = ui.RenderPass("→ ")
 			}
 			fmt.Printf("%s%s (%s, P%d, weight=%d, %d refs)\n",
-				marker, issue.ID, issue.Status, issue.Priority, weight, refs)
+				marker, printedIssueID(issue.ID), printedValue(string(issue.Status)), issue.Priority, weight, refs)
 		}
 		sources := make([]string, 0, len(group)-1)
 		for _, issue := range group {
@@ -169,9 +164,8 @@ func outputDuplicates(duplicateGroups [][]*types.Issue, refCounts map[string]int
 				sources = append(sources, issue.ID)
 			}
 		}
-		fmt.Printf("  %s Duplicate: %s (same content as %s)\n", ui.RenderAccent("Note:"), strings.Join(sources, " "), target.ID)
-		fmt.Printf("  %s bd close %s && bd dep add %s %s --type related\n\n",
-			ui.RenderAccent("Suggested:"), strings.Join(sources, " "), strings.Join(sources, " "), target.ID)
+		fmt.Printf("  %s Duplicate: %s (same content as %s)\n", ui.RenderAccent("Note:"), printedIssueIDs(sources), printedIssueID(target.ID))
+		fmt.Printf("  %s %s\n\n", ui.RenderAccent("Suggested:"), duplicateMergeCommand(sources, target.ID))
 	}
 	if autoMerge {
 		if dryRun {
@@ -365,7 +359,7 @@ func formatDuplicateGroupsJSON(groups [][]*types.Issue, refCounts map[string]int
 			"issues":            issues,
 			"suggested_target":  target.ID,
 			"suggested_sources": sources,
-			"suggested_action":  fmt.Sprintf("bd close %s && bd dep add %s %s --type related", strings.Join(sources, " "), strings.Join(sources, " "), target.ID),
+			"suggested_action":  duplicateMergeCommand(sources, target.ID),
 			"note":              fmt.Sprintf("Duplicate: %s (same content as %s)", strings.Join(sources, " "), target.ID),
 		})
 	}

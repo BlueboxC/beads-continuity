@@ -156,6 +156,8 @@ Root DOX.md and the parent chain remain binding.
 
 - Synced bootstrap persists its remote after a typed gitignore permission-only warning, only when required patterns are complete. Read/append failures still abort; HTTP connect admission is unchanged.
 
+- Store-derived IDs in molecule, duplicate and recipe command hints use the existing platform shell policy or an escaped-value placeholder; leading-dash IDs are placeholders. Ordinary minted IDs retain their spelling. Do not wrap suggested commands in executable backticks. Escape non-printing values around hints; structured IDs and mutation behavior remain unchanged.
+
 ## Work Guidance
 - Routed create adopts a sole metadata-less native database, retaining its prefix and project identity. Refuse ambiguous databases, dirty working sets under committing policy, non-embedded target settings and graph formats before writing selectors. Personal migration shares the guarded adoption; dry-run checks target admission without initialization.
 - A routed/planning target holding only a nonempty regular `issues.jsonl` refuses before initialization and names explicit `bd init --from-jsonl` recovery. Preserve bytes and permissions; empty exports, recognized local workspaces and followed redirects retain existing admission. An unreadable export refuses inspection rather than being treated as absent.
