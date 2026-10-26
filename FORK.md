@@ -169,11 +169,13 @@ updated Go 1.26 devcontainer. The fork has no Bazel setup to transplant.
 The embedded engine keeps `driver/v2 v2.4.1`, starting from coffeegoddd's
 [upstream proposal #7254](https://github.com/gastownhall/beads/pull/7254).
 It pins Dolt v2.6.0 plus the retained storage corrections, catalog and SQL fixes at
-[BlueboxC/dolt `471ea90de825`](https://github.com/BlueboxC/dolt/commit/471ea90de8258ed0862f61ea3ad61d384839c004),
-with the [SQL analyzer correction](https://github.com/BlueboxC/go-mysql-server/commit/1aa8b38f5b78da630065da597096598bd17df318) on base `38a1fb50b434`. The engine remains a Go dependency;
+[BlueboxC/dolt `38587a5fa325`](https://github.com/BlueboxC/dolt/commit/38587a5fa325494ecd757368f614865919841578),
+with the [SQL analyzer correction](https://github.com/BlueboxC/go-mysql-server/commit/20c27d601fcea5beb599cfb40c445190d75fa95e) on base `38a1fb50b434`. The engine remains a Go dependency;
 Beads does not implement engine-specific SQL workarounds.
 
-The 2.6.0 merge reuses upstream corrections already present in the carried patch set. Its ORT merge-base resolver retains this fork's explicit refusal of conflicting virtual bases at merge and three-dot diff entry points. Native backups from Dolt 2.4.2 and the preceding embedded tuple pass isolated restore, logical roots/ref/history comparison, subsequent writes/reopen and a second backup readable by both engines. Installation still requires matched data/binary recovery and guarded readback; the driver, project schema and external CLI/server policy do not change.
+For [Dolt #12207](https://github.com/dolthub/dolt/issues/12207), global and persisted SET assignments require SYSTEM_VARIABLES_ADMIN or SUPER before evaluation, with current privileges checked again for retained bound plans. Engine and SQL-server regressions cover limited accounts, scope aliases, unchanged persisted values, ordinary session assignments and prepared execution after REVOKE. This does not change the separate read-only Graph Preview server admission boundary or establish exposure of an operator database.
+
+The 2.6.0 merge reuses upstream corrections already present in the carried patch set. Its ORT merge-base resolver retains this fork's explicit refusal of conflicting virtual bases at merge and three-dot diff entry points. Earlier qualification covered native backups from Dolt 2.4.2. Each new tuple requires isolated backup/restore against its predecessor, logical roots/ref/history comparison, subsequent writes/reopen and a second backup readable by both engines. Installation also requires matched data/binary recovery and guarded readback; the driver, project schema and external CLI/server policy do not change.
 
 This tuple adds the bounded catalog fix for Dolt #12122, mixed-case CHECK merge
 references (PR #12152), matching remote-upstream cleanup (PR #12153/#11529),

@@ -183,6 +183,6 @@ replace github.com/steveyegge/beads => ../..
 
 replace github.com/dolthub/file-locks => github.com/shrisha/file-locks v0.1.2-0.20261015205944-1006a916595c
 
-replace github.com/dolthub/dolt/go => github.com/BlueboxC/dolt/go v0.0.0-20261026142237-471ea90de825
+replace github.com/dolthub/dolt/go => github.com/BlueboxC/dolt/go v0.0.0-20261026173211-38587a5fa325
 
-replace github.com/dolthub/go-mysql-server => github.com/BlueboxC/go-mysql-server v0.0.0-20261024112522-1aa8b38f5b78
+replace github.com/dolthub/go-mysql-server => github.com/BlueboxC/go-mysql-server v0.0.0-20261026172718-20c27d601fce
