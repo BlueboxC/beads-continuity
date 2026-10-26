@@ -1,9 +1,11 @@
 package fix
 
 import (
+	"context"
 	"database/sql"
 	"fmt"
 	"path/filepath"
+	"time"
 
 	_ "github.com/go-sql-driver/mysql"
 	"github.com/steveyegge/beads/internal/configfile"
@@ -309,7 +311,7 @@ func CountCrossTableDuplicates(path string) (int, error) {
 		return 0, err
 	}
 
-	db, _, err := openDoltDB(beadsDir)
+	db, _, err := openDoltScanDB(beadsDir)
 	if err != nil {
 		return 0, err
 	}
@@ -328,18 +330,28 @@ func CountCrossTableDuplicates(path string) (int, error) {
 // verify the connection's target identity) don't have to load it a second
 // time and risk it disagreeing with what was actually dialed.
 func openDoltDB(beadsDir string) (*sql.DB, *configfile.Config, error) {
+	return openDoltDBWith(beadsDir, openFixDB)
+}
+
+func openDoltScanDB(beadsDir string) (*sql.DB, *configfile.Config, error) {
+	return openDoltDBWith(beadsDir, openScanDB)
+}
+
+func openDoltDBWith(beadsDir string, open func(string, *configfile.Config) (*sql.DB, error)) (*sql.DB, *configfile.Config, error) {
 	cfg, err := configfile.Load(beadsDir)
 	if err != nil || cfg == nil {
 		return nil, nil, fmt.Errorf("no database configuration found")
 	}
 
-	db, err := openFixDB(beadsDir, cfg)
+	db, err := open(beadsDir, cfg)
 	if err != nil {
 		return nil, nil, fmt.Errorf("dolt server connection failed: %w", err)
 	}
 
 	// Verify the connection actually works
-	if err := db.Ping(); err != nil {
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	if err := db.PingContext(ctx); err != nil {
 		_ = db.Close() // Best effort cleanup
 		return nil, nil, fmt.Errorf("dolt server not reachable: %w", err)
 	}

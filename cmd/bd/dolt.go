@@ -22,6 +22,7 @@ import (
 	"github.com/steveyegge/beads/internal/storage"
 	"github.com/steveyegge/beads/internal/storage/dberrors"
 	"github.com/steveyegge/beads/internal/storage/dbproxy/proxy"
+	"github.com/steveyegge/beads/internal/storage/dolt"
 	"github.com/steveyegge/beads/internal/storage/doltutil"
 	"github.com/steveyegge/beads/internal/storage/versioncontrolops"
 	"github.com/steveyegge/beads/internal/ui"
@@ -1270,7 +1271,7 @@ func localStatusNeedsExternalFallback(state *doltserver.State, serverDir, host s
 	if state != nil && state.Running {
 		return false
 	}
-	port := doltserver.DefaultConfig(serverDir).Port
+	port := doltserver.DialConfig(serverDir).Port
 	if port <= 0 {
 		return false
 	}
@@ -1290,7 +1291,7 @@ func renderLocalDoltStatus(state *doltserver.State, serverDir string) {
 		return
 	}
 	if state == nil || !state.Running {
-		cfg := doltserver.DefaultConfig(serverDir)
+		cfg := doltserver.DialConfig(serverDir)
 		fmt.Println("Dolt server: not running")
 		fmt.Printf("  Expected port: %d\n", cfg.Port)
 		return
@@ -1363,7 +1364,7 @@ func shouldUseExternalDoltStatus(cfg *configfile.Config, autoStartDisabled, shar
 	if host := cfg.GetDoltServerHost(); !isLocalHost(host) || configfile.IsIPv6LoopbackHost(host) {
 		return true
 	}
-	return autoStartDisabled
+	return autoStartDisabled || cfg.GetDoltServerSocket() != ""
 }
 
 // isLocalHost reports whether host refers to this machine. Used to
@@ -1380,13 +1381,15 @@ func isLocalHost(host string) bool {
 // user-relevant signals.
 func runExternalDoltStatus(beadsDir string, cfg *configfile.Config) {
 	host := cfg.GetDoltServerHost()
-	port := doltserver.DefaultConfig(beadsDir).Port
+	port := doltserver.DialConfig(beadsDir).Port
+	socket := dolt.ResolveSocketTransport(cfg.GetDoltServerSocket(), host, port, 500*time.Millisecond)
 	user := cfg.GetDoltServerUser()
 	database := cfg.GetDoltDatabase()
 	tls := cfg.GetDoltServerTLS()
 	password := cfg.GetDoltServerPasswordForPort(port)
 
 	dsn := doltutil.ServerDSN{
+		Socket:   socket,
 		Host:     host,
 		Port:     port,
 		User:     user,
@@ -1404,11 +1407,14 @@ func runExternalDoltStatus(beadsDir string, cfg *configfile.Config) {
 		"tls":      tls,
 	}
 
+	if socket != "" {
+		result["socket"] = socket
+	}
 	var running bool
 	var version string
 	var connErr error
 
-	if advice := unresolvedServerPortAdvice(host, port); advice != "" {
+	if advice := unresolvedServerPortAdvice(host, port); advice != "" && socket == "" {
 		// Nothing to dial: give the store's advice, not a dial of port 0.
 		connErr = fmt.Errorf("no Dolt server port configured; %s", advice)
 	} else if db, openErr := sql.Open("mysql", dsn); openErr == nil {
@@ -1448,6 +1454,9 @@ func runExternalDoltStatus(beadsDir string, cfg *configfile.Config) {
 	}
 	fmt.Printf("  Host:     %s\n", host)
 	fmt.Printf("  Port:     %d\n", port)
+	if socket != "" {
+		fmt.Printf("  Socket:   %q\n", socket)
+	}
 	fmt.Printf("  Database: %s\n", database)
 	fmt.Printf("  User:     %s\n", user)
 	fmt.Printf("  TLS:      %t\n", tls)
@@ -2083,8 +2092,9 @@ func showDoltConfig(testConnection bool) error {
 
 	// Resolve actual server port for connection testing
 	showHost := cfg.GetDoltServerHost()
-	dsCfg := doltserver.DefaultConfig(beadsDir)
+	dsCfg := doltserver.DialConfig(beadsDir)
 	showPort := dsCfg.Port
+	showSocket := dolt.ResolveSocketTransport(cfg.GetDoltServerSocket(), showHost, showPort, 500*time.Millisecond)
 	embeddedDataDir := filepath.Join(beadsDir, "embeddeddolt")
 
 	if jsonOutput {
@@ -2099,12 +2109,14 @@ func showDoltConfig(testConnection bool) error {
 			} else {
 				result["host"] = showHost
 				result["port"] = showPort
+				if showSocket != "" {
+					result["socket"] = showSocket
+				}
 				result["user"] = cfg.GetDoltServerUser()
 				result["tls"] = cfg.GetDoltServerTLS()
 				result["shared_server"] = doltserver.IsSharedServerMode()
 				if testConnection {
-					result["connection_ok"] = unresolvedServerPortAdvice(showHost, showPort) == "" &&
-						testServerConnection(showHost, showPort)
+					result["connection_ok"] = testDoltShowTransport(showHost, showPort, showSocket)
 				}
 			}
 		}
@@ -2128,6 +2140,9 @@ func showDoltConfig(testConnection bool) error {
 	} else {
 		fmt.Printf("  Host:     %s\n", showHost)
 		fmt.Printf("  Port:     %d\n", showPort)
+		if showSocket != "" {
+			fmt.Printf("  Socket:   %q\n", showSocket)
+		}
 		fmt.Printf("  User:     %s\n", cfg.GetDoltServerUser())
 		fmt.Printf("  TLS:      %t\n", cfg.GetDoltServerTLS())
 		if doltserver.IsSharedServerMode() {
@@ -2141,7 +2156,13 @@ func showDoltConfig(testConnection bool) error {
 
 		if testConnection {
 			fmt.Println()
-			printDoltShowConnection(showHost, showPort)
+			if showSocket == "" {
+				printDoltShowConnection(showHost, showPort)
+			} else if testDoltShowTransport(showHost, showPort, showSocket) {
+				fmt.Printf("  %s\n", ui.RenderPass("✓ Socket connection OK"))
+			} else {
+				fmt.Printf("  %s\n", ui.RenderWarn("✗ Socket not reachable"))
+			}
 		}
 	}
 
@@ -2604,4 +2625,16 @@ func logDoltConfigChange(beadsDir, key, value string) {
 	}
 	defer f.Close()
 	_, _ = f.WriteString(entry)
+}
+
+func testDoltShowTransport(host string, port int, socket string) bool {
+	if socket == "" {
+		return unresolvedServerPortAdvice(host, port) == "" && testServerConnection(host, port)
+	}
+	conn, err := net.DialTimeout("unix", socket, serverDialTimeout)
+	if err != nil {
+		return false
+	}
+	_ = conn.Close()
+	return true
 }

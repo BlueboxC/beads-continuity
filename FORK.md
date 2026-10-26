@@ -21,6 +21,8 @@ The retained snapshot-filter algorithm can reimport its deletion commit on the n
 
 ## Ownership and bootstrap follow-ups
 
+PR #7874 is adapted through the existing DialConfig resolver for status, show, context and doctor. Legacy port fallback retains authoritative configuration precedence and port-keyed credentials. Fresh-clone checks and read-only FK/duplicate scans follow socket transport; repair/catalog writes refuse a selected socket and missing TCP port. Existing TLS, gateway, project identity and minimum-version boundaries remain in force.
+
 PR #7864's remaining connection-policy delta keeps local EPERM/EACCES
 refusals out of shared circuit health and preserves open/half-open state.
 Unix permission-only liveness cannot establish workspace ownership. A stop

@@ -26,6 +26,8 @@ Root DOX.md and the parent chain remain binding.
 
 - Server version diagnostics share the external required floor, provide upgrade/restart advice for recognized old servers and escape unknown version text.
 
+- Doctor runtime reads and TCP fixes share DialConfig precedence and matching port credentials. Fresh-clone and read-only duplicate/FK scans follow the store socket fallback; SQL repair admission and metadata reconciliation refuse a selected socket or unresolved TCP port. Preserve target identity checks, TLS, gateway restrictions and the external version floor. Connection/catalog probes have deadlines.
+
 ## Work Guidance
 
 Diagnose before repair; preserve recovery evidence. Use existing doctor operations rather than adding parallel repair commands.

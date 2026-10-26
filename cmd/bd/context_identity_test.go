@@ -17,6 +17,35 @@ import (
 	"github.com/steveyegge/beads/internal/storage/domain"
 )
 
+func TestForkContextRoutesUseLegacyEndpoint(t *testing.T) {
+	for _, key := range []string{"BEADS_DOLT_SERVER_PORT", "BEADS_DOLT_SHARED_SERVER", "BEADS_DOLT_SERVER_HOST"} {
+		t.Setenv(key, "")
+	}
+	t.Setenv("BEADS_DOLT_PORT", "43123")
+	dir := t.TempDir()
+	initGitRepoAt(t, dir)
+	beadsDir := filepath.Join(dir, ".beads")
+	if err := os.MkdirAll(beadsDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	cfg := &configfile.Config{Backend: configfile.BackendDolt, DoltMode: configfile.DoltModeServer}
+	if err := cfg.Save(beadsDir); err != nil {
+		t.Fatal(err)
+	}
+	t.Chdir(dir)
+	t.Setenv("BEADS_DIR", beadsDir)
+	beads.ResetCaches()
+	t.Cleanup(beads.ResetCaches)
+	provider, err := contextinfo.NewContextProvider(dir, Version).ContextUseCase().GetContextInfo(t.Context())
+	if err != nil {
+		t.Fatal(err)
+	}
+	direct := directContextSnapshot(t, beadsDir)
+	if direct.ServerPort != 43123 || provider.ServerPort != 43123 {
+		t.Fatalf("ports direct/provider = %d/%d", direct.ServerPort, provider.ServerPort)
+	}
+}
+
 // TestContextRoutesNameOneWorkspaceTheSameWay.
 //
 // There are two routes to a workspace snapshot and they are not

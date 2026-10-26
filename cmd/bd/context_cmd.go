@@ -140,7 +140,7 @@ func applyContextBackend(snapshot *domain.ContextInfo, beadsDir string, cfg *con
 
 	if cfg.IsDoltServerMode() {
 		snapshot.ServerHost = cfg.GetDoltServerHost()
-		snapshot.ServerPort = doltserver.DefaultConfig(beadsDir).Port
+		snapshot.ServerPort = doltserver.DialConfig(beadsDir).Port
 	}
 	if cfg.IsDoltProxiedServerMode() {
 		p, err := resolveProxiedServerRootPath(beadsDir)

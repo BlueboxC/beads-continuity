@@ -71,7 +71,7 @@ func TestFreshCloneServerResult(t *testing.T) {
 
 	for name, tt := range tests {
 		t.Run(name, func(t *testing.T) {
-			check := freshCloneServerResult(tt.dbExists, tt.dbName, tt.host, tt.port, tt.syncRemote)
+			check := freshCloneServerResult(tt.dbExists, tt.dbName, tt.host, tt.port, "", tt.syncRemote)
 
 			if check.Name != "Fresh Clone" {
 				t.Errorf("expected Name %q, got %q", "Fresh Clone", check.Name)
@@ -103,7 +103,7 @@ func TestFreshCloneServerResult(t *testing.T) {
 func TestCheckFreshCloneDB_ServerUnreachable(t *testing.T) {
 	// FR-030: When server is unreachable, should return Reachable=false
 	// so caller skips the server-mode check without panic.
-	result := checkFreshCloneDB("127.0.0.1", 1, "root", "", "nonexistent_db", false)
+	result := checkFreshCloneDB("127.0.0.1", 1, "", "root", "", "nonexistent_db", false)
 	if result.Reachable {
 		t.Fatal("expected Reachable=false for connection refused")
 	}
@@ -189,6 +189,7 @@ func TestFreshCloneServerUnreachableResult(t *testing.T) {
 		"acf_beads",
 		"dolt.example.com",
 		3306,
+		"",
 		errSentinelForTest{msg: "dial tcp: i/o timeout"},
 	)
 
@@ -225,8 +226,8 @@ func TestFreshCloneServerUnreachableResult(t *testing.T) {
 	// both the unreachable and the missing-database message.
 	for _, host := range []string{"::1", "[::1]"} {
 		for name, msg := range map[string]string{
-			"unreachable": freshCloneServerUnreachableResult("acf_beads", host, 3309, nil).Message,
-			"missing db":  freshCloneServerResult(false, "acf_beads", host, 3309, "").Message,
+			"unreachable": freshCloneServerUnreachableResult("acf_beads", host, 3309, "", nil).Message,
+			"missing db":  freshCloneServerResult(false, "acf_beads", host, 3309, "", "").Message,
 		} {
 			if !strings.Contains(msg, "[::1]:3309") || strings.Contains(msg, "[[::1]]") || strings.Contains(msg, " ::1:3309") {
 				t.Errorf("%s message for host %q must name the server as [::1]:3309, got: %s", name, host, msg)
@@ -235,12 +236,24 @@ func TestFreshCloneServerUnreachableResult(t *testing.T) {
 	}
 
 	// Nil error path should still produce a usable message and not panic.
-	checkNil := freshCloneServerUnreachableResult("beads", "127.0.0.1", 3307, nil)
+	checkNil := freshCloneServerUnreachableResult("beads", "127.0.0.1", 3307, "", nil)
 	if checkNil.Status != StatusWarning {
 		t.Errorf("nil-err path: expected Status %q, got %q", StatusWarning, checkNil.Status)
 	}
 	if !strings.Contains(checkNil.Message, "unreachable") {
 		t.Errorf("nil-err path: expected message to mention 'unreachable', got: %s", checkNil.Message)
+	}
+}
+
+func TestForkFreshCloneNamesActualSocket(t *testing.T) {
+	const socket = "/missing/workspace.sock"
+	check := freshCloneServerUnreachableResult("beads", "127.0.0.1", 43123, socket, nil)
+	if !strings.Contains(check.Message, "unix:"+socket) || strings.Contains(check.Message, "127.0.0.1:43123") {
+		t.Fatalf("misreported socket endpoint: %s", check.Message)
+	}
+	probe := checkFreshCloneDB("127.0.0.1", 0, socket, "root", "", "beads", false)
+	if probe.Err == nil || !strings.Contains(probe.Err.Error(), socket) {
+		t.Fatalf("probe did not use configured socket: %v", probe.Err)
 	}
 }
 

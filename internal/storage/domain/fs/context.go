@@ -67,7 +67,7 @@ func (r *contextRepositoryImpl) BackendConfig(ctx context.Context) (domain.Backe
 }
 
 func (r *contextRepositoryImpl) ServerPort(ctx context.Context) (int, error) {
-	return doltserver.DefaultConfig(r.beadsDir(ctx)).Port, nil
+	return doltserver.DialConfig(r.beadsDir(ctx)).Port, nil
 }
 
 func (r *contextRepositoryImpl) ProxiedServerRoot(ctx context.Context) (string, error) {

@@ -57,7 +57,7 @@ func ScanSeveredCloneLocalFKs(path string) ([]SeveredCloneLocalFK, error) {
 		return nil, err
 	}
 
-	db, _, err := openDoltDB(beadsDir)
+	db, _, err := openDoltScanDB(beadsDir)
 	if err != nil {
 		return nil, err
 	}

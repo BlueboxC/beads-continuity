@@ -5,9 +5,11 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"os"
 	"path/filepath"
 	"sort"
 	"strings"
+	"time"
 
 	mysql "github.com/go-sql-driver/mysql"
 	"github.com/steveyegge/beads/internal/beads"
@@ -249,7 +251,8 @@ func FixMissingDoltDatabase(path string) error {
 // expected beads tables (issues, dependencies, config). Returns the database name
 // if found, empty string otherwise.
 func probeForCorrectDoltDatabase(db *sql.DB, skipDB string) string {
-	ctx := context.Background()
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
 	rows, err := db.QueryContext(ctx, "SHOW DATABASES")
 	if err != nil {
 		return ""
@@ -421,13 +424,24 @@ func reconcileAuthoritativeServerMetadata(cfg *configfile.Config, databases []se
 }
 
 func inspectServerMetadataDatabases(beadsDir string, cfg *configfile.Config) ([]serverDatabaseMetadata, error) {
+	endpoint := doltserver.DialConfig(beadsDir)
+	host := cfg.GetDoltServerHost()
+	managed := cfg.IsDoltProxiedServerMode() || (configfile.IsLocalHostString(host) && !configfile.IsIPv6LoopbackHost(host) && !doltserver.IsAutoStartDisabled() && endpoint.Mode != doltserver.ServerModeExternal)
+	if endpoint.Port <= 0 && cfg.GetDoltServerSocket() == "" && managed {
+		if _, err := os.Stat(cfg.DatabasePath(beadsDir)); os.IsNotExist(err) {
+			return nil, nil
+		}
+		return nil, fmt.Errorf("this workspace's Dolt server is not running; start it with 'bd dolt start', then retry metadata reconciliation")
+	}
+
 	db, err := openServerCatalogDB(beadsDir, cfg)
 	if err != nil {
 		return nil, fmt.Errorf("server metadata probe failed: %w", err)
 	}
 	defer db.Close()
 
-	ctx := context.Background()
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
 	rows, err := db.QueryContext(ctx, "SHOW DATABASES")
 	if err != nil {
 		return nil, err
@@ -522,7 +536,13 @@ func isExpectedProbeError(err error) bool {
 }
 
 func openServerCatalogDB(beadsDir string, cfg *configfile.Config) (*sql.DB, error) {
-	port := doltserver.DefaultConfig(beadsDir).Port
+	port := doltserver.DialConfig(beadsDir).Port
+	if socket := dolt.ResolveSocketTransport(cfg.GetDoltServerSocket(), cfg.GetDoltServerHost(), port, 500*time.Millisecond); socket != "" {
+		return nil, fmt.Errorf("the workspace uses a unix socket; metadata reconciliation over that transport is not qualified")
+	}
+	if port <= 0 {
+		return nil, fmt.Errorf("no Dolt server port configured; %s", doltserver.UnresolvedPortAdvice(cfg.GetDoltServerHost()))
+	}
 	connStr := doltutil.ServerDSN{
 		Host:     cfg.GetDoltServerHost(),
 		Port:     port,

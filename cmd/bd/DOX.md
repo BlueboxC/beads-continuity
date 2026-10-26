@@ -152,6 +152,8 @@ Root DOX.md and the parent chain remain binding.
 
 - Pass the invocation migration-freeze result to embedded classified-read opens; expired defers resume waking after thaw. Resolve embedded commit identity before writable opens only, keeping ordinary reads free of Git identity subprocesses. Explicit author values win; an agent actor without an explicit author email uses beads@local instead of another Git user’s address.
 
+- Runtime status/show and both context routes use DialConfig, including the legacy port fallback without overriding authoritative configured ports. Port-keyed credentials follow that same endpoint. Status/show report the selected socket when present; show reachability tests that transport.
+
 ## Work Guidance
 - Routed create adopts a sole metadata-less native database, retaining its prefix and project identity. Refuse ambiguous databases, dirty working sets under committing policy, non-embedded target settings and graph formats before writing selectors. Personal migration shares the guarded adoption; dry-run checks target admission without initialization.
 - A routed/planning target holding only a nonempty regular `issues.jsonl` refuses before initialization and names explicit `bd init --from-jsonl` recovery. Preserve bytes and permissions; empty exports, recognized local workspaces and followed redirects retain existing admission. An unreadable export refuses inspection rather than being treated as absent.

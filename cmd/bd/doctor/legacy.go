@@ -7,11 +7,13 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"github.com/steveyegge/beads/internal/beads"
 	"github.com/steveyegge/beads/internal/config"
 	"github.com/steveyegge/beads/internal/configfile"
 	"github.com/steveyegge/beads/internal/doltserver"
+	"github.com/steveyegge/beads/internal/storage/dolt"
 )
 
 // agentDocFiles returns the list of documentation files to check, including
@@ -479,9 +481,9 @@ func CheckFreshClone(repoPath string) DoctorCheck {
 		// No local dolt directory — check server mode (FR-020, FR-021).
 		if cfg, err := configfile.Load(beadsDir); err == nil && cfg != nil && cfg.IsDoltServerMode() {
 			host := cfg.GetDoltServerHost()
-			// Use DefaultConfig (not deprecated GetDoltServerPort) to resolve
+			// Use DialConfig (not deprecated GetDoltServerPort) to resolve
 			// the correct port for standalone server mode (ephemeral).
-			port := doltserver.DefaultConfig(beadsDir).Port
+			port := doltserver.DialConfig(beadsDir).Port
 			user := cfg.GetDoltServerUser()
 			// Look up the password by the resolved runtime port — cfg.GetDoltServerPassword
 			// uses cfg.GetDoltServerPort() which falls back to the 3307 default when
@@ -491,13 +493,17 @@ func CheckFreshClone(repoPath string) DoctorCheck {
 			// "Fresh clone detected" warnings (bd-tzo9).
 			password := cfg.GetDoltServerPasswordForPort(port)
 			dbName := cfg.GetDoltDatabase()
-			result := checkFreshCloneDB(host, port, user, password, dbName, cfg.GetDoltServerTLS())
+			socket := dolt.ResolveSocketTransport(cfg.GetDoltServerSocket(), host, port, 500*time.Millisecond)
+			if socket == "" && port <= 0 {
+				return DoctorCheck{Name: "Fresh Clone", Status: StatusWarning, Message: "Dolt server endpoint unresolved", Fix: doltserver.UnresolvedPortAdvice(host)}
+			}
+			result := checkFreshCloneDB(host, port, socket, user, password, dbName, cfg.GetDoltServerTLS())
 			if result.Reachable {
 				syncRemote := config.GetStringFromDir(beadsDir, "sync.remote")
 				if syncRemote == "" {
 					syncRemote = config.GetStringFromDir(beadsDir, "sync.git-remote")
 				}
-				return freshCloneServerResult(result.Exists, dbName, host, port, syncRemote)
+				return freshCloneServerResult(result.Exists, dbName, host, port, socket, syncRemote)
 			}
 			// Server unreachable in server mode — emit a server-aware warning
 			// instead of falling through to the legacy "Fresh clone detected
@@ -505,7 +511,7 @@ func CheckFreshClone(repoPath string) DoctorCheck {
 			// dolt_mode=server (the local DB absence is expected). See GH#35.
 			// FR-030 only requires that we don't panic on unreachable; it does
 			// not mandate the misleading fall-through.
-			return freshCloneServerUnreachableResult(dbName, host, port, result.Err)
+			return freshCloneServerUnreachableResult(dbName, host, port, socket, result.Err)
 		}
 	default:
 		// Non-Dolt (legacy sqlite-era metadata): check configured .db file path.

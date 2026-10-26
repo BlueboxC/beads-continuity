@@ -13,6 +13,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/steveyegge/beads/internal/beads"
 	"github.com/steveyegge/beads/internal/config"
 	"github.com/steveyegge/beads/internal/configfile"
 	"github.com/steveyegge/beads/internal/doltserver"
@@ -20,6 +21,63 @@ import (
 	"github.com/steveyegge/beads/internal/storage"
 	"github.com/steveyegge/beads/internal/testutil"
 )
+
+func TestForkLocalStatusProbesLegacyEndpoint(t *testing.T) {
+	for _, key := range []string{"BEADS_DOLT_SERVER_PORT", "BEADS_DOLT_SHARED_SERVER", "BEADS_DOLT_SERVER_HOST"} {
+		t.Setenv(key, "")
+	}
+	t.Setenv("BEADS_DOLT_PORT", "43123")
+	called := false
+	if !localStatusNeedsExternalFallback(nil, t.TempDir(), "127.0.0.1", func(host string, port int) bool {
+		called = true
+		if host != "127.0.0.1" || port != 43123 {
+			t.Fatalf("probe endpoint = %s:%d", host, port)
+		}
+		return true
+	}) || !called {
+		t.Fatal("resolved legacy endpoint was not probed")
+	}
+}
+
+func TestForkStatusAndShowNameSelectedSocket(t *testing.T) {
+	t.Setenv("BEADS_DOLT_SHARED_SERVER", "true")
+	dir := t.TempDir()
+	initGitRepoAt(t, dir)
+	beadsDir := filepath.Join(dir, ".beads")
+	if err := os.MkdirAll(beadsDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	cfg := &configfile.Config{Backend: configfile.BackendDolt, DoltMode: configfile.DoltModeServer}
+	if err := cfg.Save(beadsDir); err != nil {
+		t.Fatal(err)
+	}
+	t.Chdir(dir)
+	t.Setenv("BEADS_DIR", beadsDir)
+	t.Setenv("BEADS_DOLT_SERVER_PORT", "1")
+	socket := filepath.Join(dir, "missing.sock")
+	t.Setenv("BEADS_DOLT_SERVER_SOCKET", socket)
+	beads.ResetCaches()
+	t.Cleanup(beads.ResetCaches)
+	oldJSON := jsonOutput
+	jsonOutput = true
+	t.Cleanup(func() { jsonOutput = oldJSON })
+	for name, run := range map[string]func() error{
+		"status": func() error { runExternalDoltStatus(beadsDir, cfg); return nil },
+		"show":   func() error { return showDoltConfig(true) },
+	} {
+		out := captureStdout(t, run)
+		var got map[string]interface{}
+		if err := json.Unmarshal([]byte(out), &got); err != nil {
+			t.Fatalf("%s JSON: %v", name, err)
+		}
+		if got["socket"] != socket {
+			t.Fatalf("%s omitted selected socket: %s", name, out)
+		}
+		if name == "status" && !strings.Contains(fmt.Sprint(got["error"]), socket) {
+			t.Fatalf("status queried a different transport: %s", out)
+		}
+	}
+}
 
 func TestDoltShowConfigNotInRepo(t *testing.T) {
 	// Change to a temp dir without .beads

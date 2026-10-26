@@ -31,10 +31,13 @@ func openDoltDB(beadsDir string) (*sql.DB, *configfile.Config, error) {
 	user := cfg.GetDoltServerUser()
 	database := cfg.GetDoltDatabase()
 
-	// Use doltserver.DefaultConfig for port resolution (env > port file > config.yaml).
+	// Use doltserver.DialConfig for port resolution (env > port file > config.yaml).
 	// Port 0 means no server running yet.
-	dsCfg := doltserver.DefaultConfig(beadsDir)
+	dsCfg := doltserver.DialConfig(beadsDir)
 	port := dsCfg.Port
+	if socket := dolt.ResolveSocketTransport(cfg.GetDoltServerSocket(), host, port, 500*time.Millisecond); socket != "" {
+		return nil, nil, fmt.Errorf("the workspace uses a unix socket; doctor SQL repairs over that transport are not qualified")
+	}
 	if port == 0 {
 		// No bd command starts, and so resolves a port for, a server bd does
 		// not run.
@@ -98,7 +101,7 @@ func bdRunsServer(cfg *configfile.Config, host string) bool {
 type doltConn struct {
 	db   *sql.DB
 	cfg  *configfile.Config // config for server detail (host:port)
-	port int                // resolved port (from doltserver.DefaultConfig, not cfg fallback)
+	port int                // resolved port (from doltserver.DialConfig, not cfg fallback)
 }
 
 // Close releases the database connection.
@@ -113,7 +116,7 @@ func openDoltConn(beadsDir string) (*doltConn, error) {
 		return nil, err
 	}
 
-	port := doltserver.DefaultConfig(beadsDir).Port
+	port := doltserver.DialConfig(beadsDir).Port
 	return &doltConn{db: db, cfg: cfg, port: port}, nil
 }
 
@@ -165,10 +168,10 @@ func runDoltHealthChecksInternal(path string) []DoctorCheck {
 		// based embedded checks already validate data integrity; the server
 		// will auto-start on the next bd command. Not for a server bd does not
 		// run: no bd command starts one.
-		dsCfg := doltserver.DefaultConfig(beadsDir)
+		dsCfg := doltserver.DialConfig(beadsDir)
 		fileCfg := loadServerConfig(beadsDir)
 		host := fileCfg.GetDoltServerHost()
-		if dsCfg.Mode != doltserver.ServerModeExternal && bdRunsServer(fileCfg, host) {
+		if dsCfg.Mode != doltserver.ServerModeExternal && bdRunsServer(fileCfg, host) && fileCfg.GetDoltServerSocket() == "" {
 			skipMsg := "Skipped (no server running; will auto-start on next bd command)"
 			return []DoctorCheck{
 				{Name: "Dolt Connection", Status: StatusOK, Message: skipMsg, Category: CategoryCore},

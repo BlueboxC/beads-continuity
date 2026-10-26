@@ -9,20 +9,21 @@ import (
 
 	"github.com/steveyegge/beads/internal/configfile"
 	"github.com/steveyegge/beads/internal/doltserver"
+	"github.com/steveyegge/beads/internal/storage/dolt"
 	"github.com/steveyegge/beads/internal/storage/doltutil"
 	"github.com/steveyegge/beads/internal/storage/issueops"
 )
 
-// fixDBDSN builds the MySQL-protocol DSN for a fix-path connection: every
-// doctor --fix repair, plus the read-only checks that delegate into
-// openFixDB (Clone-Local FKs, Cross-Table Duplicates). Split out of
-// openFixDB so the port/password pairing is unit-testable without a live
-// server.
+// fixDBDSN pairs the repair TCP endpoint with credentials for its runtime port.
 func fixDBDSN(beadsDir string, cfg *configfile.Config) string {
+	return workspaceDBDSN(beadsDir, cfg, "")
+}
+
+func workspaceDBDSN(beadsDir string, cfg *configfile.Config, socket string) string {
 	host := cfg.GetDoltServerHost()
 	user := cfg.GetDoltServerUser()
 	database := cfg.GetDoltDatabase()
-	port := doltserver.DefaultConfig(beadsDir).Port
+	port := doltserver.DialConfig(beadsDir).Port
 
 	// Resolve the password against the SAME port the DSN dials. The
 	// credentials file is keyed [host:port]; the deprecated
@@ -35,6 +36,7 @@ func fixDBDSN(beadsDir string, cfg *configfile.Config) string {
 	password := cfg.GetDoltServerPasswordForPort(port)
 
 	return doltutil.ServerDSN{
+		Socket:   socket,
 		Host:     host,
 		Port:     port,
 		User:     user,
@@ -45,7 +47,23 @@ func fixDBDSN(beadsDir string, cfg *configfile.Config) string {
 }
 
 func openFixDB(beadsDir string, cfg *configfile.Config) (*sql.DB, error) {
+	if socket := dolt.ResolveSocketTransport(cfg.GetDoltServerSocket(), cfg.GetDoltServerHost(), doltserver.DialConfig(beadsDir).Port, 500*time.Millisecond); socket != "" {
+		return nil, fmt.Errorf("the workspace uses a unix socket; doctor repairs over that transport are not qualified")
+	}
+	if doltserver.DialConfig(beadsDir).Port <= 0 {
+		return nil, fmt.Errorf("no Dolt server port configured; %s", doltserver.UnresolvedPortAdvice(cfg.GetDoltServerHost()))
+	}
 	return sql.Open("mysql", fixDBDSN(beadsDir, cfg))
+}
+
+// openScanDB follows the store's transport for read-only diagnostics.
+func openScanDB(beadsDir string, cfg *configfile.Config) (*sql.DB, error) {
+	port := doltserver.DialConfig(beadsDir).Port
+	socket := dolt.ResolveSocketTransport(cfg.GetDoltServerSocket(), cfg.GetDoltServerHost(), port, 500*time.Millisecond)
+	if socket == "" && port <= 0 {
+		return nil, fmt.Errorf("no Dolt server port configured; %s", doltserver.UnresolvedPortAdvice(cfg.GetDoltServerHost()))
+	}
+	return sql.Open("mysql", workspaceDBDSN(beadsDir, cfg, socket))
 }
 
 // errUnverifiableFixTarget marks a verifyFixTargetIdentity failure that is
@@ -65,7 +83,7 @@ var errUnverifiableFixTarget = errors.New("cannot verify target database identit
 // database than the one doctor diagnosed (mybd-2qegi).
 //
 // openFixDB dials fresh on every fix call, re-resolving the port from
-// doltserver.DefaultConfig(beadsDir) independently of whatever connection
+// doltserver.DialConfig(beadsDir) independently of whatever connection
 // doctor's read-only checks used. Two different projects commonly share the
 // same database name ("beads" by default), so a stale port pointing at an
 // unrelated project's server would otherwise connect successfully and
