@@ -158,6 +158,8 @@ Root DOX.md and the parent chain remain binding.
 
 - Store-derived IDs in molecule, duplicate and recipe command hints use the existing platform shell policy or an escaped-value placeholder; leading-dash IDs are placeholders. Ordinary minted IDs retain their spelling. Do not wrap suggested commands in executable backticks. Sanitize ANSI sequences from human display labels before escaping remaining non-printing characters. Command arguments retain the exact stored identity; structured IDs and mutation behavior remain unchanged.
 
+- Explicit continuity-v1 graph operations have a finite two-minute transaction budget for their enlarged retained plane; ordinary graph operations keep 30 seconds. Shorter caller deadlines and cancellation remain authoritative, including existing hook/viewer bounds. Continuity callbacks receive that same bounded context for the entire operation. Capacity, guards and at-most-once writes are unchanged.
+
 ## Work Guidance
 - Routed create adopts a sole metadata-less native database, retaining its prefix and project identity. Refuse ambiguous databases, dirty working sets under committing policy, non-embedded target settings and graph formats before writing selectors. Personal migration shares the guarded adoption; dry-run checks target admission without initialization.
 - A routed/planning target holding only a nonempty regular `issues.jsonl` refuses before initialization and names explicit `bd init --from-jsonl` recovery. Preserve bytes and permissions; empty exports, recognized local workspaces and followed redirects retain existing admission. An unreadable export refuses inspection rather than being treated as absent.

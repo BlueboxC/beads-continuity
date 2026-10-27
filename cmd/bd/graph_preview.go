@@ -567,6 +567,17 @@ func graphOptionsFor(dir string, cfg *configfile.Config) graphstore.Options {
 		ServerHost: cfg.DoltServerHost, ServerPort: cfg.DoltServerPort, ServerUser: cfg.DoltServerUser, ServerPassword: password, ServerSocket: cfg.DoltServerSocket, ServerTLS: cfg.DoltServerTLS}
 }
 
+// The explicit continuity profile admits a larger retained plane. Keep its
+// complete atomic capacity checks within a finite budget, while retaining any
+// shorter caller deadline (including hook and viewer budgets).
+func graphOperationContext(parent context.Context) (context.Context, context.CancelFunc) {
+	timeout := 30 * time.Second
+	if graphOperationalProfile == "continuity-v1" {
+		timeout = 2 * time.Minute
+	}
+	return context.WithTimeout(parent, timeout)
+}
+
 func withGraphStore(fn func(context.Context, *graphstore.Store) (any, string, error)) error {
 	return withGraphStoreOutput(fn, func(result any, human string) error {
 		return graphPrint(result, human, quietFlag)
@@ -575,7 +586,7 @@ func withGraphStore(fn func(context.Context, *graphstore.Store) (any, string, er
 
 // Output starts only after the operation and ordinary store cleanup succeed.
 func withGraphStoreOutput(fn func(context.Context, *graphstore.Store) (any, string, error), output func(any, string) error) error {
-	ctx, cancel := context.WithTimeout(getRootContext(), 30*time.Second)
+	ctx, cancel := graphOperationContext(getRootContext())
 	defer cancel()
 	s, err := graphstore.OpenExisting(ctx, graphOptions(graphPreviewConfig))
 	if err != nil {

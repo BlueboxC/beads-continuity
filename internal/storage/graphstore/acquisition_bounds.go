@@ -22,7 +22,15 @@ type acquisitionUsage struct {
 
 func continuityReadUsage(ctx context.Context, tx *sql.Tx) (rows, bytes uint64, err error) {
 	prefix := txmemory.StorageKey("")
-	err = tx.QueryRowContext(ctx, "SELECT COUNT(*), CAST(LEAST(COALESCE(SUM(256+OCTET_LENGTH(`key`)+COALESCE(OCTET_LENGTH(value),0)),0),?) AS UNSIGNED) FROM config WHERE BINARY LEFT(`key`, CHAR_LENGTH(?)) = BINARY ?", uint64(1)<<60, prefix, prefix).Scan(&rows, &bytes)
+	indexed, err := hasContinuityUsageIndex(ctx, tx)
+	if err != nil {
+		return 0, 0, err
+	}
+	query := "SELECT COUNT(*), CAST(LEAST(COALESCE(SUM(OCTET_LENGTH(`key`)),0)+COALESCE(SUM(OCTET_LENGTH(value)),0)+256*COUNT(*),?) AS UNSIGNED) FROM config"
+	if indexed {
+		query = "SELECT COUNT(*), CAST(LEAST(COALESCE(SUM(__beads_continuity_bytes),0),?) AS UNSIGNED) FROM config FORCE INDEX (beads_continuity_usage)"
+	}
+	err = tx.QueryRowContext(ctx, query+" WHERE BINARY LEFT(`key`, CHAR_LENGTH(?)) = BINARY ?", uint64(1)<<60, prefix, prefix).Scan(&rows, &bytes)
 	return rows, bytes, err
 }
 

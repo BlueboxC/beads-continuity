@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"path/filepath"
-	"time"
 
 	"github.com/spf13/cobra"
 	"github.com/steveyegge/beads/internal/activity"
@@ -31,35 +30,45 @@ func graphContinuityCommand(cmd *cobra.Command) bool {
 // optional batch role, so its guards and replacement remain one transaction.
 type graphContinuityRole struct{}
 
-func graphContinuityCall[T any](ctx context.Context, write bool, fn func(*graphstore.ContinuityMemories) (T, error)) (result T, err error) {
+func graphContinuityCall[T any](ctx context.Context, write bool, fn func(context.Context, *graphstore.ContinuityMemories) (T, error)) (result T, err error) {
 	if write {
 		if err := graphPreviewWritePolicy(); err != nil {
 			return result, err
 		}
 	}
-	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
+	ctx, cancel := graphOperationContext(ctx)
 	defer cancel()
 	st, err := graphstore.OpenExisting(ctx, graphOptions(graphPreviewConfig))
 	if err != nil {
 		return result, err
 	}
 	defer func() { err = errors.Join(err, st.Close()) }()
-	return fn(st.Memories(getActor()))
+	return fn(ctx, st.Memories(getActor()))
 }
 func (graphContinuityRole) Remember(ctx context.Context, req memoryops.RememberRequest) (memoryops.RememberResult, error) {
-	return graphContinuityCall(ctx, true, func(m *graphstore.ContinuityMemories) (memoryops.RememberResult, error) { return m.Remember(ctx, req) })
+	return graphContinuityCall(ctx, true, func(ctx context.Context, m *graphstore.ContinuityMemories) (memoryops.RememberResult, error) {
+		return m.Remember(ctx, req)
+	})
 }
 func (graphContinuityRole) Recall(ctx context.Context, req memoryops.RecallRequest) (memoryops.RecallResult, error) {
-	return graphContinuityCall(ctx, false, func(m *graphstore.ContinuityMemories) (memoryops.RecallResult, error) { return m.Recall(ctx, req) })
+	return graphContinuityCall(ctx, false, func(ctx context.Context, m *graphstore.ContinuityMemories) (memoryops.RecallResult, error) {
+		return m.Recall(ctx, req)
+	})
 }
 func (graphContinuityRole) Forget(ctx context.Context, req memoryops.ForgetRequest) (memoryops.ForgetResult, error) {
-	return graphContinuityCall(ctx, true, func(m *graphstore.ContinuityMemories) (memoryops.ForgetResult, error) { return m.Forget(ctx, req) })
+	return graphContinuityCall(ctx, true, func(ctx context.Context, m *graphstore.ContinuityMemories) (memoryops.ForgetResult, error) {
+		return m.Forget(ctx, req)
+	})
 }
 func (graphContinuityRole) List(ctx context.Context, req memoryops.ListRequest) (memoryops.ListResult, error) {
-	return graphContinuityCall(ctx, false, func(m *graphstore.ContinuityMemories) (memoryops.ListResult, error) { return m.List(ctx, req) })
+	return graphContinuityCall(ctx, false, func(ctx context.Context, m *graphstore.ContinuityMemories) (memoryops.ListResult, error) {
+		return m.List(ctx, req)
+	})
 }
 func (graphContinuityRole) Apply(ctx context.Context, req memoryops.BatchRequest) (memoryops.BatchResult, error) {
-	return graphContinuityCall(ctx, true, func(m *graphstore.ContinuityMemories) (memoryops.BatchResult, error) { return m.Apply(ctx, req) })
+	return graphContinuityCall(ctx, true, func(ctx context.Context, m *graphstore.ContinuityMemories) (memoryops.BatchResult, error) {
+		return m.Apply(ctx, req)
+	})
 }
 
 func (graphContinuityRole) ReadCodeContinuity(ctx context.Context) (memoryops.ListResult, codeindex.Index, error) {
@@ -67,7 +76,7 @@ func (graphContinuityRole) ReadCodeContinuity(ctx context.Context) (memoryops.Li
 		plane memoryops.ListResult
 		index codeindex.Index
 	}
-	v, err := graphContinuityCall(ctx, false, func(m *graphstore.ContinuityMemories) (result, error) {
+	v, err := graphContinuityCall(ctx, false, func(ctx context.Context, m *graphstore.ContinuityMemories) (result, error) {
 		plane, index, err := m.ReadCodeContinuity(ctx)
 		return result{plane, index}, err
 	})
@@ -75,7 +84,7 @@ func (graphContinuityRole) ReadCodeContinuity(ctx context.Context) (memoryops.Li
 }
 
 func (graphContinuityRole) ReadKnowledgeContinuity(ctx context.Context, ids []string) (memoryops.ListResult, error) {
-	return graphContinuityCall(ctx, false, func(m *graphstore.ContinuityMemories) (memoryops.ListResult, error) {
+	return graphContinuityCall(ctx, false, func(ctx context.Context, m *graphstore.ContinuityMemories) (memoryops.ListResult, error) {
 		return m.ReadKnowledgeContinuity(ctx, ids)
 	})
 }
@@ -85,7 +94,7 @@ func (graphContinuityRole) ReadLearningContinuity(ctx context.Context, session, 
 		plane    memoryops.ListResult
 		observed activity.View
 	}
-	v, err := graphContinuityCall(ctx, false, func(m *graphstore.ContinuityMemories) (result, error) {
+	v, err := graphContinuityCall(ctx, false, func(ctx context.Context, m *graphstore.ContinuityMemories) (result, error) {
 		plane, observed, err := m.ReadLearningContinuity(ctx, session, turn, ids)
 		return result{plane, observed}, err
 	})
@@ -93,7 +102,7 @@ func (graphContinuityRole) ReadLearningContinuity(ctx context.Context, session, 
 }
 
 func (graphContinuityRole) ReadObservedActivity(ctx context.Context, session, turn string, limit int) (activity.View, error) {
-	return graphContinuityCall(ctx, false, func(m *graphstore.ContinuityMemories) (activity.View, error) {
+	return graphContinuityCall(ctx, false, func(ctx context.Context, m *graphstore.ContinuityMemories) (activity.View, error) {
 		return m.ReadObservedActivity(ctx, session, turn, limit)
 	})
 }
