@@ -14,6 +14,7 @@ internal/storage/dolt/concurrent_test.go::TestConcurrentWorkQueueDrain
 internal/storage/dolt/lease_test.go::TestConcurrentHeartbeatReclaimClose
 internal/storage/uow/lostupdate_dolt_test.go::TestUOW_ConcurrentMergeOps_NoLostUpdate
 internal/workapi/sweep_test.go::TestCandidateIDMatcherLargeFixture
+third_party/mysql/driver_test.go::TestIssue1567
 EOF
 )
 

@@ -26,6 +26,8 @@ Root DOX.md and the parent chain remain binding.
 
 - Public release and source-fallback installs copy into a unique owned temporary in the destination directory, set executable mode and publish by same-filesystem rename. Handled publication failures/signals retire that stage and retain the previous binary. Sign disposable candidates before publication; preserve checksum checks, opt-in signing and private installed launchers. Restore the caller directory before retiring download/build temporaries.
 
+- The explicit testing.Short allowlist includes third_party/mysql/driver_test.go::TestIssue1567, upstream's cancellation-race stress test with 1,000 Ping attempts (10 in short mode). Preserve its source and the exact path/function exception; do not exclude third_party wholesale.
+
 ## Work Guidance
 
 Generated CLI freshness checks compare generated pages while excluding DOX.md work contracts; DOX reachability is checked separately.

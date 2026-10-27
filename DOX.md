@@ -28,6 +28,8 @@ Root owns fork policy, public API packages, license, build/version files, small 
 
 - Public metadata-driven opens refuse unsupported formats/backends through non-migrating discovery before creating coordination gates or migrating legacy config.json. Error remedies name the existing metadata file; failed opens return an untyped nil storage. Registered extension dispatch remains supported by OpenBestAvailable.
 
+- The MySQL network driver uses the retained official v1.10.0 source in `third_party/mysql` plus qualified handshake bounds checks; incomplete greetings return ErrMalformPkt. Root and independent examples select it explicitly. This changes neither the embedded Dolt engine nor database formats.
+
 ## Work Guidance
 
 - Prefer the simplest complete implementation and existing extension points. Avoid speculative configuration and dependencies.
@@ -58,6 +60,8 @@ Root owns fork policy, public API packages, license, build/version files, small 
 - Verify each Child DOX Index points to an existing file; keep every DOX file reachable from this root.
 
 ## Child DOX Index
+
+- [third_party/DOX.md](third_party/DOX.md) — Retained and qualified third-party source modules.
 
 - [cmd/DOX.md](cmd/DOX.md) — Executable entry points.
 - [internal/DOX.md](internal/DOX.md) — Internal implementation.

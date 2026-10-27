@@ -75,7 +75,7 @@ func TestCheckTestingShortPassesOnCleanRepoTree(t *testing.T) {
 	cmd.Dir = repo
 	out, err := cmd.CombinedOutput()
 	if err != nil {
-		t.Fatalf("check-testing-short.sh failed on clean repo tree (all 9 allowlist entries must still be recognized): %v\noutput: %s", err, out)
+		t.Fatalf("check-testing-short.sh failed on clean repo tree (all allowlist entries must still be recognized): %v\noutput: %s", err, out)
 	}
 }
 

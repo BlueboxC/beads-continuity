@@ -589,3 +589,7 @@ SECURITY.md describes the existing removal of anonymous Beads usage metrics and 
 ### Remote branch log traversal (Dolt #12209)
 
 The pinned engine includes local/remote branch heads, deduplicated starting commits and HEAD decoration in `DOLT_LOG('--all')`. Mixed --all/two-dot/three-dot arguments refuse before traversal; ordinary ranges, exclusions, table filters and the every-common-ancestor three-dot guard remain qualified in normal/prepared execution. Native old/new backup round trips include remote refs, new writes, full GC and old-engine cold reads. Driver, analyzer, schema, Graph Preview history admission and external CLI/server policy are unchanged.
+
+### Bounded MySQL handshake parsing
+
+The network driver retains official go-sql-driver/mysql v1.10.0 under third_party/mysql with the original MPL-2.0 license and attribution. A minimal correction checks the version terminator and mandatory greeting lengths before slicing, returning ErrMalformPkt instead of panicking. The same correction was reproduced and tested against official v1.10.0 and v1.10.1, including database/sql PingContext, truncated prefixes, short/full packets and MariaDB flags. The root and both standalone example modules explicitly select the local source because Go replacements are not transitive. Dolt, analyzer, schema and graph-generation pins are unchanged. Server-dependent skips and the excluded outbound timeout test are not real-server qualification.

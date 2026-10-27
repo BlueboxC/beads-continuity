@@ -4,6 +4,16 @@ Third-Party Licenses
 This file contains license information for third-party dependencies used in Beads.
 
 --------------------------------------------------------------------------------
+go-sql-driver/mysql v1.10.0 (retained local source with handshake correction)
+--------------------------------------------------------------------------------
+
+Repository: https://github.com/go-sql-driver/mysql
+License: Mozilla Public License 2.0
+Copyright and authors: original headers and third_party/mysql/AUTHORS
+Full license: third_party/mysql/LICENSE
+Local changes: packets.go bounds checks and handshake_p3_test.go regressions.
+
+--------------------------------------------------------------------------------
 dolthub/dolt
 --------------------------------------------------------------------------------
 

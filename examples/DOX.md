@@ -12,7 +12,7 @@ Runnable integration and workflow examples.
 
 Root DOX.md and the parent chain remain binding.
 
-- Both independent Go example modules explicitly mirror the parent module’s Dolt and SQL-analyzer replacements; Go replacements are not inherited through dependencies. Keep their checksums aligned and validate the effective module graph.
+- Both independent Go example modules explicitly mirror the parent module’s Dolt, SQL-analyzer and local MySQL-driver replacements; Go replacements are not inherited through dependencies. Keep their checksums aligned and validate the effective module graph.
 
 ## Work Guidance
 
