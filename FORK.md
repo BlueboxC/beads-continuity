@@ -1,5 +1,12 @@
 # Beads Continuity
 
+## October 27–28 report corrections
+
+The selected dependency tuple includes Dolt `dfcdf6640eec` and analyzer `a61e73c2fa34`. It adapts fulghum's Dolt #12225 and preserves the complete GMS #4078 regressions for keyless unique writes, including REPLACE retries and rejected-insert index integrity. Scoped fixes address skysoul1024's #12218 and #12220–12223: IGNORE text/binary conversion and generated defaults, NULL UNION typing, zero-date numeric zero and YEAR/ENUM/SET booleans. Normal/prepared consumer regressions include valid controls, functional indexes and index reads. The existing fsync, privilege, handshake and continuity corrections remain.
+
+Root and independent examples select go-jose/v4 4.1.6. Its RSA JWK default limit is 4096 bits; legitimate RSA parsing/signatures and the reported size boundary have separate local tests. This dependency pin does not establish a reachable network vulnerability or change Dolt's separate v2 JWT implementation. Engine installation still requires native-backup round trips and retained matched recovery.
+
+
 This fork extends [gastownhall/beads](https://github.com/gastownhall/beads) to
 preserve project direction, existing modules, decisions and resolved problems
 across coding sessions. It builds on upstream **v1.3.1** at
@@ -169,8 +176,8 @@ updated Go 1.26 devcontainer. The fork has no Bazel setup to transplant.
 The embedded engine keeps `driver/v2 v2.4.1`, starting from coffeegoddd's
 [upstream proposal #7254](https://github.com/gastownhall/beads/pull/7254).
 It pins Dolt v2.6.0 plus the retained storage corrections, catalog and SQL fixes at
-[BlueboxC/dolt `38587a5fa325`](https://github.com/BlueboxC/dolt/commit/38587a5fa325494ecd757368f614865919841578),
-with the [SQL analyzer correction](https://github.com/BlueboxC/go-mysql-server/commit/20c27d601fcea5beb599cfb40c445190d75fa95e) on base `38a1fb50b434`. The engine remains a Go dependency;
+[BlueboxC/dolt `dfcdf6640eec`](https://github.com/BlueboxC/dolt/commit/1755bb6967451632f05a45084f59c6556d4b68b5),
+with the [SQL analyzer correction](https://github.com/BlueboxC/go-mysql-server/commit/a381cc1d8b6ab12ddcf1e4a7bfbbce8be1927da3) on base `38a1fb50b434`. The engine remains a Go dependency;
 Beads does not implement engine-specific SQL workarounds.
 
 For [Dolt #12207](https://github.com/dolthub/dolt/issues/12207), global and persisted SET assignments require SYSTEM_VARIABLES_ADMIN or SUPER before evaluation, with current privileges checked again for retained bound plans. Engine and SQL-server regressions cover limited accounts, scope aliases, unchanged persisted values, ordinary session assignments and prepared execution after REVOKE. This does not change the separate read-only Graph Preview server admission boundary or establish exposure of an operator database.

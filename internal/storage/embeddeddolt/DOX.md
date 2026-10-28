@@ -40,6 +40,8 @@ Respect embedded writer and transaction constraints; use disposable stores for t
 
 ## Verification
 
+- Report SQL regressions exercise the selected dependency tuple with disposable normal/prepared queries, functional/unique indexes and unchanged valid controls. They do not operate on enrolled projects or establish general dialect compatibility.
+
 Use the affected existing checks selected in engdocs/TESTING.md; verify indexed child contracts. Engine qualification retains source-root backup failure propagation and repeated open/close lifecycle regressions with the actual pinned dependency. Native engine diff regressions and isolated backup/history comparisons qualify dependency upgrades separately.
 
 ## Child DOX Index
