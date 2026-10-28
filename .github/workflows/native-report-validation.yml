@@ -51,7 +51,13 @@ jobs:
           $env:USERPROFILE = $env:HOME
           $env:GIT_CONFIG_NOSYSTEM = '1'
           $env:GIT_CONFIG_GLOBAL = Join-Path $ownedRoot 'gitconfig'
-          "[user]`nname = Windows qualification`nemail = fixture@example.test`n[core]`nhooksPath = $(Join-Path $ownedRoot 'no-hooks')" | Set-Content $env:GIT_CONFIG_GLOBAL
+          New-Item -ItemType File -Path $env:GIT_CONFIG_GLOBAL | Out-Null
+          & git config --file $env:GIT_CONFIG_GLOBAL user.name 'Windows qualification'
+          if ($LASTEXITCODE -ne 0) { throw 'Git fixture identity failed' }
+          & git config --file $env:GIT_CONFIG_GLOBAL user.email 'fixture@example.test'
+          if ($LASTEXITCODE -ne 0) { throw 'Git fixture email failed' }
+          & git config --file $env:GIT_CONFIG_GLOBAL core.hooksPath (Join-Path $ownedRoot 'no-hooks')
+          if ($LASTEXITCODE -ne 0) { throw 'Git fixture hooks path failed' }
           $gcc = @('C:\msys64\mingw64\bin\gcc.exe','C:\msys64\ucrt64\bin\gcc.exe') | Where-Object { Test-Path -LiteralPath $_ } | Select-Object -First 1
           if (-not $gcc) { $gcc = (Get-Command gcc -ErrorAction Stop).Source }
           $env:CC = $gcc
