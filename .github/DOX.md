@@ -24,6 +24,8 @@ Keep required checks aligned with Makefile and scripts. Go setup follows the roo
 
 ## Verification
 
+- The isolated native-report workflow checks out an immutable public source commit, uses read-only repository permissions, and qualifies a native Windows executable plus all26 ordinary/prepared SQL cases. Its35-minute job and10 GiB disk budget use only disposable runner paths; preserve compact receipts and retire job-owned caches. This qualification does not release or deploy.
+
 Use the affected existing checks selected in engdocs/TESTING.md; verify indexed child contracts.
 
 ## Child DOX Index

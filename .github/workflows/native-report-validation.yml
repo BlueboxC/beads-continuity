@@ -1,0 +1,144 @@
+name: Native Windows report qualification
+on:
+  push:
+    branches: [codex/native-windows-reports-20261029]
+permissions:
+  contents: read
+jobs:
+  windows:
+    name: Windows native build and report SQL
+    runs-on: windows-latest
+    timeout-minutes: 35
+    env:
+      CGO_ENABLED: "1"
+      GOTOOLCHAIN: local
+      GOWORK: "off"
+      GOFLAGS: -tags=gms_pure_go
+      DOLT_DISABLE_EVENT_FLUSH: "1"
+      BD_DISABLE_EVENT_FLUSH: "1"
+      BD_DISABLE_METRICS: "1"
+    steps:
+      - name: Checkout the exact installed source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v6
+        with:
+          ref: fbe47a444d333f4397391d87e519ff546c49dc5b
+          path: source
+          persist-credentials: false
+      - name: Set up the pinned Go compiler
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: source/go.mod
+          cache: false
+      - name: Native compiler, executable and SQL verification
+        shell: pwsh
+        working-directory: source
+        run: |
+          $ErrorActionPreference = 'Stop'
+          if (-not $IsWindows) { throw 'A native Windows host is required' }
+          $ownedRoot = Join-Path $env:RUNNER_TEMP "beads-native-report-$env:GITHUB_RUN_ID"
+          New-Item -ItemType Directory -Path $ownedRoot -ErrorAction Stop | Out-Null
+          foreach ($name in @('home','tmp','gopath','gocache','no-hooks')) {
+            New-Item -ItemType Directory -Path (Join-Path $ownedRoot $name) | Out-Null
+          }
+          $env:GOPATH = Join-Path $ownedRoot 'gopath'
+          $env:GOMODCACHE = Join-Path $env:GOPATH 'pkg\mod'
+          $env:GOCACHE = Join-Path $ownedRoot 'gocache'
+          $env:GOTMPDIR = Join-Path $ownedRoot 'tmp'
+          $env:TEMP = $env:GOTMPDIR
+          $env:TMP = $env:GOTMPDIR
+          $env:TMPDIR = $env:GOTMPDIR
+          $env:HOME = Join-Path $ownedRoot 'home'
+          $env:USERPROFILE = $env:HOME
+          $env:GIT_CONFIG_NOSYSTEM = '1'
+          $env:GIT_CONFIG_GLOBAL = Join-Path $ownedRoot 'gitconfig'
+          "[user]`nname = Windows qualification`nemail = fixture@example.test`n[core]`nhooksPath = $(Join-Path $ownedRoot 'no-hooks')" | Set-Content $env:GIT_CONFIG_GLOBAL
+          $gcc = @('C:\msys64\mingw64\bin\gcc.exe','C:\msys64\ucrt64\bin\gcc.exe') | Where-Object { Test-Path -LiteralPath $_ } | Select-Object -First 1
+          if (-not $gcc) { $gcc = (Get-Command gcc -ErrorAction Stop).Source }
+          $env:CC = $gcc
+          $sourceRevision = (& git rev-parse HEAD).Trim()
+          if ($LASTEXITCODE -ne 0 -or $sourceRevision -ne 'fbe47a444d333f4397391d87e519ff546c49dc5b') { throw 'Unexpected source revision' }
+          $goVersion = (& go version).Trim()
+          $goOs = (& go env GOOS).Trim()
+          $goArch = (& go env GOARCH).Trim()
+          if ($goOs -ne 'windows' -or $goArch -ne 'amd64' -or $goVersion -notmatch 'go1\.27\.3 windows/amd64') { throw "Unexpected native compiler: $goVersion / $goOs / $goArch" }
+          $driveRoot = [IO.Path]::GetPathRoot($ownedRoot)
+          $freeBefore = ([IO.DriveInfo]::new($driveRoot)).AvailableFreeSpace
+          $diskBudget = 10GB
+          $diskReserve = 2GB
+          function Assert-OwnedBudget {
+            $free = ([IO.DriveInfo]::new($driveRoot)).AvailableFreeSpace
+            if ($free -lt $diskReserve -or ($freeBefore - $free) -gt $diskBudget) { throw "Owned disk budget/reserve exhausted: free=$free baseline=$freeBefore" }
+          }
+          if ($freeBefore -lt ($diskBudget + $diskReserve)) { throw "Insufficient disk admission: $freeBefore" }
+          Write-Host "OS=$([Runtime.InteropServices.RuntimeInformation]::OSDescription); compiler=$goVersion; source=$sourceRevision"
+          Write-Host "free_before=$freeBefore budget=$diskBudget reserve=$diskReserve; all job caches are disposable"
+          function Invoke-OwnedGo([string]$label, [string[]]$arguments) {
+            $info = [Diagnostics.ProcessStartInfo]::new()
+            $info.FileName = (Get-Command go).Source
+            $info.WorkingDirectory = (Get-Location).Path
+            $info.UseShellExecute = $false
+            $info.RedirectStandardOutput = $true
+            $info.RedirectStandardError = $true
+            foreach ($argument in $arguments) { $info.ArgumentList.Add($argument) }
+            $process = [Diagnostics.Process]::Start($info)
+            $outTask = $process.StandardOutput.ReadToEndAsync()
+            $errTask = $process.StandardError.ReadToEndAsync()
+            try {
+              while (-not $process.WaitForExit(5000)) { Assert-OwnedBudget }
+              $output = $outTask.GetAwaiter().GetResult() + $errTask.GetAwaiter().GetResult()
+              $output | Set-Content (Join-Path $ownedRoot "$label.log")
+              Write-Host $output
+              if ($process.ExitCode -ne 0) { throw "go $label failed: $($process.ExitCode)" }
+              Assert-OwnedBudget
+              return $output
+            } finally {
+              if (-not $process.HasExited) { $process.Kill($true); $process.WaitForExit() }
+              $process.Dispose()
+            }
+          }
+          $binary = Join-Path $ownedRoot 'bd.exe'
+          Invoke-OwnedGo 'build' @('build','-mod=readonly','-p','2','-trimpath','-o',$binary,'./cmd/bd') | Out-Null
+          & $binary version
+          if ($LASTEXITCODE -ne 0) { throw 'Native executable version failed' }
+          & $binary help
+          if ($LASTEXITCODE -ne 0) { throw 'Native executable help failed' }
+          $sqlOutput = Invoke-OwnedGo 'report-sql' @('test','-mod=readonly','-p','2','-count=1','-v','-timeout=8m','-run','^TestReportSQL$','./internal/storage/embeddeddolt')
+          $leafCount = [regex]::Matches($sqlOutput,'--- PASS: TestReportSQL/[^/\s]+/prepared=(?:false|true)').Count
+          if ($leafCount -ne 26 -or $sqlOutput -match '--- SKIP: TestReportSQL') { throw "Expected all 26 native SQL leaves; observed $leafCount" }
+          $receipt = [ordered]@{
+            source_revision = $sourceRevision
+            os = [Runtime.InteropServices.RuntimeInformation]::OSDescription
+            go_version = $goVersion
+            go_os = $goOs
+            go_arch = $goArch
+            cgo_enabled = (& go env CGO_ENABLED).Trim()
+            gcc = $gcc
+            build_tags = 'gms_pure_go'
+            binary_sha256 = (Get-FileHash -Algorithm SHA256 $binary).Hash.ToLowerInvariant()
+            sql_leaf_passes = $leafCount
+            native_version_and_help = 'passed'
+            free_before_bytes = $freeBefore
+            free_after_bytes = ([IO.DriveInfo]::new($driveRoot)).AvailableFreeSpace
+            disk_budget_bytes = $diskBudget
+            disk_reserve_bytes = $diskReserve
+            scope = 'native Windows amd64 executable plus 13 reported SQL cases in ordinary/prepared execution; not a complete Windows test suite or deployment'
+          }
+          $receipt | ConvertTo-Json -Depth 5 | Set-Content (Join-Path $ownedRoot 'native-receipt.json')
+          Get-Content (Join-Path $ownedRoot 'native-receipt.json')
+      - name: Retain compact qualification evidence
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: native-windows-report-evidence
+          path: |
+            ${{ runner.temp }}/beads-native-report-${{ github.run_id }}/*.log
+            ${{ runner.temp }}/beads-native-report-${{ github.run_id }}/native-receipt.json
+          if-no-files-found: warn
+          retention-days: 7
+      - name: Retire owned caches and binary
+        if: always()
+        shell: pwsh
+        run: |
+          $ownedRoot = Join-Path $env:RUNNER_TEMP "beads-native-report-$env:GITHUB_RUN_ID"
+          if (Test-Path -LiteralPath $ownedRoot) { Remove-Item -LiteralPath $ownedRoot -Recurse -Force }
+          if (Test-Path -LiteralPath $ownedRoot) { throw 'Owned scratch still exists' }
