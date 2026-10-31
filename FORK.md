@@ -2,9 +2,9 @@
 
 ## October 27–28 report corrections
 
-The selected dependency tuple includes Dolt `dfcdf6640eec` and analyzer `a61e73c2fa34`. It adapts fulghum's Dolt #12225 and preserves the complete GMS #4078 regressions for keyless unique writes, including REPLACE retries and rejected-insert index integrity. Scoped fixes address skysoul1024's #12218 and #12220–12223: IGNORE text/binary conversion and generated defaults, NULL UNION typing, zero-date numeric zero and YEAR/ENUM/SET booleans. Normal/prepared consumer regressions include valid controls, functional indexes and index reads. The existing fsync, privilege, handshake and continuity corrections remain.
+The selected dependency tuple includes Dolt `1755bb696745` and analyzer `a381cc1d8b6a`. It adapts fulghum's Dolt #12225 and preserves the complete GMS #4078 regressions for keyless unique writes, including REPLACE retries and rejected-insert index integrity. Scoped fixes address skysoul1024's #12218 and #12220–12223: IGNORE text/binary conversion and generated defaults, NULL UNION typing, zero-date numeric zero and YEAR/ENUM/SET booleans. Normal/prepared consumer regressions include valid controls, functional indexes and index reads. The existing fsync, privilege, handshake and continuity corrections remain.
 
-Root and independent examples select go-jose/v4 4.1.6. Its RSA JWK default limit is 4096 bits; legitimate RSA parsing/signatures and the reported size boundary have separate local tests. This dependency pin does not establish a reachable network vulnerability or change Dolt's separate v2 JWT implementation. Engine installation still requires native-backup round trips and retained matched recovery.
+Root and independent examples select go-jose/v4 4.1.7. Preserve the default 4096-bit RSA limit, 32 parsed signatures/recipients and protected-header presence. Differential malformed-input checks and valid RSA2048/4096, JWT/JWK/x5c and SPIFFE controls qualify this dependency boundary. This pin does not establish a reachable network vulnerability or change Dolt's separate v2 JWT implementation. Engine installation still requires native-backup round trips and retained matched recovery.
 
 
 This fork extends [gastownhall/beads](https://github.com/gastownhall/beads) to
