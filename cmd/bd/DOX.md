@@ -176,6 +176,8 @@ Memory diagnostics expose literal key-prefix inclusion/exclusion without changin
 
 ## Verification
 
+- Configured external-capability tests use a disposable real provider: open, missing and moved providers stay unresolved; only closed `provides:` releases the exact capability, including embedded colons. Export labels alone do not release it.
+
 Use the affected existing checks selected in engdocs/TESTING.md; verify indexed child contracts.
 Graph Preview server fixtures clean only fresh authority-named databases bound to the temporary workspace and explicitly supplied loopback test port.
 

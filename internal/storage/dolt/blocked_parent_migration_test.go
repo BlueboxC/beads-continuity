@@ -46,6 +46,20 @@ func TestBlockedParentRepairMigration(t *testing.T) {
 		historical += n
 	}
 	t.Logf("false blockers reproduced by frozen migrations: %d", historical)
+	// An upgraded engine can run the frozen SQL correctly while an existing
+	// store still carries false blockers. Seed that persisted state explicitly.
+	for _, table := range []string{"issues", "wisps"} {
+		if _, err := conn.ExecContext(ctx, "UPDATE "+table+" SET is_blocked = 1, updated_at = updated_at WHERE id LIKE 'test-mig-%' AND title IN ('related','cross-related')"); err != nil {
+			t.Fatal(err)
+		}
+		var corrupted int
+		if err := conn.QueryRowContext(ctx, "SELECT COUNT(*) FROM "+table+" WHERE id LIKE 'test-mig-%' AND title IN ('related','cross-related') AND is_blocked = 1").Scan(&corrupted); err != nil {
+			t.Fatal(err)
+		}
+		if corrupted != 2 {
+			t.Fatalf("%s: seeded false blockers = %d, want 2", table, corrupted)
+		}
+	}
 	mainRepair, err := schema.MigrationSQL("0067_repair_blocked_parent_propagation.up.sql")
 	if err != nil {
 		t.Fatal(err)

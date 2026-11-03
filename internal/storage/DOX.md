@@ -59,6 +59,8 @@ Keep Dolt engine behavior behind the existing storage boundary. Do not bypass it
 
 ## Verification
 
+- Blocked-state forward-migration regressions seed nonempty false blockers independently of the current planner; retain valid parent-child controls, issue/wisp coverage, timestamps and rerun idempotence.
+
 Use the affected existing checks selected in engdocs/TESTING.md; verify indexed child contracts.
 
 ## Child DOX Index
