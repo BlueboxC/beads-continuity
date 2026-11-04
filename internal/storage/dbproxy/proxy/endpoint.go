@@ -70,10 +70,9 @@ type OpenOpts struct {
 	Port           int
 	External       configfile.ExternalDoltConfig
 
-	// RotateLogFile lets the proxy start rotate an oversized LogFilePath
-	// (internal/doltserver.MaybeRotateLogFile). Set it only for a log bd
-	// owns: proxy.lock guards rootDir, not an operator's log elsewhere,
-	// which another workspace's live proxy may still be writing.
+	// RotateLogFile opts an owned LogFilePath into startup rotation and the
+	// local backend's runtime limit. Never set it for an operator log: the
+	// root lock does not guard a log another workspace may be writing.
 	RotateLogFile bool
 }
 
@@ -510,6 +509,9 @@ func forkExecChild(rootDir string, opts OpenOpts, port int, stopEpoch string, lo
 	if opts.LogFilePath != "" {
 		args = append(args, "--logpath", opts.LogFilePath)
 	}
+	if opts.RotateLogFile {
+		args = append(args, "--bound-server-log")
+	}
 	if opts.DoltBinPath != "" {
 		args = append(args, "--dolt-bin", opts.DoltBinPath)
 	}
@@ -532,8 +534,9 @@ func forkExecChild(rootDir string, opts OpenOpts, port int, stopEpoch string, lo
 		}
 	}
 
-	// Only the owned server log rotates at startup, before opening the child fd.
-	// proxy.log retains this fork's stronger bounded runtime writer.
+	// Keep startup diagnostics and the historical rotation before the child
+	// descriptor opens. The long-lived child also bounds local backend output.
+	// proxy.log retains its independent 4 MiB active/tail policy.
 	if opts.RotateLogFile {
 		doltserver.MaybeRotateLogFile(opts.LogFilePath)
 	}

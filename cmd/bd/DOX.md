@@ -93,7 +93,7 @@ Root DOX.md and the parent chain remain binding.
 
 - Native create --graph timestamps creation from the same clock read when backfilling a closed/started timestamp, so the status cannot predate creation. Open nodes leave creation to the insert/server as before. Existing explicit timestamps and ordinary graph-format boundaries remain unchanged.
 
-- db-proxy-child forwards the existing debug posture to optional connection tracing; ordinary traffic does not emit per-connection log lines. No new service, flag or project activation is introduced.
+- db-proxy-child forwards the existing debug posture to optional connection tracing; ordinary traffic does not emit per-connection log lines. Its internal bound-server-log flag carries the parent's existing ownership decision to the local backend, never to an operator-selected log. Report backend sink failures once through bounded proxy.log. No user-facing command, service or project activation is added.
 
 - Proxied merge-slot create/check/acquire/release use the same holder/waiter rules through one UOW per operation; only committed attempts report acquisition. Proxied supersede resolves both IDs and adds the supersedes edge plus checked closure in one retried transaction; refusal rolls both back. No automatic holder expiry, queue scheduling or project conversion.
 

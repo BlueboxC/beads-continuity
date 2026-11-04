@@ -121,6 +121,12 @@ func (p *proxyServer) logf(format string, args ...any) {
 	}
 }
 
+// ReportBackendLogError uses proxy.log, whose runtime bound is independent of
+// server.log. The backend invokes it only after ListenAndServe opens the logger.
+func (p *proxyServer) ReportBackendLogError(err error) {
+	p.logf("backend log write failed: %v", err)
+}
+
 func (p *proxyServer) ListenAndServe(parentCtx context.Context) error {
 	lock, err := util.TryLock(filepath.Join(p.rootDir, LockFileName))
 	if err != nil {

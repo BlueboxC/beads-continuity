@@ -7,6 +7,7 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"io"
 	"net"
 	"os"
 	"os/exec"
@@ -58,16 +59,19 @@ type DoltServer struct {
 	config          servercfg.ServerConfig
 	keepAlivePeriod time.Duration
 
-	logFile *os.File
-	eg      *errgroup.Group
-	egCtx   context.Context
-	cancel  context.CancelFunc
-	pid     int
+	logFile    io.WriteCloser
+	logPath    string
+	logLimit   int64
+	onLogError func(error)
+	eg         *errgroup.Group
+	egCtx      context.Context
+	cancel     context.CancelFunc
+	pid        int
 }
 
 var _ DatabaseServer = (*DoltServer)(nil)
 
-func NewDoltServer(doltBinExec, rootDir, configPath, logFilePath string, keepAlivePeriod time.Duration, database string) (*DoltServer, error) {
+func NewDoltServer(doltBinExec, rootDir, configPath, logFilePath string, keepAlivePeriod time.Duration, database string, options ...DoltServerOption) (*DoltServer, error) {
 	if doltBinExec == "" {
 		return nil, errors.New("server: NewDoltServer: doltBinExec is required")
 	}
@@ -93,13 +97,26 @@ func NewDoltServer(doltBinExec, rootDir, configPath, logFilePath string, keepAli
 	if err != nil {
 		return nil, fmt.Errorf("server: NewDoltServer: parse config %q: %w", configPath, err)
 	}
-	var logFile *os.File
+	opts := doltServerOptions{}
+	for _, option := range options {
+		option(&opts)
+	}
+	var logFile io.WriteCloser
+	var ownedLogPath string
+	var ownedLogLimit int64
 	if logFilePath != "" {
 		absLogFilePath, err := filepath.Abs(logFilePath)
 		if err != nil {
 			return nil, errors.New("server: NewDoltServer: failed to determine absolute path of logFilePath")
 		}
-		logFile, err = os.OpenFile(absLogFilePath, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0o600) //nolint:gosec // logFilePath is caller-derived, not user-request input
+		limit := doltserver.ServerLogLimit()
+		if opts.boundedLog && limit > 0 {
+			// A competing proxy may still be live. Mutating admission waits
+			// until Start acquires the backend lock.
+			ownedLogPath, ownedLogLimit = absLogFilePath, limit
+		} else {
+			logFile, err = os.OpenFile(absLogFilePath, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0o600) //nolint:gosec // logFilePath is caller-derived, not user-request input
+		}
 		if err != nil {
 			return nil, fmt.Errorf("server: NewDoltServer: open log %q: %w", logFilePath, err)
 		}
@@ -117,6 +134,9 @@ func NewDoltServer(doltBinExec, rootDir, configPath, logFilePath string, keepAli
 		config:          cfg,
 		keepAlivePeriod: keepAlivePeriod,
 		logFile:         logFile,
+		logPath:         ownedLogPath,
+		logLimit:        ownedLogLimit,
+		onLogError:      opts.onLogError,
 	}, nil
 }
 
@@ -241,6 +261,22 @@ func (s *DoltServer) Start(ctx context.Context) error {
 		lock.Unlock()
 		return err
 	}
+	if s.logPath != "" {
+		output := &backendLog{limit: s.logLimit, onError: s.onLogError}
+		file, err := doltserver.OpenBoundedLog(s.logPath, s.logLimit, output.report)
+		if err != nil {
+			lock.Unlock()
+			return fmt.Errorf("server: DoltServer.Start: open owned log: %w", err)
+		}
+		output.WriteCloser = file
+		s.logFile = output
+		defer func() {
+			if s.eg == nil {
+				_ = s.logFile.Close()
+				s.logFile = nil
+			}
+		}()
+	}
 
 	args := []string{
 		"sql-server",
@@ -254,6 +290,11 @@ func (s *DoltServer) Start(ctx context.Context) error {
 	s.cancel = cancel
 
 	cmd := exec.CommandContext(managedCtx, s.doltBinExec, args...)
+	if s.logPath != "" {
+		// A descendant may retain a pipe after sql-server exits. Bound
+		// draining without signaling an unowned descendant.
+		cmd.WaitDelay = 2 * time.Second
+	}
 	cmd.Dir = s.rootDir
 	cmd.Stdin = nil
 	if s.logFile != nil {
@@ -276,7 +317,7 @@ func (s *DoltServer) Start(ctx context.Context) error {
 	birth, err := procid.Capture(s.pid)
 	if err != nil {
 		_ = cmd.Process.Kill()
-		_, _ = cmd.Process.Wait()
+		_ = cmd.Wait()
 		s.eg, s.egCtx, s.cancel, s.pid = nil, nil, nil, 0
 		cancel()
 		lock.Unlock()
@@ -285,7 +326,7 @@ func (s *DoltServer) Start(ctx context.Context) error {
 	rootID, err := identity.RootID(s.rootDir)
 	if err != nil {
 		_ = cmd.Process.Kill()
-		_, _ = cmd.Process.Wait()
+		_ = cmd.Wait()
 		s.eg, s.egCtx, s.cancel, s.pid = nil, nil, nil, 0
 		cancel()
 		lock.Unlock()
@@ -301,7 +342,7 @@ func (s *DoltServer) Start(ctx context.Context) error {
 		RootID: rootID,
 	}); err != nil {
 		_ = cmd.Process.Kill()
-		_, _ = cmd.Process.Wait()
+		_ = cmd.Wait()
 		s.eg, s.egCtx, s.cancel, s.pid = nil, nil, nil, 0
 		cancel()
 		lock.Unlock()

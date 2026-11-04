@@ -23,11 +23,10 @@
 // (a) a streaming goroutine owning the pipe, or (b) copy-truncate, which
 // races with the child's append writes. Both are out of scope for this fix.
 //
-// Proxied-server mode applies the same startup rename to .beads/dolt/proxy.log
-// and the default proxied server.log (never an operator-chosen log path)
-// through MaybeRotateLogFile, called from dbproxy/proxy's forkExecChild
-// (under proxy.lock, before the child's stdout fd is opened) and
-// ListenAndServe (before proxy.log is opened).
+// Proxied-server mode additionally bounds the owned server.log continuously
+// inside its long-lived proxy process, using OpenBoundedLog and this limit.
+// forkExecChild retains the startup rename for bootstrap diagnostics. Custom
+// paths keep their append behavior; proxy.log has its separate fixed4MiB limit.
 
 package doltserver
 
@@ -61,6 +60,12 @@ func maxLogBytes() int64 {
 		return DefaultMaxLogBytes
 	}
 	return n
+}
+
+// ServerLogLimit returns the existing configured size limit. Nonpositive
+// values preserve the operator's explicit rotation opt-out.
+func ServerLogLimit() int64 {
+	return maxLogBytes()
 }
 
 // rotatedLogPath returns the path of the single retained rotated log.

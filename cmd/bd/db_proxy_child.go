@@ -22,6 +22,7 @@ var (
 	dbProxyChildBackend            string
 	dbProxyChildConfig             string
 	dbProxyChildLogPath            string
+	dbProxyChildBoundServerLog     bool
 	dbProxyChildDoltBin            string
 	dbProxyChildDatabase           string
 	dbProxyChildExternalHost       string
@@ -58,7 +59,14 @@ not intended to be invoked directly by users.`,
 			KeepAlivePeriod: dbProxyChildExternalKeepAlive,
 		}
 
-		srv, err := newDatabaseServer(backend, dbProxyChildRoot, dbProxyChildConfig, dbProxyChildLogPath, dbProxyChildDoltBin, dbProxyChildDatabase, external)
+		var options []server.DoltServerOption
+		var reportLogError func(error)
+		if dbProxyChildBoundServerLog {
+			options = append(options, server.WithBoundedLog(), server.WithLogErrorHandler(func(err error) {
+				reportLogError(err)
+			}))
+		}
+		srv, err := newDatabaseServer(backend, dbProxyChildRoot, dbProxyChildConfig, dbProxyChildLogPath, dbProxyChildDoltBin, dbProxyChildDatabase, external, options...)
 		if err != nil {
 			return err
 		}
@@ -72,6 +80,7 @@ not intended to be invoked directly by users.`,
 			StopEpoch:   dbProxyChildStopEpoch,
 			Trace:       debug.Enabled(),
 		})
+		reportLogError = p.ReportBackendLogError
 		if err := p.ListenAndServe(cmd.Context()); err != nil {
 			if errors.Is(err, proxy.ErrLockHeld) {
 				return &exitError{Code: proxy.LockHeldExitCode}
@@ -82,10 +91,10 @@ not intended to be invoked directly by users.`,
 	},
 }
 
-func newDatabaseServer(backend proxy.Backend, rootDir, configPath, logPath, doltBin, database string, external configfile.ExternalDoltConfig) (server.DatabaseServer, error) {
+func newDatabaseServer(backend proxy.Backend, rootDir, configPath, logPath, doltBin, database string, external configfile.ExternalDoltConfig, options ...server.DoltServerOption) (server.DatabaseServer, error) {
 	switch backend {
 	case proxy.BackendLocalServer:
-		return server.NewDoltServer(doltBin, rootDir, configPath, logPath, 0, database)
+		return server.NewDoltServer(doltBin, rootDir, configPath, logPath, 0, database, options...)
 	case proxy.BackendExternal:
 		return server.NewExternalDoltServer(external)
 	case proxy.BackendLocalSharedServer:
@@ -102,6 +111,7 @@ func init() {
 		"backend kind: "+strings.Join(proxy.KnownBackendNames(), " | "))
 	dbProxyChildCmd.Flags().StringVar(&dbProxyChildConfig, "config", "", "path to backend server config (e.g. dolt sql-server YAML)")
 	dbProxyChildCmd.Flags().StringVar(&dbProxyChildLogPath, "logpath", "", "path the backend server should write its stdout/stderr to")
+	dbProxyChildCmd.Flags().BoolVar(&dbProxyChildBoundServerLog, "bound-server-log", false, "bound the owned backend log while the proxy runs")
 	dbProxyChildCmd.Flags().StringVar(&dbProxyChildDoltBin, "dolt-bin", "", "path to the dolt executable")
 	dbProxyChildCmd.Flags().StringVar(&dbProxyChildDatabase, "database", "", "database to select when running shutdown maintenance (local-server backend)")
 	dbProxyChildCmd.Flags().StringVar(&dbProxyChildExternalHost, "external-host", "", "external backend: hostname or IP of the dolt sql-server")
