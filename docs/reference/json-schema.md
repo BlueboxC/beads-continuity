@@ -3,14 +3,15 @@ title: JSON Output Schema Contract
 description: The stable JSON output contract for bd --json commands, covering the schema_version envelope, per-command fields, and consumer guidelines.
 ---
 
-Last reviewed: 2026-08-07
+Last reviewed: 2026-11-17
 
 Freshness source: `cmd/bd/output.go`, `cmd/bd/errors.go`, and
 `cmd/bd/protocol/json_contract_test.go`.
 
-All `bd` commands that support `--json` output can wrap their response in
-a uniform envelope by setting `BD_JSON_ENVELOPE=1`. This will become the
-default format in v2.0.
+For native commands using the shared JSON formatter, `BD_JSON_ENVELOPE=1`
+wraps the response in a uniform envelope. Commands with dedicated raw or
+streaming formats keep their own output contract. The CLI deprecation notice
+announces a plan to make the envelope the default in v2.0.
 
 ## Migration Guide
 
@@ -20,12 +21,12 @@ default format in v2.0.
 export BD_JSON_ENVELOPE=1
 ```
 
-### Envelope format (BD_JSON_ENVELOPE=1, default in v2.0)
+### Envelope format (BD_JSON_ENVELOPE=1)
 
-Every `--json` command wraps output as:
+The shared formatter wraps a payload under `data`:
 
 ```json
-{"schema_version": 1, "data": <original-payload>}
+{"schema_version": 1, "data": {"id": "beads-abc"}}
 ```
 
 The original payload is untouched inside `.data` — no type corruption,
@@ -35,11 +36,12 @@ When a `--limit`-truncated listing runs in envelope mode (currently wired
 for `bd ready`), the envelope also carries a `pagination` key:
 
 ```json
-{"schema_version": 1, "data": [...], "pagination": {"returned": 10, "total": 42, "truncated": true}}
+{"schema_version": 1, "data": [{"id": "beads-abc"}], "pagination": {"returned": 1, "total": 42, "truncated": true}}
 ```
 
-`total` is omitted when unknown; the whole `pagination` key is absent when
-the result was not truncated. Legacy mode keeps the stderr text hint instead.
+`total` is omitted when unknown. The `pagination` key is omitted without
+confirmed truncation. `bd ready` can print a truncation hint on stderr in
+either format.
 
 ### Updating consumers
 
@@ -59,20 +61,16 @@ bd create "Example" --json | jq '.schema_version'
 ### Timeline
 
 - **Current release**: Legacy format is default. Set `BD_JSON_ENVELOPE=1` to opt in.
-  A deprecation notice is printed to stderr when `--json` is used without the env
-  var — but only when stderr is a terminal, and at most once per invocation, so
-  scripts capturing stderr will not see it.
-- **v2.0**: Envelope becomes the default. `BD_JSON_ENVELOPE=0` available as
-  temporary escape hatch for one release cycle.
+  The shared formatter prints a deprecation notice for legacy output if
+  stderr is a terminal, at most once per invocation.
+- **Planned for v2.0**: Envelope becomes the default.
 
 ## Schema Version
 
 Current version: **1**
 
-The `schema_version` field is an integer that increments when:
-- Fields are added, renamed, or removed
-- Output structure changes (e.g., nesting depth)
-- Field types change (e.g., string to integer)
+The `schema_version` field is an integer. A breaking change to required fields,
+output structure, or field types calls for a new version.
 
 Additive changes (new optional fields) do NOT bump the version.
 
@@ -80,7 +78,7 @@ Additive changes (new optional fields) do NOT bump the version.
 
 ### Envelope mode (BD_JSON_ENVELOPE=1)
 
-All commands emit a uniform envelope:
+The shared formatter emits a uniform envelope:
 
 ```json
 {
@@ -105,7 +103,7 @@ Arrays are wrapped the same way:
 }
 ```
 
-### Legacy mode (default, until v2.0)
+### Legacy mode (current default)
 
 ### Object commands (create, ping, etc.)
 
@@ -126,21 +124,22 @@ Commands that return a single result emit a JSON object with
 
 ### List commands (list, ready, search, stale, show, close, update, etc.)
 
-Commands that return one or more issues emit a raw JSON array — including
-`show`, `close`, and `update`, which return one element per requested ID.
-Array output carries no top-level `schema_version` field:
+The default issue-list payload is a JSON array. It includes the ordinary
+`show`, `close`, and `update` results, even when one issue is returned.
+Array output carries no top-level `schema_version` field in legacy mode:
 
 ```json
 [
-  {"id": "beads-abc", "title": "First", ...},
-  {"id": "beads-def", "title": "Second", ...}
+  {"id": "beads-abc", "title": "First"},
+  {"id": "beads-def", "title": "Second"}
 ]
 ```
 
 ### Error output
 
-Errors with `--json` active emit JSON — most error paths write it to stderr,
-though some command-result error paths emit the same shape to stdout:
+Structured errors use stdout or stderr depending on the command and error
+path. Some failures still emit text or return only an exit status. A JSON
+error in legacy mode can look like this:
 
 ```json
 {
@@ -150,15 +149,18 @@ though some command-result error paths emit the same shape to stdout:
 }
 ```
 
-`code` and `hint` (a remediation suggestion) are both optional — only
-`error` and `schema_version` are always present. In envelope mode
-(`BD_JSON_ENVELOPE=1`) the error payload moves inside the envelope:
-`{"schema_version": 1, "data": {"error": ..., "code": ..., "hint": ...}}`.
-JSON-mode errors exit with code 1.
+`error` is the message. `code` and `hint` (a remediation suggestion) are
+optional. Proxied capability refusals include `code` and `mutates`. They
+include `reason` when the capability registry supplies one. In envelope mode,
+`schema_version` stays at the top level and the error payload moves under
+`data`. The usual error exit status is `1`. A migration freeze uses `14`.
 
 ## Field Contracts by Command
 
 ### bd list --json
+
+With `--skip-labels`, the payload is an object with an `issues` array and
+`meta` containing `skip_labels` and `count`. Each issue has `labels: []`.
 
 Required fields per item:
 - `id` (string): Issue ID (e.g., "beads-abc")
@@ -191,18 +193,17 @@ Each item includes all standard issue fields plus:
 
 ### bd show --json
 
-Returns a top-level JSON array with one element per requested ID; items do
-not carry `schema_version` (this shape is pinned by a contract test — a
-change here is a breaking wire change). Same required fields as list
-items, plus:
-- `description` (string)
-- `acceptance_criteria` (string)
+Returns an array with one element per resolved issue. In legacy mode the
+array is top-level and its items omit `schema_version`. Items have the
+standard issue fields plus:
+- `description`, `acceptance_criteria` (string, optional)
 - `revision` (string): guarded-write optimistic-concurrency token, an opaque
   decimal string compared by equality and echoed back verbatim; always present,
   including a legacy `"0"`
-- `dependencies` (object[]): Full dependency records
-- `comments` (object[]): Comment thread — present only with `--include-comments`;
-  the default response returns `comment_count` only (count-only, be-ijck6q)
+- `dependencies` (object[], optional): Populated dependency records
+- `dependency_count`, `dependent_count`, `comment_count` (number)
+- `comments` (object[]): Included with `--include-comments` when the thread has comments
+- `dependents` (object[]): Included with `--include-dependents` when there are dependents
 - `comments_omitted` (boolean, optional): `true` only when `comment_count` is
   nonzero and `comments` was left out of the response (no `--include-comments`).
   Absent when comments were included or when there are none to omit (ga-clgh)
@@ -212,17 +213,17 @@ items, plus:
 Returns a summary object when `--json` is active:
 - `source` (string): File path or "stdin"
 - `created` (number): Issues created
-- `updated` (number): Existing issues updated
+- `updated` (number, optional): Existing issues updated
 - `unchanged` (number, optional): Rows identical to local state, untouched
 - `skipped` (number): Issues skipped (stale rows + dedup)
-- `dedup_skipped` (number): Issues skipped by `--dedup` title match
-- `memories` (number): Memory records imported
-- `ids` (string[]): IDs of created issues
-- `updated_issues` (object[]): Per-issue summary of what an update changed
-- `tie_kept_local_ids` (string[]): Equal-`updated_at` rows where local state won
-- `stale_skipped_ids` (string[]): Rows older than the local issue, skipped
-- `skipped_dependencies` (string[]): Dependency edges whose target id was absent
-- `dry_run` (boolean): Whether `--dry-run` was active
+- `dedup_skipped` (number, optional): Issues skipped by `--dedup` title match
+- `memories` (number, optional): Memory records imported
+- `ids` (string[], optional): IDs of created issues
+- `updated_issues` (object[], optional): Per-issue summary of what an update changed
+- `tie_kept_local_ids` (string[], optional): Equal-`updated_at` rows where local state won
+- `stale_skipped_ids` (string[], optional): Rows older than the local issue, skipped
+- `skipped_dependencies` (string[], optional): Dependency edges whose target id was absent
+- `dry_run` (boolean, optional): Present when `--dry-run` was active
 
 ### bd export --json
 
@@ -239,7 +240,8 @@ wisps-plane marker. Export stamps it on rows that live in the wisps table
 when the row flags alone cannot prove the plane (a `no_history: true` record
 is otherwise ambiguous — an unpromoted no-history wisp and a promoted one
 look identical). Import routes the storage plane by this marker, never by
-`no_history`: marker absent means the durable issues table. The marker is a
+`no_history`: a non-ephemeral no-history issue without the marker goes to the
+durable issues table. Ephemeral rows carry `ephemeral: true`. The marker is a
 fresh key rather than a reuse of the legacy `wisp` boolean so that older
 readers, which do not know it, degrade to flag routing instead of importing
 marked rows as ephemeral (purge-eligible and export-excluded). The v0.35–
@@ -252,7 +254,8 @@ as a read-side legacy alias.
    higher than expected, log a warning but attempt to parse anyway
    (additive changes are backward-compatible).
 
-2. **For list commands**, parse the output as a JSON array directly.
+2. **For default issue lists**, parse the legacy response as an array or
+   read the array from `data` in envelope mode. Honor command-specific forms.
 
 3. **Ignore unknown fields**. New fields may be added without bumping
    the schema version.

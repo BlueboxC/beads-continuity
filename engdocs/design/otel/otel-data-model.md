@@ -1,10 +1,10 @@
 # OpenTelemetry Data Model
 
-Last reviewed for privacy and export behavior: 2026-11-17.
+Last reviewed: 2026-11-17
 
-The sources are `internal/telemetry/`, `cmd/bd/command_telemetry.go`,
-`internal/storage/dolt/store.go`, `internal/hooks/`, `internal/compact/haiku.go`,
-and `cmd/bd/find_duplicates.go`.
+Freshness source: `internal/telemetry/`, `internal/storage/dolt/store.go`,
+`internal/compact/haiku.go`, `cmd/bd/find_duplicates.go`, `internal/hooks/`,
+and `cmd/bd/command_telemetry.go`.
 
 OpenTelemetry requires `BD_OTEL_ENABLED=true` or a supported legacy
 `BD_OTEL_*` selector. Standard `OTEL_*` settings configure the opt-in, and

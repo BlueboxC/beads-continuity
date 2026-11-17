@@ -177,7 +177,8 @@ func TestMigrateUpWithLockMigrationErrorNotMaskedByReleaseFailure(t *testing.T) 
 	mock.ExpectQuery(regexp.QuoteMeta("SELECT GET_LOCK(?, ?)")).
 		WithArgs(lockName, migrationLockAcquireTimeoutSeconds).
 		WillReturnRows(sqlmock.NewRows([]string{"locked"}).AddRow(1))
-	// MigrateUp's first statement fails with a structural error, standing in
+	expectTransactionCommitRead(mock, 0)
+	// MigrateUp's first write fails with a structural error, standing in
 	// for a migration hard-failing on a malformed clone.
 	migrationCause := errors.New("column 'is_blocked' could not be found in any table in scope")
 	releaseCause := errors.New("driver: bad connection")

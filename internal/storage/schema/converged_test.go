@@ -782,6 +782,7 @@ func TestMigrateUpWithLockLogsAnUnavailableFastPath(t *testing.T) {
 	mock.ExpectQuery(regexp.QuoteMeta("SELECT GET_LOCK(?, ?)")).
 		WithArgs(lockName, migrationLockAcquireTimeoutSeconds).
 		WillReturnRows(sqlmock.NewRows([]string{"locked"}).AddRow(1))
+	expectTransactionCommitRead(mock, 0)
 	mock.ExpectExec(regexp.QuoteMeta("INSERT IGNORE INTO dolt_ignore VALUES (?, true)")).
 		WillReturnError(errors.New("stop here"))
 	mock.ExpectQuery(regexp.QuoteMeta("SELECT RELEASE_LOCK(?)")).

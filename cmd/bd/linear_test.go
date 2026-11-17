@@ -1897,12 +1897,12 @@ func TestLinearSyncOverlapKeepsEchoOfNameMappedStatus(t *testing.T) {
 	}
 	server := httptest.NewServer(api)
 	defer server.Close()
+	t.Setenv("LINEAR_API_ENDPOINT", server.URL)
 
 	linkedRef := ref
 	store := &linearSyncStore{
 		config: map[string]string{
 			"linear.team_id":               "team-1",
-			"linear.api_endpoint":          server.URL,
 			"linear.state_map.todo":        "open",
 			"linear.state_map.in progress": "in_progress",
 			"linear.state_map.blocked":     "blocked",

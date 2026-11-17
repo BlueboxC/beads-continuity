@@ -878,6 +878,7 @@ func TestMigrateUpCountsAHealAsWork(t *testing.T) {
 
 	expectIgnorePatternSeedNoop(mock, LatestVersion())
 	expectIgnoredCursorGate(mock, "", true, exactlyIgnored(true), false)
+	expectTransactionCommitRead(mock, 0)
 	expectIgnoredCursorBackup(mock, len(cursorTableColumns))
 	expectIgnoredCursorUnstage(mock)
 	expectIgnoredCursorUntrackCommit(mock)

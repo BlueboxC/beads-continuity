@@ -3,9 +3,11 @@ title: Azure DevOps (ADO) Integration Configuration
 description: Configuration reference for bd ado sync, which bidirectionally syncs beads issues with Azure DevOps work items
 ---
 
-Last reviewed: 2026-08-07
+Last reviewed: 2026-11-17
 
-Freshness source: `cmd/bd/ado*.go` and `internal/ado/`.
+Freshness source: `cmd/bd/ado*.go`, `internal/ado/`, `internal/config/yaml_config.go`, and `internal/tracker/`.
+
+Review scope: source and test inspection.
 
 This guide covers all configuration options for the `bd ado sync` command, which synchronizes beads issues with Azure DevOps work items.
 
@@ -44,9 +46,9 @@ bd ado sync --dry-run
 
 | Config Key | Env Variable | Required | Description |
 |---|---|---|---|
-| `ado.pat` | `AZURE_DEVOPS_PAT` | Yes | Personal Access Token |
+| `ado.pat` | `AZURE_DEVOPS_PAT` | Yes | Local Personal Access Token |
 | `ado.org` | `AZURE_DEVOPS_ORG` | Conditional¹ | Organization name (e.g., `myorg`) |
-| `ado.url` | `AZURE_DEVOPS_URL` | Conditional¹ | Custom base URL (on-prem ADO Server) |
+| `ado.url` | `AZURE_DEVOPS_URL` | Conditional¹ | Locally configured base URL for Azure DevOps Server |
 | `ado.project` | `AZURE_DEVOPS_PROJECT` | Conditional² | Single project name |
 | `ado.projects` | `AZURE_DEVOPS_PROJECTS` | Conditional² | Comma-separated project names |
 
@@ -54,14 +56,13 @@ bd ado sync --dry-run
 
 ² At least one project must be configured via `ado.project` or `ado.projects`.
 
-**Config vs env var precedence:** Config keys (set via `bd config set`) take priority over environment variables.
+For organization and project settings, the integration reads the synced configuration before falling back to the listed environment variables.
 
-`ado.pat` is a secret key stored in `config.yaml` (per-repo or user-global),
-never the shared database, so the PAT cannot leak via `dolt push`.
+Set `ado.pat` and `ado.url` in local configuration or their listed environment variables. The integration uses the effective local configuration first and ignores historical synced PAT values. A historical synced `ado.url` or a failed synced-endpoint lookup blocks connection when no local URL is selected. Set the intended URL locally before retrying.
 
 ### On-Premises ADO Server
 
-For Azure DevOps Server (on-prem), use `ado.url` instead of `ado.org`:
+For Azure DevOps Server, set a local HTTPS base URL with `ado.url` or `AZURE_DEVOPS_URL`:
 
 ```bash
 bd config set ado.url "https://tfs.company.com/DefaultCollection"
@@ -114,7 +115,7 @@ Priority mapping is bidirectional but **lossy for P3/P4**:
 | 0 (Critical) | 1 | ↔ | |
 | 1 (High) | 2 | ↔ | |
 | 2 (Medium) | 3 | ↔ | Default for unknown values |
-| 3 (Low) | 4 | → | |
+| 3 (Low) | 4 | ↔ | |
 | 4 (Backlog) | 4 | → | **Lossy**: becomes P3 on pull |
 
 > **Note:** Beads P3 and P4 both map to ADO priority 4. On a fresh pull into an empty database, ADO 4 maps back to beads P3. The original priority is not preserved across a full round-trip for P4 issues.
@@ -220,13 +221,7 @@ Bug:         Proposed → Active → Resolved → Closed
 
 ### State Transition Handling
 
-When creating a work item in a non-initial state (e.g., pushing a closed issue), beads:
-
-1. Creates the item in the initial state (e.g., `New`)
-2. Transitions through intermediate states to reach the target
-3. Example: Creating a closed Bug → `New → Active → Resolved → Closed`
-
-If a direct transition fails (ADO returns 400), beads automatically walks the known transition path for the work item type and process template.
+When creating a work item in a non-initial state, beads creates it in the initial state and then tries a direct transition to the target. If Azure DevOps returns HTTP 400, beads tries the built-in path for the work item type when one is available. For an Agile Bug, that path can be `New → Active → Resolved → Closed`. A custom state map changes the target state. A failed transition can leave the created work item in its initial or intermediate state.
 
 ## Sync Options
 
@@ -237,6 +232,10 @@ If a direct transition fails (ADO returns 400), beads automatically walks the kn
 | (none) | Bidirectional: pull then push |
 | `--pull-only` | Import from ADO only |
 | `--push-only` | Export to ADO only |
+
+### Incremental Pull
+
+A bulk incremental pull starts five minutes before the saved sync timestamp to catch late results. Azure DevOps WIQL uses UTC dates for the changed-date filter, so a window that crosses midnight can return rows from the previous day. Conflict checks keep the original timestamp. Existing linked issues skip overlap-only rows that predate the five-minute window or are older than the local issue, unless conflict resolution or newly linked issue hydration permits an update.
 
 ### Conflict Resolution
 
@@ -315,10 +314,10 @@ beads stores ADO-specific metadata for round-trip fidelity:
 | Limit | Value |
 |---|---|
 | Max batch size | 200 work items per GET request |
-| Max response size | 50 MB |
+| Max response size | 50 MiB |
 | Request timeout | 30 seconds |
 | Max retries | 3 (GET and WIQL only) |
-| Retry backoff | Exponential with jitter, respects `Retry-After` header |
+| Retry backoff | Exponential with jitter, or the delay in seconds from `Retry-After` |
 
 ## Troubleshooting
 
@@ -350,8 +349,8 @@ Verify your `ado.type_map.*` config matches the work item types available in you
 # Preview what would happen
 bd ado sync --dry-run
 
-# Check current config
-bd config get ado.pat
-bd config get ado.org
-bd config get ado.project
+# Check configuration and PAT presence
+bd ado status --json
 ```
+
+The status command reports configuration readiness and PAT presence. To check API access to the configured organization or server, use `bd ado projects`.
