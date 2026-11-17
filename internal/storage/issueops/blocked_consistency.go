@@ -394,12 +394,14 @@ func shouldBeBlockedIDsUnionSQL(depTable string) string {
 		WHERE d.issue_id IS NOT NULL
 		  AND d.type = 'parent-child'
 		  AND p.is_blocked = 1
+		  AND p.status <> 'closed' AND p.status <> 'pinned'
 		UNION
 		SELECT d.issue_id FROM %[1]s d
 		JOIN wisps p ON p.id = d.depends_on_wisp_id
 		WHERE d.issue_id IS NOT NULL
 		  AND d.type = 'parent-child'
 		  AND p.is_blocked = 1
+		  AND p.status <> 'closed' AND p.status <> 'pinned'
 		UNION
 		SELECT d.issue_id FROM %[1]s d
 		WHERE d.issue_id IS NOT NULL

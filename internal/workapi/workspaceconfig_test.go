@@ -227,3 +227,15 @@ func TestFilterSettingsPointReadLeavesASettingToTheStore(t *testing.T) {
 		}
 	}
 }
+
+// Adapted from #7879. Validate the storage boundary without invoking a delegate.
+func TestValidateSettingWriteRefusesMailDelegateAliases(t *testing.T) {
+	for _, key := range []string{"mail.delegate", " MAIL_DELEGATE ", "mail-delegate"} {
+		if _, err := ValidateSettingWrite(key, "example-delegate"); !errors.Is(err, issueops.ErrValidation) {
+			t.Errorf("ValidateSettingWrite(%q) = %v, want ErrValidation", key, err)
+		}
+	}
+	if got, err := ValidateSettingWrite("mail.display-name", "Example"); err != nil || got != "Example" {
+		t.Errorf("ordinary setting = %q, %v", got, err)
+	}
+}

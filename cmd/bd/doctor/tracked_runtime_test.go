@@ -32,6 +32,9 @@ func TestShouldFlagTrackedFile_RuntimeArtifacts(t *testing.T) {
 		{"push-state.json", true},
 		{"sync-state.json", true},
 		{"daemon.pid", true},
+		{"dolt-server-config.yaml", true}, // GH#6191
+		{"dolt-server.activity", true},
+		{"config.yaml", false},
 		{"bd.lock", true},
 		{"dolt/noms/manifest", true},
 		{"issues.jsonl", false},

@@ -39,7 +39,13 @@ Root DOX.md and the parent chain remain binding.
 
 - The shared merge-abort helper permits hard-reset fallback only for a known-clean pre-merge working set; preserve dirty or unreadable preconditions. CLI pull callers retain indeterminate-commit refusal and do not replay writes.
 
-- Shared diagnostic spelling in doltutil preserves recorded bytes through escaped display and reuses the existing platform shell-quotation refusal policy. A diagnostic is display-only and grants no execution or storage authority.
+- Shared diagnostic spelling in doltutil escapes recorded names and uses the existing platform shell-quotation refusal policy. URL diagnostics share credential redaction; ambiguous raw-userinfo/apparent-port spellings withhold the complete URL, including numeric or empty ports. This affects presentation only; stored endpoints and transport remain exact. Diagnostics grant no execution or storage authority.
+
+- The database proxy reports confirmed external connection-start outages explicitly. Provider retries keep a short, non-resetting outage window. Shutdown waits for an owned starter outside proxy.lock and rechecks its marker under the lock.
+
+- Embedded compact compares the rewritten commit chain and committed table content before moving main. The existing exclusive writer and clean-worktree contract still applies.
+
+- The SQL classifier walks the pinned parser AST and admits only known read-only Dolt functions. Native transfer procedures drain every result set used only for status, preserving explicit merge reports.
 
 ## Work Guidance
 

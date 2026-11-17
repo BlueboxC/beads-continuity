@@ -717,3 +717,30 @@ func TestCheckGitConflicts_DoltBackend_Clean(t *testing.T) {
 		t.Fatal("Expected no conflicts in clean database")
 	}
 }
+
+// Contributor regression from #8400 for the ordinary Dolt diagnostic.
+func TestCheckOrphanedDependenciesDB_CrossPrefixTargetIsNotOrphanRepro(t *testing.T) {
+	store := newTestDoltStore(t, "test")
+	ctx := context.Background()
+
+	issue := &types.Issue{ID: "test-src", Title: "Source", Status: types.StatusOpen, Priority: 2, IssueType: types.TypeTask}
+	if err := store.CreateIssue(ctx, issue, "test"); err != nil {
+		t.Fatalf("CreateIssue source: %v", err)
+	}
+	dep := &types.Dependency{
+		IssueID:     issue.ID,
+		DependsOnID: "other-xyz",
+		Type:        types.DepBlocks,
+		CreatedAt:   time.Now(),
+		CreatedBy:   "test",
+	}
+	if err := store.AddDependency(ctx, dep, "test"); err != nil {
+		t.Fatalf("AddDependency cross-prefix: %v", err)
+	}
+
+	check := checkOrphanedDependenciesDB(store.DB())
+	if check.Status != StatusOK {
+		t.Fatalf("Status = %q, want %q (cross-prefix target is not verifiable here); message=%q detail=%q",
+			check.Status, StatusOK, check.Message, check.Detail)
+	}
+}

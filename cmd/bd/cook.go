@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"strings"
@@ -761,6 +762,12 @@ func resolveAndCookFormula(formulaName string, searchPaths []string) (*TemplateS
 	return resolveAndCookFormulaWithVars(formulaName, searchPaths, nil)
 }
 
+// isFormulaValidationError distinguishes a recognized, invalid formula from
+// a missing name that may still identify a stored template.
+func isFormulaValidationError(err error) bool {
+	return errors.Is(err, formula.ErrValidation) || errors.Is(err, formula.ErrVarValidation)
+}
+
 // resolveAndCookFormulaWithVars loads a formula and optionally filters steps by condition.
 // If conditionVars is provided, steps with conditions that evaluate to false are excluded.
 // Pass nil for conditionVars to include all steps (condition filtering skipped).
@@ -800,7 +807,7 @@ func resolveAndCookFormulaWithVars(formulaName string, searchPaths []string, con
 	// Apply control flow operators - loops, branches, gates
 	controlFlowSteps, err := formula.ApplyControlFlow(resolved.Steps, resolved.Compose)
 	if err != nil {
-		return nil, fmt.Errorf("applying control flow to %q: %w", formulaName, err)
+		return nil, fmt.Errorf("applying control flow to %q: %w: %w", formulaName, formula.ErrValidation, err)
 	}
 	resolved.Steps = controlFlowSteps
 
@@ -857,7 +864,7 @@ func resolveAndCookFormulaWithVars(formulaName string, searchPaths []string, con
 
 		filteredSteps, err := formula.FilterStepsByCondition(resolved.Steps, mergedVars)
 		if err != nil {
-			return nil, fmt.Errorf("filtering steps by condition: %w", err)
+			return nil, fmt.Errorf("filtering steps by condition: %w: %w", formula.ErrValidation, err)
 		}
 		resolved.Steps = filteredSteps
 	}

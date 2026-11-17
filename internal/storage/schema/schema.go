@@ -13,6 +13,7 @@ import (
 	"log"
 	"os"
 	"regexp"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -517,9 +518,18 @@ func missingDoltIgnorePatterns(ctx context.Context, db DBConn, candidates []stri
 // no-work short-circuit, MigrateUp commits the seed itself in a scoped,
 // labeled commit (keyed off the changed return value) so the heal converges
 // in one pass instead of riding along inside an unrelated later commit.
-func seedDoltIgnorePatterns(ctx context.Context, db DBConn) (bool, error) {
+func seedDoltIgnorePatterns(ctx context.Context, db DBConn, beforeWrite func() error) (bool, error) {
+	missing := missingDoltIgnorePatterns(ctx, db, doltIgnoreSeedCandidates(ctx, db))
+	if len(missing) == 0 {
+		return false, nil
+	}
+	if beforeWrite != nil {
+		if err := beforeWrite(); err != nil {
+			return false, err
+		}
+	}
 	changed := false
-	for _, pattern := range missingDoltIgnorePatterns(ctx, db, doltIgnoreSeedCandidates(ctx, db)) {
+	for _, pattern := range missing {
 		res, err := db.ExecContext(ctx, "INSERT IGNORE INTO dolt_ignore VALUES (?, true)", pattern)
 		if err != nil {
 			return changed, fmt.Errorf("seeding dolt_ignore pattern %q: %w", pattern, err)
@@ -647,13 +657,18 @@ func MigrateUpTo(ctx context.Context, db DBConn, maxVersion int) (int, error) {
 	return applied, err
 }
 
-func MigrateUp(ctx context.Context, db DBConn) (int, error) {
+// MigrateUp applies both migration series and open-time repairs on one
+// pinned SQL session, which owns the temporary commit-mode change.
+func MigrateUp(ctx context.Context, db DBConn) (applied int, err error) {
+	beforeWrite, finish := migrationWriteGuard(ctx, db)
+	defer func() { err = finish(err) }()
+
 	// Re-assert the canonical dolt_ignore patterns before anything else, and
 	// in particular before the migrationWorkNeeded short-circuit: a database
 	// whose migration cursors arrived at-latest without executing the seeding
 	// migrations (out-of-band table copy) reports no work needed and
 	// would otherwise never be healed.
-	seedChanged, err := seedDoltIgnorePatterns(ctx, db)
+	seedChanged, err := seedDoltIgnorePatterns(ctx, db, beforeWrite)
 	if err != nil {
 		return 0, err
 	}
@@ -668,7 +683,7 @@ func MigrateUp(ctx context.Context, db DBConn) (int, error) {
 	// short-circuit below would skip it — plus one the seed does not have: a
 	// pull from a not-yet-healed peer can re-introduce the tracked table,
 	// which only a probe that runs at EVERY open can catch.
-	healed, err := healTrackedIgnoredCursorTable(ctx, db)
+	healed, err := healTrackedIgnoredCursorTable(ctx, db, beforeWrite)
 	if err != nil {
 		return 0, fmt.Errorf("untracking legacy %s: %w", ignoredSource.cursorTable, err)
 	}
@@ -687,14 +702,14 @@ func MigrateUp(ctx context.Context, db DBConn) (int, error) {
 		reconciled = 1
 	}
 
-	applied, err := migrateUpAfterReconcile(ctx, db, seedChanged)
+	applied, err = migrateUpAfterReconcile(ctx, db, seedChanged, beforeWrite)
 	return applied + reconciled, err
 }
 
 // migrateUpAfterReconcile is MigrateUp's migration pass proper, split out so
 // the open-time reconciles above it have exactly one place to contribute to
 // the reported total.
-func migrateUpAfterReconcile(ctx context.Context, db DBConn, seedChanged bool) (int, error) {
+func migrateUpAfterReconcile(ctx context.Context, db DBConn, seedChanged bool, beforeWrite func() error) (int, error) {
 	needed, err := migrationWorkNeeded(ctx, db)
 	if err != nil {
 		return 0, fmt.Errorf("checking schema migration work: %w", err)
@@ -711,6 +726,10 @@ func migrateUpAfterReconcile(ctx context.Context, db DBConn, seedChanged bool) (
 			}
 		}
 		return 0, nil
+	}
+
+	if err := beforeWrite(); err != nil {
+		return 0, err
 	}
 
 	dirtyBeforeAll, err := dirtyTables(ctx, db, false)
@@ -783,8 +802,32 @@ func migrateUpAfterReconcile(ctx context.Context, db DBConn, seedChanged bool) (
 	if err != nil {
 		return 0, fmt.Errorf("checking dirty tables against pending migrations: %w", err)
 	}
-	if len(touchedDirtyTables) > 0 {
-		return 0, &DirtyTablesError{Tables: touchedDirtyTables}
+	// The ignored series is checked here too, before any numbered migration
+	// or rekey runs, so its refusal applies none of them (the seed and
+	// cursor-heal preparations above may already have run) and can be the
+	// same *DirtyTablesError the working-set-reconcile opens tolerate
+	// (gastownhall/beads#5816). The ignored cursor is read before the main
+	// series runs; no main migration advances it or leaves an ignored
+	// sentinel newly missing, so this early read is conservative: it may
+	// count more pending ignored migrations than a post-main read would,
+	// not fewer. It reads the same committable set: rows in
+	// dolt-ignored tables (wisps, wisp_comments, ...) are clone-local
+	// working-set data that stageSchemaTables never stages and
+	// unstageIgnoredTables keeps out of the migration commit, so the
+	// ignored migrations may alter them in place. Committable tables the
+	// ignored series touches (0002 deletes child_counters rows) still refuse.
+	touchedIgnoredDirtyTables, err := ignoredSource.pendingMigrationDirtyTables(ctx, db, dirtyBefore)
+	// A failed ignored read must not mask a main-series refusal: that typed
+	// error is what the reconcile opens recover from, and the open after the
+	// recovery reads the ignored series again. So the read error returns only
+	// when the main series has nothing to refuse.
+	if err != nil && len(touchedDirtyTables) == 0 {
+		return 0, fmt.Errorf("checking dirty tables against pending ignored migrations: %w", err)
+	}
+	if len(touchedDirtyTables) > 0 || len(touchedIgnoredDirtyTables) > 0 {
+		tables := append(touchedDirtyTables, touchedIgnoredDirtyTables...)
+		sort.Strings(tables)
+		return 0, &DirtyTablesError{Tables: slices.Compact(tables)}
 	}
 	dirtyBeforeSignatures, err := dirtyTableSignatures(ctx, db, dirtyBefore)
 	if err != nil {
@@ -849,24 +892,6 @@ func migrateUpAfterReconcile(ctx context.Context, db DBConn, seedChanged bool) (
 		return applied, fmt.Errorf("rekey aux row ids: %w", err)
 	}
 	backfilled = backfilled || auxRekeyed
-
-	touchedIgnoredDirtyTables, err := ignoredSource.pendingMigrationDirtyTables(ctx, db, dirtyBeforeAll)
-	if err != nil {
-		return applied, fmt.Errorf("checking dirty tables against pending ignored migrations: %w", err)
-	}
-	if len(touchedIgnoredDirtyTables) > 0 {
-		// Deliberately a plain, untyped error (unlike the main-source guard
-		// above, which returns *DirtyTablesError): this check fires mid-pass,
-		// after the main-source migrations have already applied. A lenient
-		// caller (embeddeddolt's openReadOnlyCommand / openWorkingSetReconcile
-		// intents) skipping this and returning as if the open succeeded would
-		// let a reconcile commit checkpoint a half-applied migration pass.
-		// The ignored source also tracks bd-internal state (dolt_ignore'd
-		// tables like ignored_schema_migrations), not expected user data, so
-		// there is no dirty-commit recovery story to support here the way
-		// there is for the main-source guard (#4566 scope).
-		return applied, fmt.Errorf("pending ignored schema migrations alter pre-existing dirty tables: %s", strings.Join(touchedIgnoredDirtyTables, ", "))
-	}
 
 	appliedIgnored, ignoredColumnAdded, err := ignoredSource.migrate(ctx, db, 0)
 	if err != nil {
@@ -1936,6 +1961,10 @@ func runMigrations(ctx context.Context, db DBConn, src migrationSource, minVersi
 			}
 		}
 
+		stamps, err := snapshotUpdatedAtForStep(ctx, db, src, mf.version)
+		if err != nil {
+			return count, fmt.Errorf("snapshotting updated_at before migration %s: %w", mf.name, err)
+		}
 		if err := src.preMigrationRepair(ctx, db, mf.version); err != nil {
 			return count, fmt.Errorf("pre-repair for migration %s: %w", mf.name, err)
 		}
@@ -1944,6 +1973,9 @@ func runMigrations(ctx context.Context, db DBConn, src migrationSource, minVersi
 		start := time.Now()
 		if err := execMigrationBody(ctx, db, string(data)); err != nil {
 			return count, fmt.Errorf("migration %s: %w", mf.name, err)
+		}
+		if err := stamps.restore(ctx, db); err != nil {
+			return count, fmt.Errorf("restoring updated_at after migration %s: %w", mf.name, err)
 		}
 		sum := sha256.Sum256(data)
 		contentHash := hex.EncodeToString(sum[:])

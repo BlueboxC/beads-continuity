@@ -110,7 +110,7 @@ Any key whose name contains `api_key`, `api-key`, `secret`, `token`, or `passwor
 | `actor` | `--actor` | `BEADS_ACTOR` | `git config user.name` | Actor name for audit trail (see [Actor identity](#actor-identity-resolution)) |
 | `identity` | `--identity` | `BEADS_IDENTITY` | (git user / hostname) | Sender identity for `bd mail` |
 | `no-push` | `--no-push` | `BD_NO_PUSH` | `false` | Skip pushing to the remote in `bd dolt push` |
-| `no-git-ops` | — | — | `false` | Disable git ops in `bd prime` close protocol |
+| `no-git-ops` | — | — | `false` | Remove Git commands from the `bd prime` close protocol. Dolt sync and auto-push use `dolt.local-only` |
 | `agent.profile` | — | `BD_AGENT_PROFILE` | `conservative` | Policy profile `bd prime` uses for git/commit authority: `conservative`, `minimal`, `team-maintainer`; invalid values fall back to `conservative` |
 | `prime.max-memories` | `--max-memories` | `BD_PRIME_MAX_MEMORIES` | `0` | Max persistent memories injected by `bd prime` (0 = unlimited) |
 | `prime.max-memory-chars` | `--max-memory-chars` | `BD_PRIME_MAX_MEMORY_CHARS` | `0` | Max total bytes of memory entries injected by `bd prime`, at whole-memory boundaries (0 = unlimited) |
@@ -118,6 +118,7 @@ Any key whose name contains `api_key`, `api-key`, `secret`, `token`, or `passwor
 | `dolt.auto-push` | — | `BD_DOLT_AUTO_PUSH` | `false` | Auto-push to Dolt remote after writes (opt-in; see [below](#auto-push)) |
 | `dolt.auto-push-interval` | — | `BD_DOLT_AUTO_PUSH_INTERVAL` | `5m` | Minimum time between auto-pushes |
 | `dolt.auto-push-timeout` | — | `BD_DOLT_AUTO_PUSH_TIMEOUT` | `30s` | Timeout for a single auto-push attempt |
+| `dolt.local-only` | — | `BD_DOLT_LOCAL_ONLY` | `false` | Disable `bd sync`, `bd dolt push`, `bd dolt pull` and auto-push. Refuse `bd dolt remote add` and `bd dolt remote reset-data` |
 | `dolt.shared-server` | `--shared-server` | `BEADS_DOLT_SHARED_SERVER` | `false` | Share one Dolt server at `~/.beads/shared-server/` |
 | `dolt.max-conns` | — | `BEADS_DOLT_MAX_CONNS` | `10` | Connection pool size |
 | `git.author` | — | `BD_GIT_AUTHOR` | (none) | Override commit author for beads commits |
@@ -252,6 +253,8 @@ bd backup status          # Show configuration and last sync time
 ### Auto-push
 
 By default, `bd` does not push automatically after write commands. Auto-push is explicit opt-in because concurrent pushes to git-protocol Dolt remotes can corrupt or strand remote history when multiple writers race.
+
+Set `dolt.local-only: true` to suppress auto-push even when it is explicitly enabled. `no-git-ops` controls Git guidance in `bd prime` and leaves the auto-push opt-in in force.
 
 ```yaml
 dolt:

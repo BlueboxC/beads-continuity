@@ -31,6 +31,10 @@ Root DOX.md and the parent chain remain binding.
 
 - Dependency readers/counts retain each far end once across durable and optional wisp planes. Durable edge type wins, while dual-resident issue bodies follow existing wisp hydration. Only a typed missing optional wisp table reads as empty; propagate required-table and other read errors. Server iteration shares one read transaction across its joins.
 
+- Blocked-state inheritance ignores stale bits on closed or pinned parents. Reads propagate late iterator errors before returning complete results or proceeding with writes.
+- Generated top-level IDs skip IDs occupied in either native table and IDs named elsewhere in the same batch. Explicit imports keep their existing identity and conflict rules.
+- Delete cascade follows only parent-child edges across both native tables. Preview and execution use the same deletion set and identify surviving dependents affected by other edges.
+
 ## Work Guidance
 
 Preserve issue semantics across supported storage adapters and shared conformance tests.

@@ -734,30 +734,32 @@ func (s *DoltStore) deleteIssues(ctx context.Context, ids []string, cascade bool
 		return &types.DeleteIssuesResult{}, nil
 	}
 
-	// Route wisp IDs to wisp deletion; process regular IDs in batch below.
-	// DoltStore uses its own batch wisp deletion (separate transactions per batch
-	// to avoid write timeout on large sets — see bd-2ehd, ff-tqm).
-	ephIDs, regularIDs := s.partitionByWispStatus(ctx, ids)
 	wispDeleteCount := 0
-	if len(ephIDs) > 0 {
-		var activeWispIDs []string
-		for _, eid := range ephIDs {
-			if s.isActiveWisp(ctx, eid) {
-				activeWispIDs = append(activeWispIDs, eid)
+	if !cascade {
+		// Route wisp IDs to wisp deletion; process regular IDs in batch below.
+		// DoltStore uses its own batch wisp deletion (separate transactions per batch
+		// to avoid write timeout on large sets — see bd-2ehd, ff-tqm).
+		ephIDs, regularIDs := s.partitionByWispStatus(ctx, ids)
+		if len(ephIDs) > 0 {
+			var activeWispIDs []string
+			for _, eid := range ephIDs {
+				if s.isActiveWisp(ctx, eid) {
+					activeWispIDs = append(activeWispIDs, eid)
+				}
+			}
+			wispDeleteCount = len(activeWispIDs)
+			if !dryRun && len(activeWispIDs) > 0 {
+				deleted, err := s.deleteWispBatch(ctx, activeWispIDs)
+				if err != nil {
+					return nil, fmt.Errorf("failed to batch delete wisps: %w", err)
+				}
+				wispDeleteCount = deleted
 			}
 		}
-		wispDeleteCount = len(activeWispIDs)
-		if !dryRun && len(activeWispIDs) > 0 {
-			deleted, err := s.deleteWispBatch(ctx, activeWispIDs)
-			if err != nil {
-				return nil, fmt.Errorf("failed to batch delete wisps: %w", err)
-			}
-			wispDeleteCount = deleted
+		ids = regularIDs
+		if len(ids) == 0 {
+			return &types.DeleteIssuesResult{DeletedCount: wispDeleteCount}, nil
 		}
-	}
-	ids = regularIDs
-	if len(ids) == 0 {
-		return &types.DeleteIssuesResult{DeletedCount: wispDeleteCount}, nil
 	}
 
 	var result *types.DeleteIssuesResult

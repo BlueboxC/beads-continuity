@@ -36,9 +36,9 @@ func DatabaseVersionWithBdVersion(path string, bdVersion string) error {
 	}
 
 	// Load or create config
-	cfg, err := configfile.Load(beadsDir)
+	cfg, err := configfile.LoadNativeForDiscovery(beadsDir)
 	if err != nil {
-		cfg = configfile.DefaultConfig()
+		return err
 	}
 	if cfg == nil {
 		cfg = configfile.DefaultConfig()
@@ -64,12 +64,6 @@ func DatabaseVersionWithBdVersion(path string, bdVersion string) error {
 		}
 		defer func() { _ = store.Close() }()
 
-		// Create local marker directory so FindDatabasePath can discover the
-		// database. Server mode doesn't create it automatically (bd-u8rda).
-		if mkErr := os.MkdirAll(dbPath, 0o750); mkErr != nil {
-			fmt.Printf("  Warning: failed to create dolt marker dir: %v\n", mkErr)
-		}
-
 		// Set version metadata if provided
 		if bdVersion != "" {
 			if err := store.SetLocalMetadata(ctx, "bd_version", bdVersion); err != nil {
@@ -77,21 +71,30 @@ func DatabaseVersionWithBdVersion(path string, bdVersion string) error {
 			}
 		}
 
-		fmt.Println("  → Database created successfully")
-
-		// Import from JSONL if present (fresh clone with committed issues).
-		// This closes the chicken-and-egg gap where doctor --fix creates an
-		// empty Dolt store and then bd init refuses because the store exists.
+		// A missing local marker does not mean the configured SQL store
+		// is new. Do not replay a tracked export over its existing rows.
 		jsonlPath := filepath.Join(beadsDir, "issues.jsonl")
 		if _, statErr := os.Stat(jsonlPath); statErr == nil {
-			count, importErr := importJSONLIntoStore(ctx, store, jsonlPath)
-			if importErr != nil {
-				fmt.Printf("  Warning: failed to import from JSONL: %v\n", importErr)
-			} else if count > 0 {
-				fmt.Printf("  → Imported %d issues from issues.jsonl\n", count)
+			count, checkErr := countDatabaseIssuesForRecovery(ctx, store)
+			if checkErr != nil {
+				return checkErr
 			}
+			if count == 0 {
+				imported, importErr := importJSONLIntoStore(ctx, store, jsonlPath)
+				if importErr != nil {
+					return fmt.Errorf("failed to import from JSONL: %w", importErr)
+				}
+				fmt.Printf("  → Imported %d issues from issues.jsonl\n", imported)
+			}
+		} else if !os.IsNotExist(statErr) {
+			return fmt.Errorf("inspect JSONL export: %w", statErr)
 		}
 
+		// Publish the local marker only when the attempted import has
+		// finished, so a failed import can still reach this route on repair.
+		if err := os.MkdirAll(dbPath, 0o750); err != nil {
+			return fmt.Errorf("create Dolt workspace marker: %w", err)
+		}
 		return nil
 	}
 
@@ -168,8 +171,11 @@ func FreshCloneImport(path string, bdVersion string) error {
 	}
 	defer func() { _ = store.Close() }()
 
-	var issueCount int
-	if err := store.DB().QueryRowContext(ctx, "SELECT COUNT(*) FROM issues").Scan(&issueCount); err == nil && issueCount > 0 {
+	issueCount, err := countDatabaseIssuesForRecovery(ctx, store)
+	if err != nil {
+		return err
+	}
+	if issueCount > 0 {
 		fmt.Printf("  → Database already has %d issues, skipping import\n", issueCount)
 		return nil
 	}
@@ -259,4 +265,14 @@ func detectActor() string {
 		return user
 	}
 	return "bd-doctor"
+}
+
+// countDatabaseIssuesForRecovery refuses import when the existing project's
+// state cannot be established.
+func countDatabaseIssuesForRecovery(ctx context.Context, store *dolt.DoltStore) (int, error) {
+	var issueCount int
+	if err := store.DB().QueryRowContext(ctx, "SELECT COUNT(*) FROM issues").Scan(&issueCount); err != nil {
+		return 0, fmt.Errorf("failed to count existing issues before importing issues.jsonl: %w", err)
+	}
+	return issueCount, nil
 }

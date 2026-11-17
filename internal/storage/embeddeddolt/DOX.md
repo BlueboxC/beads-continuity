@@ -32,6 +32,8 @@ Root DOX.md and the parent chain remain binding.
 
 - Classified-read opens carry the invocation migration freeze and suppress the lazy defer-wake write while frozen; omission preserves existing callers. SetCommitIdentity supplies an atomic name/email pair to subsequent DSNs and explicit version commits; empty pairs retain the previous default. This affects future commits only.
 
+- Restore rehearses the selected backup with the embedded engine after literal path and manifest checks. Flatten preserves clone-local foreign keys and working changes when publishing the squashed history.
+
 ## Work Guidance
 
 Sync honors the same early refusal for nonempty federation exclusions as the server adapter; never silently send the complete history while an exclusion is requested.

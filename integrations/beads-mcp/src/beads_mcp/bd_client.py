@@ -7,6 +7,7 @@ import re
 import signal
 import sys
 from abc import ABC, abstractmethod
+from collections.abc import Sequence
 from typing import Any
 
 from .config import load_config
@@ -293,7 +294,7 @@ class BdCliClient(BdClientBase):
         # NOTE: --db flag removed in v0.20.1, bd now auto-discovers database via cwd
         # We pass cwd via _run_command instead
         if self.actor:
-            flags.extend(["--actor", self.actor])
+            flags.append(f"--actor={self.actor}")
         if self.no_auto_flush:
             flags.append("--no-auto-flush")
         if self.no_auto_import:
@@ -366,12 +367,20 @@ class BdCliClient(BdClientBase):
             )
         return stdout
 
-    async def _run_command(self, *args: str, cwd: str | None = None) -> Any:
+    async def _run_command(
+        self,
+        *args: str,
+        positional: Sequence[str] = (),
+        cwd: str | None = None,
+        empty_as_list: bool = False,
+    ) -> Any:
         """Run bd command and parse JSON output.
 
         Args:
-            *args: Command arguments to pass to bd
-            cwd: Optional working directory override for this command
+            *args: bd subcommand and flags.
+            positional: Literal operands passed after the option terminator.
+            cwd: Optional working directory override for this command.
+            empty_as_list: Decode successful empty stdout as an empty list.
 
         Returns:
             Parsed JSON output (dict or list)
@@ -381,6 +390,8 @@ class BdCliClient(BdClientBase):
             BdCommandError: If bd command fails
         """
         cmd = [self.bd_path, *args, *self._global_flags(), "--json"]
+        if positional:
+            cmd.extend(["--", *positional])
         working_dir = cwd if cwd is not None else self._get_working_dir()
 
         # Set up environment with database configuration
@@ -393,7 +404,7 @@ class BdCliClient(BdClientBase):
             db_info = f"BEADS_DB={self.beads_db} (deprecated)"
         else:
             db_info = "auto-discover"
-        print(f"[beads-mcp] Running bd command: {' '.join(args)}", file=sys.stderr)
+        print(f"[beads-mcp] Running bd command: {args[0]}", file=sys.stderr)
         print(f"[beads-mcp]   Database: {db_info}", file=sys.stderr)
         print(f"[beads-mcp]   Working dir: {working_dir}", file=sys.stderr)
 
@@ -401,7 +412,7 @@ class BdCliClient(BdClientBase):
 
         stdout_str = stdout.decode().strip()
         if not stdout_str:
-            return {}
+            return [] if empty_as_list else {}
 
         try:
             result: object = json.loads(stdout_str)
@@ -447,26 +458,26 @@ class BdCliClient(BdClientBase):
     async def ready(self, params: ReadyWorkParams | None = None) -> list[Issue]:
         """Get ready work (issues with no blocking dependencies)."""
         params = params or ReadyWorkParams()
-        args = ["ready", "--limit", str(params.limit)]
+        args = ["ready", f"--limit={params.limit}"]
 
         if params.issue_type:
-            args.extend(["--type", params.issue_type])
+            args.append(f"--type={params.issue_type}")
         if params.priority is not None:
-            args.extend(["--priority", str(params.priority)])
+            args.append(f"--priority={params.priority}")
         if params.assignee:
-            args.extend(["--assignee", params.assignee])
+            args.append(f"--assignee={params.assignee}")
         if params.labels:
             for label in params.labels:
-                args.extend(["--label", label])
+                args.append(f"--label={label}")
         if params.labels_any:
             for label in params.labels_any:
-                args.extend(["--label-any", label])
+                args.append(f"--label-any={label}")
         if params.unassigned:
             args.append("--unassigned")
         if params.sort_policy:
-            args.extend(["--sort", params.sort_policy])
+            args.append(f"--sort={params.sort_policy}")
         if params.parent_id:
-            args.extend(["--parent", params.parent_id])
+            args.append(f"--parent={params.parent_id}")
 
         data = await self._run_command(*args)
         if not isinstance(data, list):
@@ -480,25 +491,25 @@ class BdCliClient(BdClientBase):
         args = ["list"]
 
         if params.status:
-            args.extend(["--status", params.status])
+            args.append(f"--status={params.status}")
         if params.priority is not None:
-            args.extend(["--priority", str(params.priority)])
+            args.append(f"--priority={params.priority}")
         if params.issue_type:
-            args.extend(["--type", params.issue_type])
+            args.append(f"--type={params.issue_type}")
         if params.assignee:
-            args.extend(["--assignee", params.assignee])
+            args.append(f"--assignee={params.assignee}")
         if params.labels:
             for label in params.labels:
-                args.extend(["--label", label])
+                args.append(f"--label={label}")
         if params.labels_any:
             for label in params.labels_any:
-                args.extend(["--label-any", label])
+                args.append(f"--label-any={label}")
         if params.query:
-            args.extend(["--title", params.query])
+            args.append(f"--title={params.query}")
         if params.unassigned:
             args.append("--no-assignee")
         if params.limit:
-            args.extend(["--limit", str(params.limit)])
+            args.append(f"--limit={params.limit}")
 
         data = await self._run_command(*args)
         if not isinstance(data, list):
@@ -518,7 +529,7 @@ class BdCliClient(BdClientBase):
         Raises:
             BdCommandError: If issue not found
         """
-        data = await self._run_command("show", params.issue_id)
+        data = await self._run_command("show", positional=[params.issue_id])
         # bd show returns an array, extract first element
         if isinstance(data, list):
             if not data:
@@ -533,24 +544,29 @@ class BdCliClient(BdClientBase):
     async def create(self, params: CreateIssueParams) -> Issue:
         """Create a new issue."""
         # Bind option-shaped titles as content (upstream PR #7396).
-        args = ["create", "--title", params.title, "-p", str(params.priority), "-t", params.issue_type]
+        args = [
+            "create",
+            f"--title={params.title}",
+            f"--priority={params.priority}",
+            f"--type={params.issue_type}",
+        ]
 
         if params.description:
-            args.extend(["-d", params.description])
+            args.append(f"--description={params.description}")
         if params.design:
-            args.extend(["--design", params.design])
+            args.append(f"--design={params.design}")
         if params.acceptance:
-            args.extend(["--acceptance", params.acceptance])
+            args.append(f"--acceptance={params.acceptance}")
         if params.external_ref:
-            args.extend(["--external-ref", params.external_ref])
+            args.append(f"--external-ref={params.external_ref}")
         if params.assignee:
-            args.extend(["--assignee", params.assignee])
+            args.append(f"--assignee={params.assignee}")
         if params.id:
-            args.extend(["--id", params.id])
+            args.append(f"--id={params.id}")
         for label in params.labels:
-            args.extend(["-l", label])
+            args.append(f"--labels={label}")
         if params.deps:
-            args.extend(["--deps", ",".join(params.deps)])
+            args.append(f"--deps={','.join(params.deps)}")
 
         data = await self._run_command(*args)
         if not isinstance(data, dict):
@@ -560,30 +576,33 @@ class BdCliClient(BdClientBase):
 
     async def update(self, params: UpdateIssueParams) -> Issue:
         """Update an issue."""
-        args = ["update", params.issue_id]
+        args = ["update"]
 
         if params.status:
-            args.extend(["--status", params.status])
+            args.append(f"--status={params.status}")
         if params.priority is not None:
-            args.extend(["--priority", str(params.priority)])
+            args.append(f"--priority={params.priority}")
         if params.assignee:
-            args.extend(["--assignee", params.assignee])
+            args.append(f"--assignee={params.assignee}")
         if params.title:
-            args.extend(["--title", params.title])
+            args.append(f"--title={params.title}")
         if params.description:
-            args.extend(["--description", params.description])
+            args.append(f"--description={params.description}")
         if params.design:
-            args.extend(["--design", params.design])
+            args.append(f"--design={params.design}")
         if params.acceptance_criteria:
-            args.extend(["--acceptance", params.acceptance_criteria])
+            args.append(f"--acceptance={params.acceptance_criteria}")
         if params.notes:
-            args.extend(["--notes", params.notes])
+            args.append(f"--notes={params.notes}")
         if params.external_ref:
-            args.extend(["--external-ref", params.external_ref])
+            args.append(f"--external-ref={params.external_ref}")
         if params.labels is not None:
-            args.extend(["--set-labels", ",".join(params.labels)])
+            args.append(f"--set-labels={','.join(params.labels)}")
 
-        data = await self._run_command(*args)
+        if params.defer_until is not None:
+            args.append(f"--defer={params.defer_until}")
+
+        data = await self._run_command(*args, positional=[params.issue_id])
         # bd update returns an array, extract first element
         if isinstance(data, list):
             if not data:
@@ -604,7 +623,7 @@ class BdCliClient(BdClientBase):
         Returns:
             Claimed issue
         """
-        data = await self._run_command("update", params.issue_id, "--claim")
+        data = await self._run_command("update", "--claim", positional=[params.issue_id])
         # bd update returns an array, extract first element
         if isinstance(data, list):
             if not data:
@@ -618,9 +637,7 @@ class BdCliClient(BdClientBase):
 
     async def close(self, params: CloseIssueParams) -> list[Issue]:
         """Close an issue."""
-        args = ["close", params.issue_id, "--reason", params.reason]
-
-        data = await self._run_command(*args)
+        data = await self._run_command("close", f"--reason={params.reason}", positional=[params.issue_id])
         if not isinstance(data, list):
             raise BdCommandError(f"Invalid response for close {params.issue_id}")
 
@@ -635,12 +652,12 @@ class BdCliClient(BdClientBase):
         Returns:
             List of reopened issues
         """
-        args = ["reopen", *params.issue_ids]
+        args = ["reopen"]
 
         if params.reason:
-            args.extend(["--reason", params.reason])
+            args.append(f"--reason={params.reason}")
 
-        data = await self._run_command(*args)
+        data = await self._run_command(*args, positional=params.issue_ids, empty_as_list=True)
         if not isinstance(data, list):
             raise BdCommandError(f"Invalid response for reopen {params.issue_ids}")
 
@@ -657,11 +674,11 @@ class BdCliClient(BdClientBase):
             self.bd_path,
             "dep",
             "add",
+            f"--type={params.dep_type}",
+            *self._global_flags(),
+            "--",
             params.issue_id,
             params.depends_on_id,
-            "--type",
-            params.dep_type,
-            *self._global_flags(),
         ]
 
         # Set up environment with database configuration
@@ -705,7 +722,7 @@ class BdCliClient(BdClientBase):
         Returns:
             List of comments in chronological order
         """
-        data = await self._run_command("comments", params.issue_id)
+        data = await self._run_command("comments", positional=[params.issue_id])
         if not isinstance(data, list):
             return []
         return [Comment.model_validate(comment) for comment in data]
@@ -743,7 +760,7 @@ class BdCliClient(BdClientBase):
         params = params or BlockedParams()
         args = ["blocked"]
         if params.parent_id:
-            args.extend(["--parent", params.parent_id])
+            args.append(f"--parent={params.parent_id}")
 
         data = await self._run_command(*args)
         if not isinstance(data, list):
@@ -846,13 +863,13 @@ class BdCliClient(BdClientBase):
         cmd = [self.bd_path, "init"]
 
         if params.prefix:
-            cmd.extend(["--prefix", params.prefix])
+            cmd.append(f"--prefix={params.prefix}")
 
         # NOTE: Do NOT add --db flag for init!
         # init creates a NEW database in the current directory.
         # Only add actor-related flags.
         if self.actor:
-            cmd.extend(["--actor", self.actor])
+            cmd.append(f"--actor={self.actor}")
 
         stdout = await self._execute(cmd, "bd init")
 

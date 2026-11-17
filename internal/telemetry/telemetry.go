@@ -134,8 +134,8 @@ func translateLegacyEnv() []string {
 //
 // Defaults are merged with the host/process detectors and finally with the
 // FromEnv detector, so OTEL_SERVICE_NAME and OTEL_RESOURCE_ATTRIBUTES can
-// override anything set by the caller. Explicit detectors omit automatic argv
-// and owner collection; WithProcess would include both.
+// override anything set by the caller. The process detectors omit automatic
+// argv, executable paths and account owners.
 func buildResource(ctx context.Context, serviceName, version string) (*resource.Resource, error) {
 	return resource.New(ctx,
 		resource.WithAttributes(
@@ -145,7 +145,6 @@ func buildResource(ctx context.Context, serviceName, version string) (*resource.
 		resource.WithHost(),
 		resource.WithProcessPID(),
 		resource.WithProcessExecutableName(),
-		resource.WithProcessExecutablePath(),
 		resource.WithProcessRuntimeName(),
 		resource.WithProcessRuntimeVersion(),
 		resource.WithProcessRuntimeDescription(),
@@ -157,9 +156,9 @@ func buildResource(ctx context.Context, serviceName, version string) (*resource.
 // When no opt-in is in effect (BD_OTEL_ENABLED=true or any legacy BD_OTEL_*
 // selector), installs no-op providers and returns immediately (zero overhead).
 //
-// Traces are exported only when OTEL_TRACES_EXPORTER=console (stdout, for
+// Traces are exported only when OTEL_TRACES_EXPORTER=console (stderr, for
 // local debugging); there is no remote trace backend.
-// Metrics are exported to OTEL_EXPORTER_OTLP_METRICS_ENDPOINT and/or stdout.
+// Metrics are exported to OTEL_EXPORTER_OTLP_METRICS_ENDPOINT and/or stderr.
 func Init(ctx context.Context, serviceName, version string) error {
 	if mappings := translateLegacyEnv(); len(mappings) > 0 {
 		fmt.Fprintf(os.Stderr,
@@ -200,7 +199,7 @@ func Init(ctx context.Context, serviceName, version string) error {
 }
 
 func buildTraceProvider(_ context.Context, res *resource.Resource) (*sdktrace.TracerProvider, error) {
-	exp, err := stdouttrace.New(stdouttrace.WithPrettyPrint())
+	exp, err := stdouttrace.New(stdouttrace.WithWriter(os.Stderr), stdouttrace.WithPrettyPrint())
 	if err != nil {
 		return nil, err
 	}
@@ -217,7 +216,7 @@ func buildMetricProvider(ctx context.Context, res *resource.Resource) (*sdkmetri
 	console, otlp := selectedMetricExporters()
 
 	if console {
-		exp, err := stdoutmetric.New()
+		exp, err := stdoutmetric.New(stdoutmetric.WithWriter(os.Stderr))
 		if err != nil {
 			return nil, err
 		}
@@ -291,4 +290,9 @@ func Shutdown(ctx context.Context) {
 		_ = fn(ctx)
 	}
 	shutdownFns = nil
+}
+
+// Milliseconds returns the duration in fractional milliseconds.
+func Milliseconds(d time.Duration) float64 {
+	return float64(d) / float64(time.Millisecond)
 }

@@ -9,7 +9,6 @@ import (
 	"time"
 
 	"github.com/spf13/cobra"
-	"github.com/steveyegge/beads/internal/formula"
 	"github.com/steveyegge/beads/internal/metrics"
 	"github.com/steveyegge/beads/internal/storage"
 	"github.com/steveyegge/beads/internal/types"
@@ -210,7 +209,7 @@ func runWispCreateCore(cmd *cobra.Command, args []string) error {
 	if err == nil {
 		subgraph = sg
 		protoID = sg.Root.ID
-	} else if errors.Is(err, formula.ErrVarValidation) {
+	} else if isFormulaValidationError(err) {
 		// args[0] IS a formula; the --var values it was given fail
 		// enum/pattern/required-empty constraints. Report that directly
 		// instead of falling through to the legacy proto-ID lookup below,

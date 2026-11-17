@@ -22,6 +22,7 @@ type BatchContext struct {
 	ConfigPrefix    string
 	AllowedPrefixes string
 	Opts            storage.BatchCreateOptions
+	claimedIDs      map[string]bool
 	// SkipChildCounterReconcile tells CreateIssueInTxWithResult to skip its
 	// per-issue ReconcileChildCounters call. CreateIssuesInTxWithResult sets
 	// this because it already runs one slice-wide ReconcileChildCounters over
@@ -219,7 +220,7 @@ func assignCreateIssueIDInTx(ctx context.Context, tx DBTX, bc *BatchContext, iss
 			prefix = bc.ConfigPrefix + "-wisp"
 		}
 		var err error
-		issue.ID, err = GenerateIssueIDInTable(ctx, tx, issueTable, prefix, issue, actor)
+		issue.ID, err = generateUnclaimedIssueID(ctx, tx, issueTable, prefix, issue, actor, bc.claimedIDs)
 		if err != nil {
 			return fmt.Errorf("failed to generate issue ID: %w", err)
 		}
@@ -288,6 +289,12 @@ func CreateIssuesInTxWithContext(ctx context.Context, tx DBTX, bc *BatchContext,
 	// reconcile behavior.
 	batch := *bc
 	batch.SkipChildCounterReconcile = true
+	batch.claimedIDs = make(map[string]bool, len(issues))
+	for _, issue := range issues {
+		if issue.ID != "" {
+			batch.claimedIDs[issue.ID] = true
+		}
+	}
 
 	result := CreateIssuesResult{}
 	accepted := issues[:0:0]

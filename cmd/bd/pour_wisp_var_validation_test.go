@@ -214,3 +214,48 @@ func TestWispMissingVarHintUnchanged(t *testing.T) {
 		t.Fatalf("runWispCreate stderr = %q, want the wisp-specific --var hint text", stderr)
 	}
 }
+
+// The CLI must surface structural errors before the stored-template fallback.
+func TestPourAndWispReportInvalidFormulaStructure(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "invalid.formula.toml")
+	const contents = `formula = "invalid-structure"
+version = 1
+type = "workflow"
+
+[vars.fanout]
+default = "true"
+
+[[steps]]
+id = "fanout"
+title = "Fan out"
+condition = "{{fanout}}"
+
+[[steps]]
+id = "consumer"
+title = "Consume"
+needs = ["fanout"]
+`
+	if err := os.WriteFile(path, []byte(contents), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	store := newTestStoreWithPrefix(t, filepath.Join(t.TempDir(), "test.db"), "test")
+	withWispTestGlobals(t, store, context.Background())
+	varFlags := []string{"fanout=false"}
+	for _, tt := range []struct {
+		name    string
+		run     func(*cobra.Command, []string) error
+		command *cobra.Command
+	}{
+		{"pour", runPour, makePourVarTestCmd(varFlags)},
+		{"wisp", runWispCreateCore, makeWispVarTestCmd(varFlags)},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			var runErr error
+			stderr := captureStderr(t, func() { runErr = tt.run(tt.command, []string{path}) })
+			if runErr == nil || !strings.Contains(stderr, `step "consumer": needs references "fanout"`) ||
+				strings.Contains(stderr, "not found as formula or proto") {
+				t.Fatalf("structural formula refusal = %v; stderr = %q", runErr, stderr)
+			}
+		})
+	}
+}

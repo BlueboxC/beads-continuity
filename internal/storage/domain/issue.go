@@ -86,7 +86,7 @@ type IssueSQLRepository interface {
 	Delete(ctx context.Context, id string, opts IssueTableOpts, actor string) error
 	DeleteByIDs(ctx context.Context, ids []string, opts IssueTableOpts, actor string) (int, error)
 	PartitionWispIDs(ctx context.Context, ids []string) (wispIDs, regularIDs []string, err error)
-	FindAllDependents(ctx context.Context, ids []string) ([]string, error)
+	FindCascadeClosure(ctx context.Context, ids []string) ([]string, error)
 	FindWispDependentsRecursive(ctx context.Context, ids []string) (map[string]bool, error)
 	AffectedByDeletion(ctx context.Context, issueIDs, wispIDs []string) (affectedIssues, affectedWisps []string, err error)
 	// RecomputeIsBlockedAfterDelete recomputes the blocked state of the
@@ -206,6 +206,7 @@ type CreateIssueParams struct {
 	ForcePrefix             bool
 	CreateOnly              bool
 	Comments                []*types.Comment
+	ClaimedIDs              map[string]bool
 }
 
 type DependencySpec struct {
@@ -943,7 +944,7 @@ func (u *issueUseCaseImpl) create(ctx context.Context, params CreateIssueParams,
 		}
 		issue.ID = childID
 	case issue.ID == "":
-		minted, err := u.mintTopLevelID(ctx, issue, actor, useWisp)
+		minted, err := u.mintTopLevelID(ctx, issue, actor, useWisp, params.ClaimedIDs)
 		if err != nil {
 			return CreateIssueResult{}, fmt.Errorf("create: mint top-level ID: %w", err)
 		}
@@ -1614,7 +1615,7 @@ func (u *issueUseCaseImpl) resolveTopLevelPrefix(ctx context.Context, issue *typ
 // issue_id_mode=counter); otherwise uses adaptive hash-mode IDs that mirror
 // issueops.GenerateIssueIDInTable. Reads issue.CreatedAt (caller must have
 // stabilized it before this call so retries hash the same value).
-func (u *issueUseCaseImpl) mintTopLevelID(ctx context.Context, issue *types.Issue, actor string, useWisp bool) (string, error) {
+func (u *issueUseCaseImpl) mintTopLevelID(ctx context.Context, issue *types.Issue, actor string, useWisp bool, claimed map[string]bool) (string, error) {
 	prefix, err := u.resolveTopLevelPrefix(ctx, issue, useWisp)
 	if err != nil {
 		return "", err
@@ -1629,11 +1630,20 @@ func (u *issueUseCaseImpl) mintTopLevelID(ctx context.Context, issue *types.Issu
 			return "", fmt.Errorf("read issue_id_mode: %w", err)
 		}
 		if mode == "counter" {
-			n, err := u.issueRepo.NextCounterID(ctx, prefix)
-			if err != nil {
-				return "", err
+			for {
+				n, err := u.issueRepo.NextCounterID(ctx, prefix)
+				if err != nil {
+					return "", err
+				}
+				candidate := fmt.Sprintf("%s-%d", prefix, n)
+				reserved, err := u.issueIDClaimed(ctx, candidate, claimed)
+				if err != nil {
+					return "", err
+				}
+				if !reserved {
+					return candidate, nil
+				}
 			}
-			return fmt.Sprintf("%s-%d", prefix, n), nil
 		}
 	}
 
@@ -1655,7 +1665,7 @@ func (u *issueUseCaseImpl) mintTopLevelID(ctx context.Context, issue *types.Issu
 	for length := baseLength; length <= cfg.MaxLength; length++ {
 		for nonce := 0; nonce < 10; nonce++ {
 			candidate := idgen.GenerateHashID(prefix, issue.Title, issue.Description, actor, issue.CreatedAt, length, nonce)
-			exists, err := u.issueRepo.Exists(ctx, candidate, tableOpts)
+			exists, err := u.issueIDClaimed(ctx, candidate, claimed)
 			if err != nil {
 				return "", err
 			}
@@ -1665,6 +1675,17 @@ func (u *issueUseCaseImpl) mintTopLevelID(ctx context.Context, issue *types.Issu
 		}
 	}
 	return "", fmt.Errorf("failed to generate unique ID for prefix %q after lengths %d..%d with 10 nonces each", prefix, baseLength, cfg.MaxLength)
+}
+
+func (u *issueUseCaseImpl) issueIDClaimed(ctx context.Context, id string, claimed map[string]bool) (bool, error) {
+	if claimed[id] {
+		return true, nil
+	}
+	exists, err := u.issueRepo.Exists(ctx, id, IssueTableOpts{})
+	if err != nil || exists {
+		return exists, err
+	}
+	return u.isWispID(ctx, id)
 }
 
 func (u *issueUseCaseImpl) CloseIssue(ctx context.Context, id string, params CloseIssueParams, actor string) (CloseIssueResult, error) {

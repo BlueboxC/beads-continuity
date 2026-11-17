@@ -249,3 +249,32 @@ func TestApplyHookMigrationRefusesSymlink(t *testing.T) {
 		t.Fatalf("expected symlink refusal, got: %v", err)
 	}
 }
+
+// Adapted from #8077. The existing file guard must also cover the destination
+// directory before the installer writes any fresh files.
+func TestGitHookInstallRefusesSymlinkDirectory(t *testing.T) {
+	repo := t.TempDir()
+	initGitRepoAt(t, repo)
+	t.Chdir(repo)
+	git.ResetCaches()
+	t.Cleanup(git.ResetCaches)
+
+	destination := t.TempDir()
+	hooksDir := filepath.Join(repo, ".git", "hooks")
+	if err := os.RemoveAll(hooksDir); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(destination, hooksDir); err != nil {
+		t.Skipf("symlink unavailable: %v", err)
+	}
+	if err := installHooksWithOptions([]string{"pre-commit"}, false, false, false, false); err == nil {
+		t.Error("installer accepted a symlinked destination directory")
+	}
+	entries, err := os.ReadDir(destination)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(entries) != 0 {
+		t.Errorf("installer wrote through the directory alias: %v", entries)
+	}
+}

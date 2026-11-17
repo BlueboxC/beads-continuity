@@ -30,6 +30,7 @@ import (
 	"sync"
 
 	"github.com/steveyegge/beads/internal/git"
+	"github.com/steveyegge/beads/internal/utils"
 )
 
 // UserRole represents the user's relationship to a repository.
@@ -125,11 +126,16 @@ func buildRepoContext() (*RepoContext, error) {
 		}
 	}
 
-	if isExternal {
-		// Beads dir is in a different repo - use that repo's root
-		repoRoot = repoRootForBeadsDir(beadsDir)
+	if isExternal || git.GetRepoRoot() == "" {
+		// Resolve through Git before pinning GIT_DIR. A non-Git project can
+		// select its parent directory, but discovery refusing a .git entry
+		// does not authorize bypassing Git's check.
+		var err error
+		repoRoot, err = externalRepoRoot(beadsDir)
+		if err != nil {
+			return nil, err
+		}
 	} else {
-		// Normal case - find repo root via git
 		var err error
 		repoRoot, err = git.GetMainRepoRoot()
 		if err != nil {
@@ -162,10 +168,40 @@ func isExternalBeadsDir(beadsDir string) (bool, error) {
 
 	beadsCommonDir, err := getGitCommonDirForPath(beadsDir)
 	if err != nil {
-		return false, err
+		return !beadsDirInCWDWorktree(beadsDir), nil
 	}
 
 	return cwdCommonDir != beadsCommonDir, nil
+}
+
+// beadsDirInCWDWorktree recognizes local storage and project .beads aliases
+// within the caller's working tree. A selected directory outside it belongs
+// to that project even when that project has no Git repository.
+func beadsDirInCWDWorktree(beadsDir string) bool {
+	root := git.GetRepoRoot()
+	if root == "" {
+		return false
+	}
+	if resolvedPathWithinRoot(beadsDir, root) {
+		return true
+	}
+
+	cwd, err := os.Getwd()
+	if err == nil {
+		for dir := cwd; resolvedPathWithinRoot(dir, root); dir = filepath.Dir(dir) {
+			if utils.PathsEqual(beadsDir, filepath.Join(dir, ".beads")) {
+				return true
+			}
+			if filepath.Dir(dir) == dir {
+				break
+			}
+		}
+	}
+	if git.IsWorktree() {
+		fallback := GetWorktreeFallbackBeadsDir()
+		return fallback != "" && utils.PathsEqual(beadsDir, fallback)
+	}
+	return false
 }
 
 // getGitCommonDirForPath returns the shared git directory for a path.
@@ -202,6 +238,21 @@ func repoRootForBeadsDir(beadsDir string) string {
 		return repoRoot
 	}
 	return filepath.Dir(beadsDir)
+}
+
+// externalRepoRoot accepts a non-Git selection without borrowing the caller's
+// repository. A .git entry that Git discovery refuses keeps its authority
+// decision rather than becoming an explicitly selected repository.
+func externalRepoRoot(beadsDir string) (string, error) {
+	root, gitErr := getRepoRootFromPath(beadsDir)
+	if gitErr == nil && root != "" {
+		return root, nil
+	}
+	parent := filepath.Dir(beadsDir)
+	if _, err := os.Lstat(filepath.Join(parent, ".git")); !os.IsNotExist(err) {
+		return "", fmt.Errorf("Git does not admit the selected Beads project's repository %q", parent)
+	}
+	return parent, nil
 }
 
 // getRepoRootFromPath returns the git repository root for a given path.
@@ -292,6 +343,7 @@ func ResetCaches() {
 	repoCtxOnce = sync.Once{}
 	repoCtx = nil
 	repoCtxErr = nil
+	skippedUserGlobalBeads.Store(nil)
 }
 
 // unsafePrefixes lists system directories that BEADS_DIR should never point to.

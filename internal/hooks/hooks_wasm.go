@@ -29,8 +29,7 @@ func (*Runner) runHook(hookPath, event string, issue *types.Issue) (retErr error
 	)
 	defer func() {
 		if retErr != nil {
-			span.RecordError(retErr)
-			span.SetStatus(codes.Error, retErr.Error())
+			span.SetStatus(codes.Error, "")
 		}
 		span.End()
 	}()

@@ -12,6 +12,8 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/steveyegge/beads/internal/atomicfile"
+
 	"gopkg.in/yaml.v3"
 )
 
@@ -134,12 +136,27 @@ func ValidateSyncedConfigKey(key string) error {
 	return nil
 }
 
+// CanonicalCommandSettingKey returns the operator-only command key's canonical
+// spelling. Other settings retain their original spelling and case.
+func CanonicalCommandSettingKey(key string) string {
+	normalized := strings.ReplaceAll(strings.ReplaceAll(strings.ToLower(strings.TrimSpace(key)), "_", "."), "-", ".")
+	if normalized == "mail.delegate" {
+		return normalized
+	}
+	return key
+}
+
+// IsCommandSettingKey identifies settings containing an executable command.
+func IsCommandSettingKey(key string) bool {
+	return CanonicalCommandSettingKey(key) == "mail.delegate"
+}
+
 // IsYamlOnlyKey returns true if the given key should be stored in config.yaml
 // rather than the Dolt database.
 func IsYamlOnlyKey(key string) bool {
 	key = strings.ToLower(strings.TrimSpace(key))
 	// Check exact match
-	if YamlOnlyKeys[key] || IsLocalEndpointKey(key) {
+	if YamlOnlyKeys[key] || IsLocalEndpointKey(key) || IsCommandSettingKey(key) {
 		return true
 	}
 
@@ -333,7 +350,7 @@ var userGlobalKeyPrefixes = []string{"metrics."}
 var userGlobalExactKeys = map[string]bool{"node_id": true}
 
 func IsUserGlobalKey(key string) bool {
-	if userGlobalExactKeys[key] {
+	if userGlobalExactKeys[key] || IsCommandSettingKey(key) {
 		return true
 	}
 	for _, prefix := range userGlobalKeyPrefixes {
@@ -509,7 +526,7 @@ func yamlScalarString(v interface{}) (string, bool) {
 // value that actually governs runtime behavior, not the merged value a project's
 // .beads/config.yaml could shadow.
 func GetUserYamlConfig(key string) string {
-	raw, _ := readUserGlobalYamlValue(key)
+	raw, _ := readUserGlobalYamlValue(CanonicalCommandSettingKey(key))
 	return strings.TrimSpace(raw)
 }
 
@@ -557,6 +574,7 @@ func MetricsNoticeShownByUserConfig() bool {
 }
 
 func UnsetUserYamlConfig(key string) error {
+	key = CanonicalCommandSettingKey(key)
 	configPath, err := UserConfigYamlPath()
 	if err != nil {
 		return err
@@ -583,8 +601,8 @@ func UnsetUserYamlConfig(key string) error {
 
 	// Preserve the owner-private 0600 posture every other user-global writer
 	// uses (SetUserYamlConfig, setYamlConfigAtPath, the metrics bootstrap);
-	// rewriting at 0644 would relax this shared user config to world-readable.
-	if err := os.WriteFile(configPath, []byte(newContent), 0o600); err != nil { //nolint:gosec // configPath is from UserConfigYamlPath
+	// atomic replacement preserves the permissions of the existing file.
+	if err := writeConfigYaml(configPath, []byte(newContent)); err != nil {
 		return fmt.Errorf("failed to write user config.yaml: %w", err)
 	}
 
@@ -592,6 +610,7 @@ func UnsetUserYamlConfig(key string) error {
 }
 
 func SetUserYamlConfig(key, value string) error {
+	key = CanonicalCommandSettingKey(key)
 	if err := validateYamlConfigValue(key, value); err != nil {
 		return err
 	}
@@ -626,11 +645,43 @@ func setYamlConfigAtPath(configPath, key, value string) error {
 	}
 
 	// Write back
-	if err := os.WriteFile(configPath, []byte(newContent), 0600); err != nil { //nolint:gosec // configPath is validated
+	if err := writeConfigYaml(configPath, []byte(newContent)); err != nil {
 		return fmt.Errorf("failed to write config.yaml: %w", err)
 	}
 
 	return nil
+}
+
+// writeConfigYaml replaces an existing YAML file in one step. Resolve the
+// supported configuration symlink, preserve target permissions and honor a
+// read-only target before attempting a directory-level replacement.
+func writeConfigYaml(configPath string, content []byte) error {
+	_, err := os.Lstat(configPath)
+	if os.IsNotExist(err) {
+		return atomicfile.WriteFile(configPath, content, 0o600)
+	}
+	if err != nil {
+		return err
+	}
+	target, err := filepath.EvalSymlinks(configPath)
+	if err != nil {
+		return err
+	}
+	info, err := os.Stat(target)
+	if err != nil {
+		return err
+	}
+	if !info.Mode().IsRegular() {
+		return fmt.Errorf("config.yaml must be a regular file: %q", target)
+	}
+	file, err := os.OpenFile(target, os.O_WRONLY, 0) //nolint:gosec // target is resolved config.yaml
+	if err != nil {
+		return err
+	}
+	if err := file.Close(); err != nil {
+		return err
+	}
+	return atomicfile.WriteFile(target, content, info.Mode().Perm())
 }
 
 // GetYamlConfig gets a configuration value from config.yaml.
@@ -667,7 +718,7 @@ func UnsetYamlConfig(key string) error {
 		return err
 	}
 
-	if err := os.WriteFile(configPath, []byte(newContent), 0600); err != nil { //nolint:gosec // configPath is validated
+	if err := writeConfigYaml(configPath, []byte(newContent)); err != nil {
 		return fmt.Errorf("failed to write config.yaml: %w", err)
 	}
 

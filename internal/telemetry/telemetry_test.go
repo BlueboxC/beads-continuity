@@ -262,12 +262,12 @@ func TestBuildResource_ProcessAttributesBounded(t *testing.T) {
 	if err != nil {
 		t.Fatalf("buildResource: %v", err)
 	}
-	for _, key := range []string{"process.command_args", "process.command_line", "process.owner"} {
+	for _, key := range []string{"process.command_args", "process.command_line", "process.owner", "process.executable.path"} {
 		if _, ok := lookupAttr(res.Attributes(), key); ok {
 			t.Errorf("%s present, want absent", key)
 		}
 	}
-	for _, key := range []string{"process.pid", "process.executable.name", "process.executable.path", "process.runtime.name", "process.runtime.version", "process.runtime.description"} {
+	for _, key := range []string{"process.pid", "process.executable.name", "process.runtime.name", "process.runtime.version", "process.runtime.description"} {
 		if _, ok := lookupAttr(res.Attributes(), key); !ok {
 			t.Errorf("%s missing", key)
 		}

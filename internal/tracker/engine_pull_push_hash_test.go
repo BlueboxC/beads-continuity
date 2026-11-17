@@ -135,3 +135,34 @@ func TestPullHashCreateUsesAssignedLocalID(t *testing.T) {
 		})
 	}
 }
+
+// Adapted from gascity-eddie's upstream PR #8004. A pull with no usable hash
+// must clear a stale entry even when it has no issue fields to write.
+func TestPullClearsOldPushHashWithoutFingerprint(t *testing.T) {
+	ctx := context.Background()
+	ref := "https://test.test/EXT-1"
+	local := &types.Issue{
+		ID: "bd-1", Title: "common title", Status: types.StatusOpen,
+		Priority: 2, IssueType: types.TypeTask, ExternalRef: &ref,
+	}
+	store := &pullFailureStore{pureTestStore: newPureTestStore(local), tx: &pullTestTransaction{issue: local}}
+	mock := newMockTracker("test")
+	mock.issues = []TrackerIssue{{ID: "EXT-1", Identifier: "EXT-1", Title: local.Title}}
+	engine := NewEngine(mock, store, "sync")
+	const key = "test.pushhash.bd-1"
+	store.localMetadata[key] = "older push hash"
+
+	if _, err := engine.Sync(ctx, SyncOptions{Pull: true, DryRun: true}); err != nil {
+		t.Fatal(err)
+	}
+	if got := store.localMetadata[key]; got != "older push hash" {
+		t.Fatalf("dry run changed the fingerprint to %q", got)
+	}
+	result, err := engine.Sync(ctx, SyncOptions{Pull: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := store.localMetadata[key]; got != "" || result.PullStats.Updated != 0 || store.commits != 0 {
+		t.Fatalf("after equivalent pull: hash=%q pull=%+v commits=%d, want no stale hash or issue update", got, result.PullStats, store.commits)
+	}
+}

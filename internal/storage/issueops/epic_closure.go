@@ -29,6 +29,9 @@ func GetEpicsEligibleForClosureInTx(ctx context.Context, tx DBTX) ([]*types.Epic
 		epicIDs = append(epicIDs, id)
 	}
 	epicRows.Close()
+	if err := epicRows.Err(); err != nil {
+		return nil, fmt.Errorf("get epics eligible for closure: epic rows: %w", err)
+	}
 
 	if len(epicIDs) == 0 {
 		return nil, nil
@@ -64,6 +67,9 @@ func GetEpicsEligibleForClosureInTx(ctx context.Context, tx DBTX) ([]*types.Epic
 			}
 		}
 		depRows.Close()
+		if err := depRows.Err(); err != nil {
+			return nil, fmt.Errorf("get epics eligible for closure: parent-child dep rows from %s: %w", depTable, err)
+		}
 	}
 
 	// Step 3: Batch-fetch statuses for all child issues across all epics
@@ -100,6 +106,9 @@ func GetEpicsEligibleForClosureInTx(ctx context.Context, tx DBTX) ([]*types.Epic
 					childStatusMap[id] = status
 				}
 				statusRows.Close()
+				if err := statusRows.Err(); err != nil {
+					return nil, fmt.Errorf("get epics eligible for closure: child status rows from %s: %w", table, err)
+				}
 			}
 		}
 	}

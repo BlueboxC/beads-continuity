@@ -363,9 +363,9 @@ func runBackupRestoreProxied(ctx context.Context, dir string, force bool) error 
 	if err != nil {
 		return HandleErrorRespectJSON("%v", err)
 	}
-	backupURL, err := versioncontrolops.DirToFileURL(dir)
+	backupURL, err := versioncontrolops.RestoreSourceURL(dir)
 	if err != nil {
-		return HandleErrorRespectJSON("%v", err)
+		return err
 	}
 
 	// Ask the live provider which database to replace before taking it away.

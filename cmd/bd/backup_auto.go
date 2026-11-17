@@ -93,6 +93,10 @@ func backupAutoStatusNote(enabled bool) string {
 // by mode inference — the operator's intent is unambiguous from the
 // effective host value alone.
 func clientServerShareFilesystem() bool {
+	return configfile.IsLocalHostString(backupServerHost())
+}
+
+func backupServerHost() string {
 	host := os.Getenv("BEADS_DOLT_SERVER_HOST")
 	if host == "" {
 		if bd := beads.FindBeadsDir(); bd != "" {
@@ -111,7 +115,7 @@ func clientServerShareFilesystem() bool {
 		// Fall back to in-struct config (config.yaml dolt.host etc.).
 		host = config.GetString("dolt.host")
 	}
-	return configfile.IsLocalHostString(host)
+	return host
 }
 
 // autoBackupSkipNoticeOnce ensures the "auto-backup skipped" INFO

@@ -261,6 +261,12 @@ func selectProbeDatabase(ctx context.Context, conn schema.DBConn, database strin
 	return quoted, nil
 }
 
+// migrateUpWithLock is schema.MigrateUpWithLock, declared as a variable so a
+// test can stand in for its converged fast path — which issues no statement a
+// test could script without coupling to schema-private SQL. The same seam
+// pattern as dolt.ensureRunningDetailed / dolt.dialServer.
+var migrateUpWithLock = schema.MigrateUpWithLock
+
 func (p *doltSQLProvider) initSchema(ctx context.Context, database string) error {
 	bo := backoff.NewExponentialBackOff()
 	bo.InitialInterval = 25 * time.Millisecond
@@ -296,7 +302,12 @@ func (p *doltSQLProvider) initSchemaAttempt(ctx context.Context, database string
 	if p.preview {
 		return p.attachPreviewDatabase(ctx, conn, database)
 	}
-	if _, err := schema.MigrateUpWithLock(ctx, conn, database,
+	// driftAsked records that the migration gate below already ran
+	// schema.CheckForwardDrift on this attempt, so the check after the call
+	// does not read the version (or print the BD_IGNORE_SCHEMA_SKEW warning)
+	// twice. Per attempt: a retry asks again.
+	driftAsked := false
+	if _, err := migrateUpWithLock(ctx, conn, database,
 		schema.WithDatabaseSelector(selectProbeDatabase),
 		schema.WithLockedPreparation(p.serverEndpoint, preparer.prepare),
 		// This provider serves a shared database by definition — an external
@@ -308,8 +319,20 @@ func (p *doltSQLProvider) initSchemaAttempt(ctx context.Context, database string
 		// ever reached. Preparation has already CREATEd and USEd the
 		// database by the time it runs, so a fresh bootstrap reads version 0
 		// and passes.
+		//
+		// Forward drift is asked here too, after the shared-store check passes
+		// (gastownhall/beads#8121). That check finds nothing pending on a
+		// database AHEAD of this binary and lets it through, and MigrateUp
+		// then seeds dolt_ignore and reconciles before deciding it has no
+		// work — writes into the newer schema. Asking inside the gate refuses
+		// before the first of them. A behind database the shared-store check
+		// refuses (or reads through) never reaches this read.
 		schema.WithMigrationGate(func(ctx context.Context, c *sql.Conn) error {
-			return schema.CheckSharedStoreMigrateGate(ctx, c, "", nil, dataBehindAdopter(p.readOnly))
+			if err := schema.CheckSharedStoreMigrateGate(ctx, c, "", nil, dataBehindAdopter(p.readOnly)); err != nil {
+				return err
+			}
+			driftAsked = true
+			return schema.CheckForwardDrift(ctx, c)
 		})); err != nil {
 		var gateErr *schema.RemoteMigrateGateError
 		if errors.As(err, &gateErr) {
@@ -329,9 +352,50 @@ func (p *doltSQLProvider) initSchemaAttempt(ctx context.Context, database string
 			// would be an attempt to perform the migration it just refused.
 			return backoff.Permanent(gateErr)
 		}
+		// A forward-drift refusal from the gate is permanent even when the
+		// lock release also failed: that failure wraps it in a migration-lock
+		// error, which classifyInitSchemaError would retry. The whole error
+		// is kept, so both stay reachable.
+		if schema.IsSchemaSkewError(err) {
+			return backoff.Permanent(err)
+		}
 		return classifyInitSchemaError(err)
 	}
-	return nil
+	if driftAsked {
+		return nil
+	}
+	// Forward drift (gastownhall/beads#8121) on the paths that did not run the
+	// gate: the converged fast path, which returns before the lock, and a fresh
+	// bootstrap, whose capability skips the gate. The fast path answers
+	// "converged" for a database AHEAD of this binary
+	// (schema.TestAlreadyConvergedOnForwardSkew): whether this binary may use
+	// that schema is the caller's question, and every other open path asks it
+	// with schema.CheckForwardDrift. Ask it on the session MigrateUpWithLock
+	// left on the database, so an older bd refuses a newer schema rather than
+	// reading and writing it unawares. The converged fast path wrote nothing
+	// to get here; a fresh bootstrap has just migrated its own new database to
+	// latest, so the check passes there.
+	return checkProxiedForwardDrift(ctx, conn)
+}
+
+// checkProxiedForwardDrift runs schema.CheckForwardDrift for initSchemaAttempt
+// and classifies the result for backoff: a skew refusal is permanent (a retry
+// would read the same version and refuse again), a serialization failure is
+// retried, anything else is terminal — the same split verifyTeamServerSchema
+// uses. BD_IGNORE_SCHEMA_SKEW=1 is honored inside CheckForwardDrift, with its
+// usual warning.
+func checkProxiedForwardDrift(ctx context.Context, conn *sql.Conn) error {
+	err := schema.CheckForwardDrift(ctx, conn)
+	switch {
+	case err == nil:
+		return nil
+	case schema.IsSchemaSkewError(err):
+		return backoff.Permanent(err)
+	case isSerializationError(err):
+		return fmt.Errorf("uow: forward-drift check: %w", err)
+	default:
+		return backoff.Permanent(fmt.Errorf("uow: forward-drift check: %w", err))
+	}
 }
 
 // dataBehindAdopter injects the one ancestry fact the smart gate's #6575
@@ -718,12 +782,54 @@ func isTransientPingError(err error) bool {
 		errors.As(err, &opErr)
 }
 
+// upstreamOutageRetryWindow is how long pingWithRetry keeps retrying the db
+// proxy's report that its external upstream is unreachable (refused, socket
+// gone, or closed before the greeting; see dbproxy/proxy/upstream_error.go).
+// Long enough to ride out an endpoint that is flapping or rebinding (a Dolt
+// restart, a front whose target is being replaced, a server briefly at its
+// connection limit), short enough that a real outage fails within a couple of
+// seconds instead of spending the full 30s bootstrap budget on a dead
+// upstream. A var so tests can shorten it.
+var upstreamOutageRetryWindow = time.Second
+
+// outageWindowBackOff clamps the wait after an upstream-outage report so it
+// does not run past the end of upstreamOutageRetryWindow, measured from the
+// first report: the last attempt lands at the window's end rather than up to
+// one backoff interval after it. Only the wait that follows an outage report
+// is clamped. A wait after any other transient error keeps the wrapped
+// backoff's own interval; clamping it to a deadline that has already passed
+// would make it zero and spin the retry loop at CPU rate (#7183).
+type outageWindowBackOff struct {
+	backoff.BackOff
+	deadline time.Time // zero until the first upstream-outage report
+	armClamp bool      // the failure this wait follows was an outage report
+}
+
+func (b *outageWindowBackOff) NextBackOff() time.Duration {
+	d := b.BackOff.NextBackOff()
+	clamp := b.armClamp
+	b.armClamp = false
+	if d == backoff.Stop || b.deadline.IsZero() || !clamp {
+		return d
+	}
+	if remaining := time.Until(b.deadline); remaining < d {
+		return max(remaining, 0)
+	}
+	return d
+}
+
 // pingWithRetry pings until the server answers, the error proves durable, or
-// bo's MaxElapsedTime is spent. Each attempt gets its own deadline:
-// backoff.Retry bounds the gap between attempts but cannot interrupt one
-// already in flight, so without this cap a server that accepts TCP and then
-// stalls blocks for the caller's entire context.
+// the wrapped backoff's budget stops fitting another wait — an upper bound,
+// not a promise to keep retrying for all of MaxElapsedTime. Each attempt gets
+// its own deadline: backoff.Retry bounds the gap between attempts but cannot
+// interrupt one already in flight, so without this cap a server that accepts
+// TCP and then stalls blocks for the caller's entire context. The db proxy's
+// upstream-outage report is retried only for upstreamOutageRetryWindow from
+// the first time it is seen, and only the wait right after such a report is
+// clamped to that window; waits after ordinary transient errors keep the
+// wrapped backoff's own intervals.
 func pingWithRetry(ctx context.Context, p pinger, bo *backoff.ExponentialBackOff, attemptTimeout time.Duration) error {
+	window := &outageWindowBackOff{BackOff: bo}
 	return backoff.Retry(func() error {
 		attemptCtx, cancel := context.WithTimeout(ctx, attemptTimeout)
 		defer cancel()
@@ -739,11 +845,21 @@ func pingWithRetry(ctx context.Context, p pinger, bo *backoff.ExponentialBackOff
 		if ctx.Err() != nil {
 			return backoff.Permanent(err)
 		}
+		if proxy.IsUpstreamOutageError(err) {
+			if window.deadline.IsZero() {
+				window.deadline = time.Now().Add(upstreamOutageRetryWindow)
+			}
+			if !time.Now().Before(window.deadline) {
+				return backoff.Permanent(err)
+			}
+			window.armClamp = true
+			return err
+		}
 		if isTransientPingError(err) {
 			return err
 		}
 		return backoff.Permanent(err)
-	}, backoff.WithContext(bo, ctx))
+	}, backoff.WithContext(window, ctx))
 }
 
 // assertSessionDatabaseOnPool runs assertSessionDatabase on a connection pinned

@@ -2,12 +2,14 @@
 package doctor
 
 import (
+	"context"
 	"database/sql"
 	"encoding/json"
 	"fmt"
 	"os"
 	"strings"
 
+	"github.com/steveyegge/beads/cmd/bd/doctor/fix"
 	"github.com/steveyegge/beads/internal/configfile"
 )
 
@@ -122,6 +124,10 @@ func RunDeepValidation(path string) DeepValidationResult {
 	return result
 }
 
+// deepBrokenDepCap is how many broken edges the --deep dependency checks
+// collect, as their former SQL LIMIT 10 did.
+const deepBrokenDepCap = 10
+
 // checkParentConsistency verifies that all parent-child dependencies point to existing issues
 func checkParentConsistency(db *sql.DB) DoctorCheck {
 	check := DoctorCheck{
@@ -129,10 +135,27 @@ func checkParentConsistency(db *sql.DB) DoctorCheck {
 		Category: CategoryMetadata,
 	}
 
-	// Find parent-child deps where either side doesn't exist
+	// Read the held prefixes before the query opens its rows: the pool can
+	// be a single connection.
+	issuePrefix, allowedPrefixes, err := fix.LoadDepTargetPrefixes(context.Background(), db)
+	if err != nil {
+		check.Status = StatusWarning
+		check.Message = "Unable to check parent consistency"
+		check.Detail = err.Error()
+		return check
+	}
+
+	// Find parent-child deps where either side doesn't exist. A missing
+	// source is always broken; a missing target is skipped in Go when it is
+	// one this database cannot verify (fix.IsUnverifiableDepTarget). The
+	// 10-row cap is applied after that filter, so exempt rows cannot fill it
+	// and hide a broken one.
 	//nolint:gosec // G202: doctorDependencyUnionSQL returns a fixed internal SELECT fragment.
 	query := `
-		SELECT d.issue_id, d.depends_on_id
+		SELECT d.issue_id, d.depends_on_id,
+		  CASE WHEN (d.dep_table = 'dependencies' AND NOT EXISTS (SELECT 1 FROM issues WHERE id = d.issue_id))
+		    OR (d.dep_table = 'wisp_dependencies' AND NOT EXISTS (SELECT 1 FROM wisps WHERE id = d.issue_id))
+		  THEN 1 ELSE 0 END AS source_missing
 		FROM (` + doctorDependencyUnionSQL() + `) d
 		WHERE d.type = 'parent-child'
 		  AND (
@@ -142,8 +165,7 @@ func checkParentConsistency(db *sql.DB) DoctorCheck {
 		      NOT EXISTS (SELECT 1 FROM issues WHERE id = d.depends_on_id)
 		      AND NOT EXISTS (SELECT 1 FROM wisps WHERE id = d.depends_on_id)
 		    )
-		  )
-		LIMIT 10`
+		  )`
 
 	rows, err := db.Query(query)
 	if err != nil {
@@ -155,9 +177,13 @@ func checkParentConsistency(db *sql.DB) DoctorCheck {
 	defer rows.Close()
 
 	var orphanedDeps []string
-	for rows.Next() {
+	for len(orphanedDeps) < deepBrokenDepCap && rows.Next() {
 		var issueID, parentID string
-		if err := rows.Scan(&issueID, &parentID); err == nil {
+		var sourceMissing int
+		if err := rows.Scan(&issueID, &parentID, &sourceMissing); err == nil {
+			if sourceMissing == 0 && fix.IsUnverifiableDepTarget(issueID, parentID, issuePrefix, allowedPrefixes) {
+				continue
+			}
 			orphanedDeps = append(orphanedDeps, fmt.Sprintf("%s→%s", issueID, parentID))
 		}
 	}
@@ -188,10 +214,26 @@ func checkDependencyIntegrity(db *sql.DB) DoctorCheck {
 		Category: CategoryMetadata,
 	}
 
-	// Find any deps where either side is missing
+	// Read the held prefixes before the query opens its rows: the pool can
+	// be a single connection.
+	issuePrefix, allowedPrefixes, err := fix.LoadDepTargetPrefixes(context.Background(), db)
+	if err != nil {
+		check.Status = StatusWarning
+		check.Message = "Unable to check dependency integrity"
+		check.Detail = err.Error()
+		return check
+	}
+
+	// Find any deps where either side is missing. A missing source is always
+	// broken; a missing target is skipped in Go when it is one this database
+	// cannot verify (fix.IsUnverifiableDepTarget). The 10-row cap is applied
+	// after that filter, so exempt rows cannot fill it and hide a broken one.
 	//nolint:gosec // G202: doctorDependencyUnionSQL returns a fixed internal SELECT fragment.
 	query := `
-		SELECT d.issue_id, d.depends_on_id, d.type
+		SELECT d.issue_id, d.depends_on_id, d.type,
+		  CASE WHEN (d.dep_table = 'dependencies' AND NOT EXISTS (SELECT 1 FROM issues WHERE id = d.issue_id))
+		    OR (d.dep_table = 'wisp_dependencies' AND NOT EXISTS (SELECT 1 FROM wisps WHERE id = d.issue_id))
+		  THEN 1 ELSE 0 END AS source_missing
 		FROM (` + doctorDependencyUnionSQL() + `) d
 		WHERE (
 		    (d.dep_table = 'dependencies' AND NOT EXISTS (SELECT 1 FROM issues WHERE id = d.issue_id))
@@ -201,8 +243,7 @@ func checkDependencyIntegrity(db *sql.DB) DoctorCheck {
 		      AND NOT EXISTS (SELECT 1 FROM issues WHERE id = d.depends_on_id)
 		      AND NOT EXISTS (SELECT 1 FROM wisps WHERE id = d.depends_on_id)
 		    )
-		  )
-		LIMIT 10`
+		  )`
 
 	rows, err := db.Query(query)
 	if err != nil {
@@ -214,9 +255,13 @@ func checkDependencyIntegrity(db *sql.DB) DoctorCheck {
 	defer rows.Close()
 
 	var brokenDeps []string
-	for rows.Next() {
+	for len(brokenDeps) < deepBrokenDepCap && rows.Next() {
 		var issueID, dependsOnID, depType string
-		if err := rows.Scan(&issueID, &dependsOnID, &depType); err == nil {
+		var sourceMissing int
+		if err := rows.Scan(&issueID, &dependsOnID, &depType, &sourceMissing); err == nil {
+			if sourceMissing == 0 && fix.IsUnverifiableDepTarget(issueID, dependsOnID, issuePrefix, allowedPrefixes) {
+				continue
+			}
 			brokenDeps = append(brokenDeps, fmt.Sprintf("%s→%s (%s)", issueID, dependsOnID, depType))
 		}
 	}

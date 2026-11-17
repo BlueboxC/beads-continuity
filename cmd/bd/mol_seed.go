@@ -1,13 +1,11 @@
 package main
 
 import (
-	"errors"
 	"fmt"
 	"strings"
 
 	"github.com/spf13/cobra"
 
-	"github.com/steveyegge/beads/internal/formula"
 	"github.com/steveyegge/beads/internal/metrics"
 )
 
@@ -78,7 +76,7 @@ func verifyFormula(formulaName string, vars map[string]string) error {
 	// 4. Formula can be cooked to subgraph
 	_, err := resolveAndCookFormulaWithVars(formulaName, nil, vars)
 	if err != nil {
-		if errors.Is(err, formula.ErrVarValidation) {
+		if isFormulaValidationError(err) {
 			// Don't double-wrap: the --var values fail enum/pattern/
 			// required-empty constraints, which is a distinct condition
 			// from the formula itself being inaccessible.

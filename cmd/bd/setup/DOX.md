@@ -33,6 +33,8 @@ Install four read-only context handlers and three separate opt-in activity handl
 
 SessionStart matches startup, resume, clear and compact. Native manual/automatic compaction delivers context before the next model request; successful delivery consumes the pending refresh, retaining next-prompt recovery only as a fallback.
 
+- Validate every workspace recipe path before checking, installing or removing files. Reject paths or symlink resolutions that leave the setup directory. Recipe addition validates before saving; built-in paths retain their existing behavior.
+
 ## Verification
 
 Use the affected existing checks selected in engdocs/TESTING.md; verify indexed child contracts.

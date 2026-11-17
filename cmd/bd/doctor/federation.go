@@ -310,12 +310,19 @@ func checkRemotesAPIListener(beadsDir string, pid int) DoctorCheck {
 	// Server is running and peers are configured - check if remotesapi port is accessible.
 	// Read port from config instead of hardcoding 8080.
 	remotesAPIPort := configfile.DefaultDoltRemotesAPIPort
+	host := "127.0.0.1"
 	if cfg, err := configfile.Load(beadsDir); err == nil && cfg != nil {
 		remotesAPIPort = cfg.GetDoltRemotesAPIPort()
+		if pid <= 0 {
+			// A server found by probing can be external. Use the same
+			// configured SQL endpoint when checking its remotes service.
+			endpoint := doltServerConfig(beadsDir, filepath.Join(beadsDir, "dolt"))
+			if endpoint.ServerHost != "" {
+				host = endpoint.ServerHost
+			}
+		}
 	}
-	host := "127.0.0.1"
-
-	addr := net.JoinHostPort(host, fmt.Sprintf("%d", remotesAPIPort))
+	addr := doltutil.ServerAddr(host, remotesAPIPort)
 	// Left as a bare dial+close (no doltserver.ProbeSQLServer): remotesapi
 	// speaks gRPC/HTTP, not the MySQL protocol, so there is no handshake
 	// greeting to drain here.

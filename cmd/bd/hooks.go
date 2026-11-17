@@ -15,6 +15,7 @@ import (
 	"github.com/steveyegge/beads/internal/config"
 	"github.com/steveyegge/beads/internal/debug"
 	"github.com/steveyegge/beads/internal/git"
+
 	"github.com/steveyegge/beads/internal/metrics"
 	"github.com/steveyegge/beads/internal/ui"
 	"github.com/steveyegge/beads/internal/utils"
@@ -802,6 +803,26 @@ var hooksListCmd = &cobra.Command{
 	},
 }
 
+// refuseSymlinkedHooksDir checks the destination name before touching any
+// managed hooks. An alias above the directory remains supported.
+func refuseSymlinkedHooksDir(hooksDir string) error {
+	hooksDir = filepath.Clean(hooksDir)
+	info, err := os.Lstat(hooksDir)
+	if os.IsNotExist(err) {
+		return nil
+	}
+	if err != nil {
+		return fmt.Errorf("stat hooks directory %s: %w", printedValue(hooksDir), err)
+	}
+	if info.Mode()&os.ModeSymlink != 0 {
+		return fmt.Errorf("hooks directory %s is a symlink; select a real directory", printedValue(hooksDir))
+	}
+	if !info.IsDir() {
+		return fmt.Errorf("hooks directory %s is not a directory", printedValue(hooksDir))
+	}
+	return nil
+}
+
 // guardHookWritePath refuses hook writes that would silently modify files
 // bd does not own (bd-5vdt8):
 //   - a symlinked hook path: os.WriteFile follows the link (O_TRUNC) and
@@ -811,6 +832,9 @@ var hooksListCmd = &cobra.Command{
 //     allowTracked exempts shared installs (.beads-hooks/ is deliberately
 //     committed).
 func guardHookWritePath(hookPath string, allowTracked bool) error {
+	if err := refuseSymlinkedHooksDir(filepath.Dir(hookPath)); err != nil {
+		return err
+	}
 	fi, err := os.Lstat(hookPath)
 	if err != nil {
 		if os.IsNotExist(err) {
@@ -826,6 +850,9 @@ func guardHookWritePath(hookPath string, allowTracked bool) error {
 			target = link
 		}
 		return fmt.Errorf("%s is a symlink to %s; writing would rewrite the link target, not the hook\nRemove the symlink (or leave that hook to its owner) and re-run", hookPath, target)
+	}
+	if !fi.Mode().IsRegular() {
+		return fmt.Errorf("hook %s is not a regular file", printedValue(hookPath))
 	}
 	if allowTracked {
 		return nil
@@ -904,6 +931,15 @@ func installHooksWithOptions(hookNames []string, force bool, shared bool, chain 
 		fmt.Fprintf(os.Stderr, "Note: linked worktree: writing this worktree's tracked copy %s; Git runs %s until the change reaches that checkout\n", hooksDir, configuredDir)
 	}
 
+	if err := refuseSymlinkedHooksDir(hooksDir); err != nil {
+		return fmt.Errorf("refusing to install hooks: %w", err)
+	}
+	if (beadsHooks || shared) && filepath.Clean(configuredDir) != filepath.Clean(hooksDir) {
+		if err := refuseSymlinkedHooksDir(configuredDir); err != nil {
+			return fmt.Errorf("refusing to configure Git hooks: %w", err)
+		}
+	}
+
 	// Create hooks directory if it doesn't exist.
 	// Directories inside .beads/ use BeadsDirPerm (0700); git-managed hook
 	// dirs (.git/hooks, .beads-hooks) use 0755 so git can execute them.
@@ -915,20 +951,20 @@ func installHooksWithOptions(hookNames []string, force bool, shared bool, chain 
 		return fmt.Errorf("failed to create hooks directory: %w", err)
 	}
 
-	// When setting a local core.hooksPath (beads or shared mode), preserve any
-	// hooks from the previously effective hooks directory (e.g. a global
-	// core.hooksPath or the default .git/hooks). Without this, setting a local
-	// core.hooksPath silently shadows the global one and those hooks stop running.
-	if beadsHooks || shared {
-		preservePreexistingHooks(hooksDir)
-	}
-
 	// Refuse the whole install up front if any target is unsafe to write —
 	// stopping midway through the loop would leave hooks half-installed.
 	for _, hookName := range hookNames {
 		if err := guardHookWritePath(filepath.Join(hooksDir, hookName), shared); err != nil {
 			return fmt.Errorf("refusing to install %s hook: %w", hookName, err)
 		}
+	}
+
+	// When setting a local core.hooksPath (beads or shared mode), preserve any
+	// hooks from the previously effective hooks directory (e.g. a global
+	// core.hooksPath or the default .git/hooks). Without this, setting a local
+	// core.hooksPath silently shadows the global one and those hooks stop running.
+	if beadsHooks || shared {
+		preservePreexistingHooks(hooksDir)
 	}
 
 	// Install each hook using section markers (GH#1380).
@@ -1455,8 +1491,22 @@ func effectiveUninstallHooksDir() (string, error) {
 }
 
 func removeHookShimsAt(hooksDir string) error {
+	if err := refuseSymlinkedHooksDir(hooksDir); err != nil {
+		return fmt.Errorf("refusing to uninstall hooks: %w", err)
+	}
 	for _, hookName := range managedHookNames {
 		hookPath := filepath.Join(hooksDir, hookName)
+		info, statErr := os.Lstat(hookPath)
+		if os.IsNotExist(statErr) {
+			continue
+		}
+		if statErr != nil {
+			return fmt.Errorf("stat hook %s: %w", printedValue(hookPath), statErr)
+		}
+		if !info.Mode().IsRegular() {
+			fmt.Fprintf(os.Stderr, "Warning: leaving non-regular hook %s in place\n", printedValue(hookPath))
+			continue
+		}
 
 		// #nosec G304 -- hook path constrained to .git/hooks directory
 		content, err := os.ReadFile(hookPath)
@@ -1491,12 +1541,15 @@ func removeHookShimsAt(hooksDir string) error {
 			if err := os.Remove(hookPath); err != nil {
 				return fmt.Errorf("failed to remove %s: %w", hookName, err)
 			}
-			// Restore backup if exists
 			backupPath := hookPath + ".backup"
-			if _, err := os.Stat(backupPath); err == nil {
-				if err := os.Rename(backupPath, hookPath); err != nil {
+			if backup, err := os.Lstat(backupPath); err == nil {
+				if !backup.Mode().IsRegular() {
+					fmt.Fprintf(os.Stderr, "Warning: leaving non-regular hook backup %s in place\n", printedValue(backupPath))
+				} else if err := os.Rename(backupPath, hookPath); err != nil {
 					fmt.Fprintf(os.Stderr, "Warning: failed to restore backup for %s: %v\n", hookName, err)
 				}
+			} else if !os.IsNotExist(err) {
+				fmt.Fprintf(os.Stderr, "Warning: failed to inspect hook backup for %s: %v\n", hookName, err)
 			}
 		}
 		// Not a bd hook at all — leave it alone
@@ -1728,17 +1781,24 @@ func exportJSONLForCommit() {
 // back into a modification, silently reviving a file the user intentionally
 // removed.
 //
-// Unlike preCommitHasStagedBeadsFiles and gitAddFile, this deliberately runs
-// git with the hook's inherited environment intact rather than scrubbing
-// GIT_* vars. GIT_INDEX_FILE is set during an actual commit and points at
-// the pending index — where the staged deletion lives — so scrubbing it
-// here would make git fall back to the on-disk index and miss the
-// deletion. Reimplements gastownhall/beads#3838 (ckumar1).
+// The pending commit index and the index that a pathspec commit will
+// install must both retain intentional staged deletions. Keep only index
+// routing that was validated for the export's own Git directory.
 func isExportFileStagedForDeletion(fullPath string) bool {
-	checkCmd := exec.Command("git", "diff", "--cached", "--diff-filter=D", "--name-only", "--", filepath.Base(fullPath))
-	checkCmd.Dir = filepath.Dir(fullPath)
-	out, _ := checkCmd.Output()
-	return len(out) > 0
+	dir := filepath.Dir(fullPath)
+	env, indexFile, err := gitIndexEnv(dir)
+	if err != nil {
+		debug.Logf("pre-commit: failed to resolve the commit index: %v\n", err)
+	}
+	for _, index := range stagingIndexes(indexFile) {
+		checkCmd := exec.Command("git", "diff", "--cached", "--diff-filter=D", "--name-only", "--", filepath.Base(fullPath))
+		checkCmd.Dir = dir
+		checkCmd.Env = envForIndex(env, indexFile, index)
+		if out, _ := checkCmd.Output(); len(out) > 0 {
+			return true
+		}
+	}
+	return false
 }
 
 func preCommitHasStagedBeadsFiles(beadsDir string) bool {
@@ -1748,7 +1808,11 @@ func preCommitHasStagedBeadsFiles(beadsDir string) bool {
 	}
 	cmd := exec.Command("git", "diff", "--cached", "--name-only", "--", ".beads")
 	cmd.Dir = cmdDir
-	cmd.Env = scrubGitHookEnv(os.Environ())
+	env, _, err := gitIndexEnv(cmdDir)
+	if err != nil {
+		debug.Logf("pre-commit: failed to resolve the commit index: %v\n", err)
+	}
+	cmd.Env = env
 	out, err := cmd.Output()
 	if err != nil {
 		debug.Logf("pre-commit: failed to inspect staged .beads paths: %v\n", err)

@@ -20,6 +20,8 @@ Root DOX.md and the parent chain remain binding.
 
 - Context server-port projections use the same DialConfig precedence as the store, including legacy environment fallback and authoritative configured ports.
 
+- Native create checks both issue planes and batch reservations when generating top-level IDs. Native delete cascade follows parent-child edges only and reports affected surviving dependents.
+
 ## Work Guidance
 
 Keep semantic contracts explicit and shared across backends. Empty-parent reparent requests for dotted IDs are refused before writing; preserve legacy implicit ancestry and explicit nonempty reparenting.

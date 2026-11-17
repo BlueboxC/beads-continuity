@@ -3,6 +3,7 @@ package dolt
 import (
 	"context"
 	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -188,6 +189,7 @@ func TestCLIRoutingFallsBackToSQLWhenNoCLIDir(t *testing.T) {
 // plus sqlmock for the empty server-side listing; no test server.
 func TestPrepareCLIRouteForGitProtocolColdStartWindow(t *testing.T) {
 	testutil.RequireDoltBinary(t)
+	clearPredicateEnv(t)
 	ctx := context.Background()
 
 	newColdStore := func(t *testing.T) *DoltStore {
@@ -204,14 +206,19 @@ func TestPrepareCLIRouteForGitProtocolColdStartWindow(t *testing.T) {
 			mock.ExpectQuery("SELECT name, url FROM dolt_remotes").
 				WillReturnRows(sqlmock.NewRows([]string{"name", "url"}))
 		}
+		const port = 3310
+		beadsDir := managedWorkspace(t, port)
 		store := &DoltStore{
 			serverMode: true,
-			dbPath:     t.TempDir(),
+			beadsDir:   beadsDir,
+			dbPath:     filepath.Join(beadsDir, "dolt"),
+			cfg:        &Config{ServerHost: "127.0.0.1", ServerPort: port},
 			database:   "testdb",
 			remote:     "origin",
 			db:         db,
 		}
 		initLocalDoltRepoForRemote(t, store.CLIDir())
+		markCLIDirServed(t, store.CLIDir(), port)
 		return store
 	}
 

@@ -2,13 +2,11 @@ package main
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"os"
 	"strings"
 	"time"
 
-	"github.com/steveyegge/beads/internal/formula"
 	"github.com/steveyegge/beads/internal/storage/domain"
 	"github.com/steveyegge/beads/internal/storage/uow"
 	"github.com/steveyegge/beads/internal/types"
@@ -37,7 +35,7 @@ func runWispCreateProxiedServer(ctx context.Context, in wispCreateInput) error {
 	if sg, err := resolveAndCookFormulaWithVars(in.protoArg, nil, vars); err == nil {
 		formulaSubgraph = sg
 		formulaProtoID = sg.Root.ID
-	} else if errors.Is(err, formula.ErrVarValidation) {
+	} else if isFormulaValidationError(err) {
 		// in.protoArg IS a formula; the --var values it was given fail
 		// enum/pattern/required-empty constraints. Report that directly
 		// instead of falling through to the proto-ID lookup below, which

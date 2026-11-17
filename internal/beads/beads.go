@@ -13,10 +13,12 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"os/user"
 	"path/filepath"
 	"sort"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/steveyegge/beads/internal/configfile"
@@ -447,6 +449,9 @@ func findLocalBeadsDir() string {
 
 	for dir := cwd; dir != "/" && dir != "."; {
 		beadsDir := filepath.Join(dir, ".beads")
+		if SkipImplicitUserGlobalBeadsDir(beadsDir) {
+			break
+		}
 		if info, err := os.Stat(beadsDir); err == nil && info.IsDir() {
 			return beadsDir
 		}
@@ -636,6 +641,9 @@ func FindBeadsDirFrom(startDir string) string {
 
 	for dir := startDir; dir != "/" && dir != "."; {
 		beadsDir := filepath.Join(dir, ".beads")
+		if SkipImplicitUserGlobalBeadsDir(beadsDir) {
+			break
+		}
 		if info, err := os.Stat(beadsDir); err == nil && info.IsDir() {
 			resolved := FollowRedirect(beadsDir)
 			isWorktreeRoot := repoRoot != "" && utils.PathsEqual(dir, repoRoot)
@@ -768,6 +776,66 @@ func ExplicitBeadsDir() string {
 	return FollowRedirect(canonicalizeBeadsDirPath(beadsDir))
 }
 
+// accountHomeDirectory falls back to the environment only if the operating
+// system cannot report the account's home.
+var accountHomeDirectory = func() string {
+	if u, err := user.Current(); err == nil && u.HomeDir != "" {
+		return utils.NormalizePathForComparison(u.HomeDir)
+	}
+	home, _ := os.UserHomeDir()
+	if home == "" {
+		return ""
+	}
+	return utils.NormalizePathForComparison(home)
+}
+
+var skippedUserGlobalBeads atomic.Pointer[string]
+
+// SkippedUserGlobalBeadsDir reports a user-global workspace that implicit
+// discovery actually skipped during the invocation.
+func SkippedUserGlobalBeadsDir() string {
+	if dir := skippedUserGlobalBeads.Load(); dir != nil {
+		return *dir
+	}
+	return ""
+}
+
+// AccountHomeDirectory returns the boundary for implicit workspace discovery.
+func AccountHomeDirectory() string { return accountHomeDirectory() }
+
+// SkipImplicitUserGlobalBeadsDir ignores a .beads in the account home unless
+// the home is itself a Git worktree root. Explicit paths bypass this check.
+func SkipImplicitUserGlobalBeadsDir(beadsDir string) bool {
+	home := AccountHomeDirectory()
+	if home == "" || !utils.PathsEqual(filepath.Dir(beadsDir), home) || filepath.Base(beadsDir) != ".beads" {
+		return false
+	}
+	// Require local Git discovery, independent of inherited Git selectors.
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	cmd := exec.CommandContext(ctx, "git", "rev-parse", "--show-toplevel")
+	cmd.Dir = filepath.Dir(beadsDir)
+	env := os.Environ()
+	cmd.Env = make([]string, 0, len(env))
+	for _, variable := range env {
+		key, _, _ := strings.Cut(variable, "=")
+		switch strings.ToUpper(key) {
+		case "GIT_DIR", "GIT_WORK_TREE", "GIT_COMMON_DIR", "GIT_PREFIX":
+			continue
+		}
+		cmd.Env = append(cmd.Env, variable)
+	}
+	gitRoot, err := cmd.Output()
+	if err == nil && utils.PathsEqual(strings.TrimSpace(string(gitRoot)), home) {
+		return false
+	}
+	if hasBeadsProjectFiles(beadsDir) {
+		physical := utils.CanonicalizePath(beadsDir)
+		skippedUserGlobalBeads.Store(&physical)
+	}
+	return true
+}
+
 // FindBeadsDir finds the .beads/ directory in the current directory tree.
 // Returns empty string if not found.
 //
@@ -864,6 +932,9 @@ func FindBeadsDir() string {
 		}
 
 		beadsDir := filepath.Join(dir, ".beads")
+		if SkipImplicitUserGlobalBeadsDir(beadsDir) {
+			break
+		}
 		if info, err := os.Stat(beadsDir); err == nil && info.IsDir() {
 			beadsDir = FollowRedirect(beadsDir)
 			if hasBeadsProjectFiles(beadsDir) {
@@ -1005,6 +1076,9 @@ func FindBeadsDir() string {
 
 		for dir := walkBoundaryCanonical; dir != "/" && dir != "."; {
 			beadsDir := filepath.Join(dir, ".beads")
+			if SkipImplicitUserGlobalBeadsDir(beadsDir) {
+				break
+			}
 			if info, err := os.Stat(beadsDir); err == nil && info.IsDir() {
 				beadsDir = FollowRedirect(beadsDir)
 				if hasBeadsProjectFiles(beadsDir) {
@@ -1188,7 +1262,7 @@ func findDatabaseInTree() string {
 			(isJJSecondary && dir == utils.CanonicalizePath(jjSecondaryRoot))
 		if !skipCwdCheck {
 			cwdBeadsDir := filepath.Join(dir, ".beads")
-			if info, err := os.Stat(cwdBeadsDir); err == nil && info.IsDir() {
+			if info, err := os.Stat(cwdBeadsDir); err == nil && info.IsDir() && !SkipImplicitUserGlobalBeadsDir(cwdBeadsDir) {
 				cwdBeadsDir = FollowRedirect(cwdBeadsDir)
 				if dbPath := findDatabaseInBeadsDir(cwdBeadsDir, true); dbPath != "" {
 					return dbPath
@@ -1282,6 +1356,9 @@ func findDatabaseInTree() string {
 	// Walk up directory tree (regular repository or worktree fallback)
 	for {
 		beadsDir := filepath.Join(dir, ".beads")
+		if SkipImplicitUserGlobalBeadsDir(beadsDir) {
+			break
+		}
 		if info, err := os.Stat(beadsDir); err == nil && info.IsDir() {
 			// Follow redirect if present
 			beadsDir = FollowRedirect(beadsDir)
@@ -1332,6 +1409,9 @@ func FindAllDatabases() []DatabaseInfo {
 	// Walk up directory tree
 	for {
 		beadsDir := filepath.Join(dir, ".beads")
+		if SkipImplicitUserGlobalBeadsDir(beadsDir) {
+			break
+		}
 		if info, err := os.Stat(beadsDir); err == nil && info.IsDir() {
 			// Follow redirect if present
 			beadsDir = FollowRedirect(beadsDir)

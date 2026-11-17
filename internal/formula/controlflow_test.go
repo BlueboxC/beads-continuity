@@ -1,6 +1,10 @@
 package formula
 
 import (
+	"errors"
+	"fmt"
+	"reflect"
+	"slices"
 	"strings"
 	"testing"
 )
@@ -977,4 +981,459 @@ func TestValidateLoopSpec_Range(t *testing.T) {
 			}
 		})
 	}
+}
+
+// Contributor regression from #7963.
+func TestApplyLoops_OwnNeedsCarryToFirstIterationEntrySteps(t *testing.T) {
+	steps := []*Step{
+		{ID: "brief", Title: "Brief"},
+		{
+			ID:        "round",
+			Title:     "Round",
+			Needs:     []string{"brief"},
+			DependsOn: []string{"brief"},
+			Loop: &LoopSpec{
+				Count: 2,
+				Body: []*Step{
+					{ID: "work", Title: "Work"},
+				},
+			},
+		},
+	}
+
+	result, err := ApplyLoops(steps)
+	if err != nil {
+		t.Fatalf("ApplyLoops failed: %v", err)
+	}
+
+	byID := make(map[string]*Step, len(result))
+	for _, s := range result {
+		byID[s.ID] = s
+	}
+
+	work1 := byID["round.iter1.work"]
+	if work1 == nil {
+		t.Fatal("round.iter1.work not found")
+	}
+	if len(work1.Needs) != 1 || work1.Needs[0] != "brief" {
+		t.Errorf("round.iter1.work.Needs = %v, want [brief] (the loop step's own Needs)", work1.Needs)
+	}
+	if len(work1.DependsOn) != 1 || work1.DependsOn[0] != "brief" {
+		t.Errorf("round.iter1.work.DependsOn = %v, want [brief] (the loop step's own DependsOn)", work1.DependsOn)
+	}
+
+	work2 := byID["round.iter2.work"]
+	if work2 == nil {
+		t.Fatal("round.iter2.work not found")
+	}
+	if !slices.Contains(work2.Needs, "round.iter1.work") {
+		t.Errorf("round.iter2.work.Needs = %v, want chained to round.iter1.work", work2.Needs)
+	}
+	if slices.Contains(work2.Needs, "brief") {
+		t.Errorf("round.iter2.work.Needs = %v, want the loop's own Needs NOT repeated on a later iteration", work2.Needs)
+	}
+}
+
+// Contributor regression from #7963.
+func TestApplyLoops_NeedsOnLoopTargetItsEnds(t *testing.T) {
+	tests := []struct {
+		name          string
+		loop          *Step
+		land          *Step
+		wantNeeds     []string
+		wantDependsOn []string
+		check         func(t *testing.T, byID map[string]*Step)
+	}{
+		{
+			name: "count",
+			loop: &Step{ID: "round", Title: "Round", Loop: &LoopSpec{
+				Count: 2,
+				Body:  []*Step{{ID: "work", Title: "Work"}},
+			}},
+			land:      &Step{ID: "land", Title: "Land", Needs: []string{"round"}},
+			wantNeeds: []string{"round.iter2.work"},
+		},
+		{
+			name: "range",
+			loop: &Step{ID: "moves", Title: "Moves", Loop: &LoopSpec{
+				Range: "1..3",
+				Body:  []*Step{{ID: "move", Title: "Move"}},
+			}},
+			land:          &Step{ID: "land", Title: "Land", Needs: []string{"moves"}, DependsOn: []string{"moves"}},
+			wantNeeds:     []string{"moves.iter3.move"},
+			wantDependsOn: []string{"moves.iter3.move"},
+		},
+		{
+			name: "position",
+			loop: &Step{ID: "round", Title: "Round", Loop: &LoopSpec{
+				Count: 2,
+				Body:  []*Step{{ID: "work", Title: "Work"}},
+			}},
+			land:      &Step{ID: "land", Title: "Land", Needs: []string{"round", "other"}},
+			wantNeeds: []string{"round.iter2.work", "other"},
+		},
+		{
+			// Chaining gates only iteration 2's a, on iteration 1's b, so
+			// round.iter1.a, round.iter2.a and round.iter2.b all end the loop.
+			name: "parallel",
+			loop: &Step{ID: "round", Title: "Round", Loop: &LoopSpec{
+				Count: 2,
+				Body:  []*Step{{ID: "a", Title: "A"}, {ID: "b", Title: "B"}},
+			}},
+			land:          &Step{ID: "land", Title: "Land", Needs: []string{"round", "other"}, DependsOn: []string{"round"}},
+			wantNeeds:     []string{"round.iter2.b", "other", "round.iter1.a", "round.iter2.a"},
+			wantDependsOn: []string{"round.iter2.b", "round.iter1.a", "round.iter2.a"},
+		},
+		{
+			// b needs a but is declared first, so the last-declared step, a,
+			// does not end an iteration: b does.
+			name: "out_of_order",
+			loop: &Step{ID: "round", Title: "Round", Loop: &LoopSpec{
+				Count: 2,
+				Body: []*Step{
+					{ID: "b", Title: "B", Needs: []string{"a"}},
+					{ID: "a", Title: "A"},
+				},
+			}},
+			land:      &Step{ID: "land", Title: "Land", Needs: []string{"round"}},
+			wantNeeds: []string{"round.iter2.b", "round.iter1.b"},
+		},
+		{
+			// An until loop cooks one iteration; the runtime re-runs it.
+			name: "until",
+			loop: &Step{ID: "round", Title: "Round", Needs: []string{"brief"}, Loop: &LoopSpec{
+				Until: "step.status == 'complete'",
+				Max:   5,
+				Body: []*Step{
+					{ID: "work", Title: "Work"},
+					{ID: "check", Title: "Check", Needs: []string{"work"}},
+				},
+			}},
+			land:      &Step{ID: "land", Title: "Land", Needs: []string{"round"}},
+			wantNeeds: []string{"round.iter1.check"},
+			check: func(t *testing.T, byID map[string]*Step) {
+				work := byID["round.iter1.work"]
+				if work == nil {
+					t.Fatal("round.iter1.work not found")
+				}
+				if !slices.Equal(work.Needs, []string{"brief"}) {
+					t.Errorf("round.iter1.work.Needs = %v, want [brief] (the loop step's own needs)", work.Needs)
+				}
+				hasLoopLabel := slices.ContainsFunc(work.Labels, func(l string) bool {
+					return strings.HasPrefix(l, "loop:")
+				})
+				if !hasLoopLabel {
+					t.Errorf("round.iter1.work.Labels = %v, want the loop: label kept for runtime evaluation", work.Labels)
+				}
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			steps := []*Step{
+				{ID: "brief", Title: "Brief"},
+				{ID: "other", Title: "Other"},
+				tt.loop,
+				tt.land,
+			}
+			result, err := ApplyLoops(steps)
+			if err != nil {
+				t.Fatalf("ApplyLoops failed: %v", err)
+			}
+			byID := make(map[string]*Step, len(result))
+			for _, s := range result {
+				byID[s.ID] = s
+			}
+			land := byID["land"]
+			if land == nil {
+				t.Fatal("land not found")
+			}
+			if !slices.Equal(land.Needs, tt.wantNeeds) {
+				t.Errorf("land.Needs = %v, want %v", land.Needs, tt.wantNeeds)
+			}
+			if !slices.Equal(land.DependsOn, tt.wantDependsOn) {
+				t.Errorf("land.DependsOn = %v, want %v", land.DependsOn, tt.wantDependsOn)
+			}
+			if tt.check != nil {
+				tt.check(t, byID)
+			}
+		})
+	}
+}
+
+// Contributor regression from #7963.
+func TestApplyLoops_NestedLoopDependencies(t *testing.T) {
+	t.Run("two_levels", func(t *testing.T) {
+		steps := []*Step{
+			{ID: "brief", Title: "Brief"},
+			{
+				ID:    "outer",
+				Title: "Outer",
+				Needs: []string{"brief"},
+				Loop: &LoopSpec{
+					Count: 2,
+					Body: []*Step{
+						{ID: "prep", Title: "Prep"},
+						{
+							ID:    "inner",
+							Title: "Inner",
+							Needs: []string{"prep"},
+							Loop: &LoopSpec{
+								Count: 2,
+								Body:  []*Step{{ID: "x", Title: "X"}},
+							},
+						},
+						{ID: "after", Title: "After", Needs: []string{"inner"}},
+					},
+				},
+			},
+			{ID: "land", Title: "Land", Needs: []string{"outer"}},
+		}
+		result, err := ApplyLoops(steps)
+		if err != nil {
+			t.Fatalf("ApplyLoops failed: %v", err)
+		}
+		byID := make(map[string]*Step, len(result))
+		for _, s := range result {
+			byID[s.ID] = s
+		}
+
+		wantNeeds := map[string][]string{
+			"outer.iter1.prep":          {"brief"},
+			"outer.iter1.inner.iter1.x": {"outer.iter1.prep"},
+			"outer.iter1.inner.iter2.x": {"outer.iter1.inner.iter1.x"},
+			// Gated by the nested loop, so it does not also get brief.
+			"outer.iter1.after":         {"outer.iter1.inner.iter2.x"},
+			"outer.iter2.prep":          {"outer.iter1.after"},
+			"outer.iter2.inner.iter1.x": {"outer.iter2.prep"},
+			"outer.iter2.after":         {"outer.iter2.inner.iter2.x"},
+			"land":                      {"outer.iter2.after"},
+		}
+		for id, want := range wantNeeds {
+			s := byID[id]
+			if s == nil {
+				t.Errorf("%s not found", id)
+				continue
+			}
+			if !slices.Equal(s.Needs, want) {
+				t.Errorf("%s.Needs = %v, want %v", id, s.Needs, want)
+			}
+		}
+	})
+
+	t.Run("three_levels", func(t *testing.T) {
+		steps := []*Step{
+			{ID: "outer", Title: "Outer", Loop: &LoopSpec{Count: 2, Body: []*Step{
+				{ID: "mid", Title: "Mid", Loop: &LoopSpec{Count: 2, Body: []*Step{
+					{ID: "inner", Title: "Inner", Loop: &LoopSpec{Count: 2, Body: []*Step{
+						{ID: "x", Title: "X"},
+					}}},
+				}}},
+			}}},
+			{ID: "land", Title: "Land", Needs: []string{"outer"}},
+		}
+		result, err := ApplyLoops(steps)
+		if err != nil {
+			t.Fatalf("ApplyLoops failed: %v", err)
+		}
+		land := result[len(result)-1]
+		if want := []string{"outer.iter2.mid.iter2.inner.iter2.x"}; land.ID != "land" || !slices.Equal(land.Needs, want) {
+			t.Errorf("%s.Needs = %v, want %v (the deepest last step)", land.ID, land.Needs, want)
+		}
+	})
+}
+
+// Contributor regression from #7963.
+func TestApplyLoops_LoopDependencyEdgeCases(t *testing.T) {
+	loop := func(id string, count int, needs []string, body ...*Step) *Step {
+		return &Step{ID: id, Title: id, Needs: needs, Loop: &LoopSpec{Count: count, Body: body}}
+	}
+	step := func(id string, needs ...string) *Step {
+		return &Step{ID: id, Title: id, Needs: needs}
+	}
+	expand := func(t *testing.T, steps []*Step) map[string]*Step {
+		t.Helper()
+		result, err := ApplyLoops(steps)
+		if err != nil {
+			t.Fatalf("ApplyLoops failed: %v", err)
+		}
+		byID := map[string]*Step{}
+		var index func([]*Step)
+		index = func(steps []*Step) {
+			for _, s := range steps {
+				byID[s.ID] = s
+				index(s.Children)
+			}
+		}
+		index(result)
+		return byID
+	}
+	wantNeeds := func(t *testing.T, byID map[string]*Step, id string, want ...string) {
+		t.Helper()
+		s := byID[id]
+		if s == nil {
+			t.Fatalf("%s not found", id)
+		}
+		if !slices.Equal(s.Needs, want) {
+			t.Errorf("%s.Needs = %v, want %v", id, s.Needs, want)
+		}
+	}
+
+	t.Run("loop_in_children", func(t *testing.T) {
+		phase := step("phase")
+		phase.Children = []*Step{
+			loop("round", 2, nil, step("work")),
+			step("wrap", "round"),
+		}
+		byID := expand(t, []*Step{phase, step("land", "round")})
+		wantNeeds(t, byID, "wrap", "round.iter2.work")
+		wantNeeds(t, byID, "land", "round.iter2.work")
+	})
+
+	t.Run("body_step_names_another_loop", func(t *testing.T) {
+		byID := expand(t, []*Step{
+			loop("a", 2, nil, step("x")),
+			loop("b", 1, nil, step("y", "a")),
+			loop("c", 1, nil, step("z", "d")),
+			loop("d", 2, nil, step("w")),
+		})
+		wantNeeds(t, byID, "b.iter1.y", "a.iter2.x")
+		wantNeeds(t, byID, "c.iter1.z", "d.iter2.w")
+	})
+
+	t.Run("loop_needs_a_later_loop", func(t *testing.T) {
+		byID := expand(t, []*Step{
+			loop("b", 2, []string{"a"}, step("y")),
+			loop("a", 2, nil, step("x")),
+		})
+		wantNeeds(t, byID, "b.iter1.y", "a.iter2.x")
+		wantNeeds(t, byID, "b.iter2.y", "b.iter1.y")
+	})
+
+	t.Run("root_already_needs_it", func(t *testing.T) {
+		byID := expand(t, []*Step{
+			step("brief"),
+			loop("round", 1, []string{"brief"}, step("work", "brief")),
+		})
+		wantNeeds(t, byID, "round.iter1.work", "brief")
+	})
+
+	t.Run("body_step_names_its_own_loop", func(t *testing.T) {
+		// A loop in another loop's body expands under a prefixed ID, which
+		// the references to it in its own body must reach too: from its
+		// body steps, from a loop nested in it, and when it is a body
+		// step's child.
+		tests := []struct {
+			name string
+			// build returns a fresh copy of the input, so the test can
+			// tell whether ApplyLoops changed it.
+			build func() []*Step
+			// loopID and stepID are the loop and the step the error names.
+			loopID, stepID string
+		}{
+			{
+				name: "top_level",
+				build: func() []*Step {
+					return []*Step{loop("round", 2, nil, step("work"), step("check", "round"))}
+				},
+				loopID: "round",
+				stepID: "round.iter1.check",
+			},
+			{
+				name: "nested",
+				build: func() []*Step {
+					return []*Step{loop("outer", 2, nil, loop("inner", 2, nil, step("x"), step("y", "inner")))}
+				},
+				loopID: "outer.iter1.inner",
+				stepID: "outer.iter1.inner.iter1.y",
+			},
+			{
+				name: "two_loops_down",
+				build: func() []*Step {
+					return []*Step{loop("outer", 1, nil, loop("mid", 1, nil, loop("inner", 1, nil, step("x", "mid"))))}
+				},
+				loopID: "outer.iter1.mid",
+				stepID: "outer.iter1.mid.iter1.inner.iter1.x",
+			},
+			{
+				// x names the innermost of the two loops called l.
+				name: "same_id_nested",
+				build: func() []*Step {
+					return []*Step{loop("outer", 1, nil, loop("l", 1, nil, loop("l", 1, nil, step("x", "l"))))}
+				},
+				loopID: "outer.iter1.l.iter1.l",
+				stepID: "outer.iter1.l.iter1.l.iter1.x",
+			},
+			{
+				name: "loop_in_children",
+				build: func() []*Step {
+					phase := step("phase")
+					phase.Children = []*Step{loop("inner", 1, nil, step("x"), step("y", "inner"))}
+					return []*Step{loop("outer", 1, nil, phase)}
+				},
+				loopID: "outer.iter1.inner",
+				stepID: "outer.iter1.inner.iter1.y",
+			},
+		}
+		for _, tt := range tests {
+			t.Run(tt.name, func(t *testing.T) {
+				in := tt.build()
+				_, err := ApplyLoops(in)
+				if err == nil {
+					t.Fatal("ApplyLoops accepted a body step that depends on its own loop")
+				}
+				// The self-dependency is a formula error. ErrVarValidation
+				// is reserved for rejected variable values in this fork.
+				if errors.Is(err, ErrVarValidation) || strings.Contains(strings.ToLower(err.Error()), "not found") {
+					t.Errorf("wrong error classification for a self-dependent loop: %v", err)
+				}
+				want := fmt.Sprintf("loop %q: step %q depends on its own loop", tt.loopID, tt.stepID)
+				if !strings.Contains(err.Error(), want) {
+					t.Errorf("error = %q, want it to contain %q", err, want)
+				}
+				if !reflect.DeepEqual(in, tt.build()) {
+					t.Errorf("ApplyLoops modified its input steps")
+				}
+			})
+		}
+	})
+
+	t.Run("body_step_named_like_its_loop", func(t *testing.T) {
+		// The body's references to that ID name the step, not the loop,
+		// whether the loop is nested or not.
+		byID := expand(t, []*Step{
+			loop("round", 1, nil, step("round"), step("y", "round")),
+			loop("outer", 1, nil, loop("inner", 1, nil, step("inner"), step("y", "inner"))),
+		})
+		wantNeeds(t, byID, "round.iter1.y", "round.iter1.round")
+		wantNeeds(t, byID, "outer.iter1.inner.iter1.y", "outer.iter1.inner.iter1.inner")
+	})
+
+	t.Run("cyclic_body", func(t *testing.T) {
+		// No step ends the loop. Cook refuses the cycle, but the reference
+		// still names a step of the loop rather than being dropped.
+		byID := expand(t, []*Step{
+			loop("round", 1, nil, step("a", "b"), step("b", "a")),
+			step("land", "round"),
+		})
+		wantNeeds(t, byID, "land", "round.iter1.b")
+	})
+
+	t.Run("input_unchanged", func(t *testing.T) {
+		build := func() []*Step {
+			return []*Step{
+				step("brief"),
+				loop("round", 2, []string{"brief"}, step("work"), step("check", "work")),
+				step("land", "round", "brief"),
+			}
+		}
+		in := build()
+		if _, err := ApplyLoops(in); err != nil {
+			t.Fatalf("ApplyLoops failed: %v", err)
+		}
+		if !reflect.DeepEqual(in, build()) {
+			t.Errorf("ApplyLoops modified its input steps")
+		}
+	})
 }

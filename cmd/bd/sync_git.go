@@ -119,9 +119,13 @@ func gitOriginHasDoltDataRefStatus() (bool, error) {
 // and the ref twice ("...on sync.remote \"X\": probe refs/dolt/data on X: exit
 // status 128").
 func gitRemoteHasDoltDataRefStatus(remote string) (bool, error) {
+	url := gitRemoteURLForLsRemote(remote)
+	if err := checkRemoteNotOption("git remote", url); err != nil {
+		return false, err
+	}
 	ctx, cancel := context.WithTimeout(getRootContext(), gitDoltDataProbeTimeout)
 	defer cancel()
-	cmd := exec.CommandContext(ctx, "git", "ls-remote", gitRemoteURLForLsRemote(remote), "refs/dolt/data")
+	cmd := exec.CommandContext(ctx, "git", "ls-remote", "--", url, "refs/dolt/data")
 	// An empty GIT_ASKPASS also suppresses core.askPass; credential.helper remains.
 	cmd.Env = append(os.Environ(), "GIT_TERMINAL_PROMPT=0", "GIT_ASKPASS=", "SSH_ASKPASS=")
 	// Descendants can retain pipes after Git exits or its context expires.

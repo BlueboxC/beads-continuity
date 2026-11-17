@@ -67,7 +67,7 @@ func TestMigrateUpReturnsDirtyTablesErrorForPreExistingDirtyTable(t *testing.T) 
 	// MigrateUp re-asserts the canonical dolt_ignore patterns before anything
 	// else (GH#4378); the rows changed, so a scoped commit lands before the
 	// pass runs (#4566: the seed must not ride the per-step pass commits).
-	expectIgnorePatternSeed(mock, 42)
+	expectIgnorePatternSeed(mock, 42, 0)
 	// #4356: the open-time untrack reconcile runs right after the seed and
 	// before the no-work short-circuit. On a healthy database it is two reads
 	// and no writes.
@@ -109,6 +109,9 @@ func TestMigrateUpReturnsDirtyTablesErrorForPreExistingDirtyTable(t *testing.T) 
 	// migration 0043 touches the dirty `dependencies` table.
 	expectCursorProbe(mock, "schema_migrations", true)
 	expectScalar(mock, "SELECT COALESCE(MAX(version), 0) FROM schema_migrations", "version", 42)
+	// The ignored series is intersected before either series migrates
+	// (#5816); with no ignored cursor table its read stops at the probe.
+	expectCursorProbe(mock, "ignored_schema_migrations", false)
 
 	_, err = MigrateUp(context.Background(), db)
 	if err == nil {
@@ -124,6 +127,13 @@ func TestMigrateUpReturnsDirtyTablesErrorForPreExistingDirtyTable(t *testing.T) 
 	if err := mock.ExpectationsWereMet(); err != nil {
 		t.Fatalf("unmet sql expectations: %v", err)
 	}
+}
+
+// expectTransactionCommitRead mocks the migration pass's read of the session's
+// @@dolt_transaction_commit (#4470). A value of 0 issues no SET.
+func expectTransactionCommitRead(mock sqlmock.Sqlmock, value int) {
+	mock.ExpectQuery(regexp.QuoteMeta("SELECT @@SESSION.dolt_transaction_commit")).
+		WillReturnRows(sqlmock.NewRows([]string{"@@SESSION.dolt_transaction_commit"}).AddRow(value))
 }
 
 // expectDirtyDoltStatusRow mocks a dolt_status query returning a single dirty
@@ -362,6 +372,116 @@ func TestEnsureIssuesRigColumnsAddsOnlyMissing(t *testing.T) {
 	}
 }
 
+// TestEnsureWispsLateColumns pins the #6080 pre-0053 repair: it probes the
+// wisps table, then each late column in order, and adds only the missing ones
+// with the exact 0023/0027 definitions. sqlmock matches calls in order and
+// fails on any unexpected exec, so each case's expectation list is the full
+// statement sequence.
+func TestEnsureWispsLateColumns(t *testing.T) {
+	tableQuery := `(?s)SELECT COUNT\(\*\) FROM INFORMATION_SCHEMA\.TABLES.*TABLE_NAME = \?`
+	columnQuery := `(?s)SELECT COUNT\(\*\) FROM INFORMATION_SCHEMA\.COLUMNS.*TABLE_NAME = \? AND COLUMN_NAME = \?`
+	exactExec := func(sql string) string { return "^" + regexp.QuoteMeta(sql) + "$" }
+	count := func(n int) *sqlmock.Rows { return sqlmock.NewRows([]string{"c"}).AddRow(n) }
+	driverErr := errors.New("driver: boom")
+
+	cases := []struct {
+		name    string
+		expect  func(sqlmock.Sqlmock)
+		wantErr string
+	}{
+		{
+			// AC-5: no wisps table. 0053 skips every wisps statement then,
+			// so the repair stops after the table probe: no column probe,
+			// CREATE or ALTER.
+			name: "wisps_absent",
+			expect: func(mock sqlmock.Sqlmock) {
+				mock.ExpectQuery(tableQuery).WithArgs("wisps").WillReturnRows(count(0))
+			},
+		},
+		{
+			// AC-4: a fresh store, or a second call right after a repair:
+			// three probes and no ALTER.
+			name: "both_present",
+			expect: func(mock sqlmock.Sqlmock) {
+				mock.ExpectQuery(tableQuery).WithArgs("wisps").WillReturnRows(count(1))
+				mock.ExpectQuery(columnQuery).WithArgs("wisps", "no_history").WillReturnRows(count(1))
+				mock.ExpectQuery(columnQuery).WithArgs("wisps", "started_at").WillReturnRows(count(1))
+			},
+		},
+		{
+			// The 2026-04 WispsTableSchema shape, and the re-entry after a
+			// kill between the two ALTERs: only started_at is added.
+			name: "started_at_missing",
+			expect: func(mock sqlmock.Sqlmock) {
+				mock.ExpectQuery(tableQuery).WithArgs("wisps").WillReturnRows(count(1))
+				mock.ExpectQuery(columnQuery).WithArgs("wisps", "no_history").WillReturnRows(count(1))
+				mock.ExpectQuery(columnQuery).WithArgs("wisps", "started_at").WillReturnRows(count(0))
+				mock.ExpectExec(exactExec("ALTER TABLE wisps ADD COLUMN started_at DATETIME")).
+					WillReturnResult(sqlmock.NewResult(0, 0))
+			},
+		},
+		{
+			name: "both_missing",
+			expect: func(mock sqlmock.Sqlmock) {
+				mock.ExpectQuery(tableQuery).WithArgs("wisps").WillReturnRows(count(1))
+				mock.ExpectQuery(columnQuery).WithArgs("wisps", "no_history").WillReturnRows(count(0))
+				mock.ExpectExec(exactExec("ALTER TABLE wisps ADD COLUMN no_history TINYINT(1) DEFAULT 0")).
+					WillReturnResult(sqlmock.NewResult(0, 0))
+				mock.ExpectQuery(columnQuery).WithArgs("wisps", "started_at").WillReturnRows(count(0))
+				mock.ExpectExec(exactExec("ALTER TABLE wisps ADD COLUMN started_at DATETIME")).
+					WillReturnResult(sqlmock.NewResult(0, 0))
+			},
+		},
+		{
+			name: "alter_error",
+			expect: func(mock sqlmock.Sqlmock) {
+				mock.ExpectQuery(tableQuery).WithArgs("wisps").WillReturnRows(count(1))
+				mock.ExpectQuery(columnQuery).WithArgs("wisps", "no_history").WillReturnRows(count(1))
+				mock.ExpectQuery(columnQuery).WithArgs("wisps", "started_at").WillReturnRows(count(0))
+				mock.ExpectExec(exactExec("ALTER TABLE wisps ADD COLUMN started_at DATETIME")).
+					WillReturnError(driverErr)
+			},
+			wantErr: "adding wisps.started_at for migration 0053",
+		},
+		{
+			name: "probe_error",
+			expect: func(mock sqlmock.Sqlmock) {
+				mock.ExpectQuery(tableQuery).WithArgs("wisps").WillReturnRows(count(1))
+				mock.ExpectQuery(columnQuery).WithArgs("wisps", "no_history").WillReturnError(driverErr)
+			},
+			wantErr: "checking wisps.no_history",
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			failOnSwallowedAdvisory(t)
+			db, mock, err := sqlmock.New()
+			if err != nil {
+				t.Fatalf("sqlmock.New: %v", err)
+			}
+			defer db.Close()
+			tc.expect(mock)
+
+			err = ensureWispsLateColumns(context.Background(), db)
+			if tc.wantErr == "" {
+				if err != nil {
+					t.Fatalf("ensureWispsLateColumns: %v", err)
+				}
+			} else {
+				if !errors.Is(err, driverErr) {
+					t.Fatalf("ensureWispsLateColumns error = %v, want it to wrap %v", err, driverErr)
+				}
+				if !strings.Contains(err.Error(), tc.wantErr) {
+					t.Fatalf("ensureWispsLateColumns error = %q, want it to contain %q", err, tc.wantErr)
+				}
+			}
+			if err := mock.ExpectationsWereMet(); err != nil {
+				t.Fatalf("unmet sql expectations: %v", err)
+			}
+		})
+	}
+}
+
 func TestEnsureWispDependenciesSplitTargetsAddsMissingAndBackfills(t *testing.T) {
 	failOnSwallowedAdvisory(t)
 	db, mock, err := sqlmock.New()
@@ -386,10 +506,13 @@ func TestEnsureWispDependenciesSplitTargetsAddsMissingAndBackfills(t *testing.T)
 	}
 	mock.ExpectQuery(columnQuery).WithArgs("wisp_dependencies", "depends_on_id").
 		WillReturnRows(sqlmock.NewRows([]string{"c"}).AddRow(1))
+	// The wisp and issue cases test the target with IN (SELECT ...) rather
+	// than joining wisps or issues, which would stamp the joined rows'
+	// updated_at (gastownhall/beads#5981).
 	for _, update := range []string{
 		`UPDATE wisp_dependencies SET depends_on_external = depends_on_id`,
-		`UPDATE wisp_dependencies wd JOIN wisps w ON w\.id = wd\.depends_on_id`,
-		`UPDATE wisp_dependencies wd JOIN issues i ON i\.id = wd\.depends_on_id`,
+		`UPDATE wisp_dependencies SET depends_on_wisp_id = depends_on_id WHERE .* AND depends_on_id IN \(SELECT id FROM wisps\)$`,
+		`UPDATE wisp_dependencies SET depends_on_issue_id = depends_on_id WHERE .* AND depends_on_id IN \(SELECT id FROM issues\)$`,
 		`UPDATE wisp_dependencies SET depends_on_external = depends_on_id WHERE depends_on_external IS NULL`,
 	} {
 		mock.ExpectExec(update).WillReturnResult(sqlmock.NewResult(0, 1))
@@ -487,13 +610,24 @@ func TestRunMigrationsSnapshotsDirtyTablesBeforeRepairSoRepairMutationsCommitAto
 	mock.ExpectQuery(dirtyStatusQuery).
 		WillReturnRows(sqlmock.NewRows([]string{"table_name", "staged"}))
 
-	// 2. preMigrationRepair(53): ensureIssuesRigColumns (all present, no
-	// exec), ensureWispDependenciesSplitTargets (table absent, no-op), then
+	// 2. The updated_at guard snapshots 0053's restore target (issues, with
+	// the ephemeral flag the body sets) and move source (wisps, absent here)
+	// BEFORE the repair can touch them.
+	guardExpectColumns(mock, "issues", "id", "updated_at", "ephemeral")
+	mock.ExpectQuery(`SELECT id, updated_at, ephemeral FROM issues ORDER BY id`).
+		WillReturnRows(sqlmock.NewRows([]string{"id", "updated_at", "ephemeral"}).AddRow("bd-1", "2025-03-01 09:30:00", 1))
+	guardExpectAbsentTable(mock)
+
+	// 3. preMigrationRepair(53): ensureIssuesRigColumns (all present, no
+	// exec), ensureWispsLateColumns and ensureWispDependenciesSplitTargets
+	// (both tables absent, no-op), then
 	// ensureDependenciesIDColumn actually mutating `dependencies`.
 	for _, col := range []string{"hook_bead", "role_bead", "agent_state", "last_activity", "role_type", "rig"} {
 		mock.ExpectQuery(columnQuery).WithArgs("issues", col).
 			WillReturnRows(sqlmock.NewRows([]string{"c"}).AddRow(1))
 	}
+	mock.ExpectQuery(tableQuery).WithArgs("wisps").
+		WillReturnRows(sqlmock.NewRows([]string{"c"}).AddRow(0))
 	mock.ExpectQuery(tableQuery).WithArgs("wisp_dependencies").
 		WillReturnRows(sqlmock.NewRows([]string{"c"}).AddRow(0))
 	mock.ExpectQuery(columnQuery).WithArgs("dependencies", "id").
@@ -515,12 +649,22 @@ func TestRunMigrationsSnapshotsDirtyTablesBeforeRepairSoRepairMutationsCommitAto
 	mock.ExpectExec(`ALTER TABLE dependencies ADD PRIMARY KEY \(id\)`).
 		WillReturnResult(sqlmock.NewResult(0, 0))
 
-	// 3. Migration 0053's own frozen SQL, then its cursor row.
+	// 4. Migration 0053's own frozen SQL; the guard then restores the row
+	// the body flipped and stamped (compare-and-swap on the stamped value),
+	// and checks its joinStamped wisps (absent here), BEFORE the cursor row
+	// is recorded.
 	mock.ExpectExec(`SET FOREIGN_KEY_CHECKS = 0`).WillReturnResult(sqlmock.NewResult(0, 0))
+	guardExpectColumns(mock, "issues", "id", "updated_at", "ephemeral")
+	mock.ExpectQuery(`SELECT id, updated_at, ephemeral FROM issues ORDER BY id`).
+		WillReturnRows(sqlmock.NewRows([]string{"id", "updated_at", "ephemeral"}).AddRow("bd-1", "2026-11-02 04:00:00", 0))
+	mock.ExpectExec(guardRestoreSQL("issues", 1)).
+		WithArgs(guardRestoreArgs(guardRestoreRow{"bd-1", "2025-03-01 09:30:00", "2026-11-02 04:00:00"})...).
+		WillReturnResult(sqlmock.NewResult(0, 1))
+	guardExpectAbsentTable(mock)
 	mock.ExpectExec(`INSERT IGNORE INTO schema_migrations`).WithArgs(53, sqlmock.AnyArg()).
 		WillReturnResult(sqlmock.NewResult(0, 1))
 
-	// 4. commitMigrationStep's "after" snapshot sees `dependencies` dirty --
+	// 5. commitMigrationStep's "after" snapshot sees `dependencies` dirty --
 	// from the repair's own ALTERs above, now correctly attributed to THIS
 	// step because the "before" snapshot in (1) predates them -- so it gets
 	// force-added alongside the cursor table and committed in the same call.
@@ -921,6 +1065,7 @@ func TestIgnored15RecomputeHardFailsWithoutIsBlockedRepair(t *testing.T) {
 // version-15 entry at all: the unrecoverable case
 // ensureWispIsBlockedForRecompute's doc comment describes.
 func TestIgnored7RecomputeHardFailsWithoutIsBlockedRepair(t *testing.T) {
+	stubUpdatedAtGuard(t)
 	orig := stderr
 	stderr = &bytes.Buffer{}
 	defer func() { stderr = orig }()
@@ -1839,6 +1984,58 @@ INSERT INTO wisp_dependencies (issue_id, depends_on_id) VALUES (%s, %s);
 		`SELECT COUNT(*) AS c FROM wisp_dependencies WHERE issue_id = 'source-wisp' AND depends_on_issue_id = 'ambiguous-target'`, "0")
 }
 
+// TestWispDependenciesSplitTargetBackfillLeavesTargetsUpdatedAtThroughDoltCLI
+// pins that the split-target pre-repair (run before 0047 and 0053) classifies
+// a wisp dependency's target without stamping it: go-mysql-server applies
+// the ON UPDATE CURRENT_TIMESTAMP of every table a multi-table UPDATE joins,
+// so the JOIN form this backfill used before stamped every issue and wisp a
+// wisp dependency points at (gastownhall/beads#5981).
+func TestWispDependenciesSplitTargetBackfillLeavesTargetsUpdatedAtThroughDoltCLI(t *testing.T) {
+	testutil.RequireDoltBinary(t)
+
+	dir := filepath.Join(t.TempDir(), "wisp-dependency-split-stamps")
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatalf("create wisp dependency split dir: %v", err)
+	}
+	runDoltCommand(t, dir, "init", "--name", "test", "--email", "test@example.com")
+
+	var repairSQL strings.Builder
+	for _, col := range wispDependenciesSplitTargetColumns() {
+		fmt.Fprintf(&repairSQL, "ALTER TABLE wisp_dependencies ADD COLUMN %s %s;\n", col.name, col.definition)
+	}
+	for _, stmt := range wispDependenciesSplitTargetBackfillSQL() {
+		repairSQL.WriteString(stmt)
+		repairSQL.WriteString(";\n")
+	}
+
+	const seedSQL = `
+CREATE TABLE issues (
+    id VARCHAR(255) PRIMARY KEY,
+    updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+);
+CREATE TABLE wisps (
+    id VARCHAR(255) PRIMARY KEY,
+    updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+);
+CREATE TABLE wisp_dependencies (
+    issue_id VARCHAR(255) NOT NULL,
+    depends_on_id VARCHAR(255) NOT NULL,
+    PRIMARY KEY (issue_id, depends_on_id)
+);
+INSERT INTO issues (id, updated_at) VALUES ('issue-target', '2025-01-02 03:04:05');
+INSERT INTO wisps (id, updated_at) VALUES ('source-wisp', '2025-01-02 03:04:05'), ('wisp-target', '2025-01-02 03:04:05');
+INSERT INTO wisp_dependencies (issue_id, depends_on_id) VALUES ('source-wisp', 'issue-target'), ('source-wisp', 'wisp-target'), ('source-wisp', 'external:gh-1');
+`
+	runDoltSQL(t, dir, seedSQL+repairSQL.String())
+
+	requireDoltCount(t, dir,
+		`SELECT COUNT(*) AS c FROM wisp_dependencies WHERE (depends_on_id = 'issue-target' AND depends_on_issue_id = 'issue-target') OR (depends_on_id = 'wisp-target' AND depends_on_wisp_id = 'wisp-target') OR (depends_on_id = 'external:gh-1' AND depends_on_external = 'external:gh-1')`, "3")
+	requireDoltCount(t, dir,
+		`SELECT COUNT(*) AS c FROM issues WHERE updated_at <> '2025-01-02 03:04:05'`, "0")
+	requireDoltCount(t, dir,
+		`SELECT COUNT(*) AS c FROM wisps WHERE updated_at <> '2025-01-02 03:04:05'`, "0")
+}
+
 func TestMigration0047HandlesLegacyWispDependenciesShape(t *testing.T) {
 	sql, err := os.ReadFile("migrations/0047_recompute_mixed_is_blocked.up.sql")
 	if err != nil {
@@ -2434,6 +2631,7 @@ func TestRunMigrationsStderrOutput(t *testing.T) {
 	origCounter := issueRowCounter
 	issueRowCounter = func(context.Context, DBConn) (int64, error) { return 0, nil }
 	defer func() { issueRowCounter = origCounter }()
+	stubUpdatedAtGuard(t)
 
 	// Bounded below migration 40: migrations 40/41 carry preMigrationRepairs and
 	// CALL DOLT_* bodies that issue real queries via mockDB.QueryRowContext /
@@ -2478,6 +2676,7 @@ func TestRunMigrationsUsesProvidedSource(t *testing.T) {
 	origCounter := issueRowCounter
 	issueRowCounter = func(context.Context, DBConn) (int64, error) { return 0, nil }
 	defer func() { issueRowCounter = origCounter }()
+	stubUpdatedAtGuard(t)
 
 	// Bounded below migration 40 for the same reason as
 	// TestRunMigrationsStderrOutput: mockDB can't answer the queries the
@@ -2521,6 +2720,7 @@ func TestRunMigrationsLargeRigNoticeOnlyOnMainSource(t *testing.T) {
 	origCounter := issueRowCounter
 	issueRowCounter = func(context.Context, DBConn) (int64, error) { return 49_187, nil }
 	defer func() { issueRowCounter = origCounter }()
+	stubUpdatedAtGuard(t)
 
 	var mainBuf bytes.Buffer
 	orig := stderr

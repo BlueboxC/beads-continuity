@@ -215,3 +215,28 @@ func TestFederationServerProbeFollowsLegacyPortEnv(t *testing.T) {
 		t.Fatalf("federationServerProbe = false with a listener on legacy environment port %d", port)
 	}
 }
+
+// Adapted from #8002. For a probe-only workspace, pass the SQL endpoint host
+// into the remotesapi diagnostic. No SQL server is started by this fixture.
+func TestFederationRemotesListenerUsesProbeOnlyEndpointHost(t *testing.T) {
+	clearDoltServerEnv(t)
+	listener, err := net.Listen("tcp6", "[::1]:0")
+	if err != nil {
+		t.Skipf("IPv6 loopback not available: %v", err)
+	}
+	t.Cleanup(func() { _ = listener.Close() })
+	beadsDir := externalServerWorkspace(t, 19319)
+	cfg, err := configfile.Load(beadsDir)
+	if err != nil || cfg == nil {
+		t.Fatalf("load fixture: %v, %v", cfg, err)
+	}
+	cfg.DoltServerHost = "::1"
+	cfg.DoltRemotesAPIPort = listener.Addr().(*net.TCPAddr).Port
+	if err := cfg.Save(beadsDir); err != nil {
+		t.Fatal(err)
+	}
+	check := checkRemotesAPIListener(beadsDir, 0)
+	if check.Status != StatusOK {
+		t.Errorf("healthy probe-only IPv6 endpoint was not confirmed: %+v", check)
+	}
+}

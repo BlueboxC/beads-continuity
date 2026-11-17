@@ -148,7 +148,7 @@ func SetReposInYAML(configPath string, repos *ReposConfig) error {
 	}
 
 	// Write back to file
-	if err := os.WriteFile(configPath, []byte(buf.String()), 0600); err != nil {
+	if err := writeConfigYaml(configPath, []byte(buf.String())); err != nil {
 		return fmt.Errorf("failed to write config.yaml: %w", err)
 	}
 

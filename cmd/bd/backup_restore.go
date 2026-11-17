@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"os"
-	"path/filepath"
 	"strings"
 
 	"github.com/spf13/cobra"
@@ -12,6 +11,8 @@ import (
 	"github.com/steveyegge/beads/internal/configfile"
 	"github.com/steveyegge/beads/internal/metrics"
 	"github.com/steveyegge/beads/internal/storage"
+	"github.com/steveyegge/beads/internal/storage/doltutil"
+	"github.com/steveyegge/beads/internal/storage/versioncontrolops"
 	"github.com/steveyegge/beads/internal/ui"
 )
 
@@ -45,6 +46,14 @@ To initialize and restore in one step, use: bd init && bd backup restore`,
 		}()
 
 		ctx := rootCtx
+		proxied := usesProxiedServer()
+		if proxied {
+			if err := requireLocalProxiedBackup("backup restore"); err != nil {
+				return err
+			}
+		} else if _, err := restoreBackupStore(store); err != nil {
+			return err
+		}
 
 		var dir string
 		if len(args) > 0 {
@@ -63,7 +72,7 @@ To initialize and restore in one step, use: bd init && bd backup restore`,
 
 		force, _ := cmd.Flags().GetBool("force")
 
-		if usesProxiedServer() {
+		if proxied {
 			if err := runBackupRestoreProxied(ctx, dir, force); err != nil {
 				return err
 			}
@@ -90,17 +99,29 @@ func init() {
 	backupCmd.AddCommand(backupRestoreCmd)
 }
 
-// runBackupRestore restores the database from a Dolt-native backup.
-func runBackupRestore(ctx context.Context, s storage.DoltStorage, dir string, force bool) error {
+func restoreBackupStore(s storage.DoltStorage) (storage.BackupStore, error) {
 	if s == nil {
-		return fmt.Errorf("database is not initialized. Run 'bd init' first")
+		return nil, fmt.Errorf("database is not initialized. Run 'bd init' first")
 	}
-
 	bs, ok := storage.UnwrapStore(s).(storage.BackupStore)
 	if !ok {
-		return fmt.Errorf("storage backend does not support backup operations")
+		return nil, fmt.Errorf("storage backend does not support backup operations")
 	}
+	if !isEmbeddedStore(s) {
+		host := backupServerHost()
+		if !configfile.IsLocalHostString(host) {
+			return nil, fmt.Errorf("cannot check the filesystem of the Dolt server at %s; run 'bd backup restore' on the server's machine", doltutil.PrintedValue(host))
+		}
+	}
+	return bs, nil
+}
 
+// runBackupRestore restores the database from a Dolt-native backup.
+func runBackupRestore(ctx context.Context, s storage.DoltStorage, dir string, force bool) error {
+	bs, err := restoreBackupStore(s)
+	if err != nil {
+		return err
+	}
 	if err := bs.RestoreDatabase(ctx, dir, force); err != nil {
 		return err
 	}
@@ -170,41 +191,12 @@ func syncProjectIDFromDB(ctx context.Context, s storage.DoltStorage) error {
 	return cfg.Save(beadsDir)
 }
 
-// validateBackupRestoreDir checks dir looks like a real Dolt backup before
-// any restore proceeds. Dolt's own CALL DOLT_BACKUP('restore', ...) drops
-// the target database before it discovers the source holds no backup, so
-// an existing-but-empty directory (or any directory without a Dolt
-// manifest) previously passed this check and then destroyed the live
-// database on the ensuing "not found" failure (GH#7098, GH#5972). The
-// manifest file sits at the top level of a backup directory produced by
-// `bd backup sync` / `dolt backup sync` -- confirmed against a real
-// embedded backup, not assumed from documentation.
-//
-// This only covers local directory / file:// sources, which is the
-// confirmed, reproduced case. Remote sources (gs://, aws://, http(s)://)
-// are not validated here; see GH#7098's own note that the remote case was
-// not reproduced and would need a different approach (restore into a
-// scratch database, swap in only on success).
+// validateBackupRestoreDir rejects an invalid local source before contacting
+// the restore route. The adapters repeat the check before opening their
+// restore session or quiescing the managed topology.
 func validateBackupRestoreDir(dir string) error {
-	info, err := os.Stat(dir)
-	if os.IsNotExist(err) {
-		return fmt.Errorf("backup directory not found: %s\nRun 'bd backup' first to create a backup", dir)
-	}
-	if err != nil {
-		return fmt.Errorf("backup directory %s: %w", dir, err)
-	}
-	if !info.IsDir() {
-		return fmt.Errorf("backup source is not a directory: %s", dir)
-	}
-	manifest := filepath.Join(dir, "manifest")
-	manifestInfo, err := os.Stat(manifest)
-	if os.IsNotExist(err) {
-		return fmt.Errorf("%s does not look like a Dolt backup (no manifest file found)\nRun 'bd backup' first to create a backup, or check the path is correct", dir)
-	} else if err != nil {
-		return fmt.Errorf("backup directory %s: %w", dir, err)
-	}
-	if !manifestInfo.Mode().IsRegular() || manifestInfo.Size() == 0 {
-		return fmt.Errorf("backup manifest must be a nonempty regular file: %s", manifest)
+	if _, err := versioncontrolops.RestoreSourceURL(dir); err != nil {
+		return fmt.Errorf("%w\nRestore was not attempted. Pass a directory written by 'bd backup sync'", err)
 	}
 	return nil
 }

@@ -34,6 +34,10 @@ Root DOX.md and the parent chain remain binding.
 
 Diagnose before repair; preserve recovery evidence. Use existing doctor operations rather than adding parallel repair commands.
 
+- Before database backup or deletion, bind the selected native path to the physical workspace, database parent and original entry. Keep the explicit operator data-directory selection. Confirmations recheck the admitted identities. Rollback also rechecks that the backup is the original entry and uses the bound parent for removal and rename. Refusals preserve the recovery and report any repair error alongside the rollback failure.
+- Preserve an unopenable database before repair. Automatic JSONL import requires a confirmed empty store and a successful import before publishing its local marker. Treat unverified cross-repository dependency targets separately from local orphaned rows.
+- Federation remotes checks use the selected TCP host for a probe-only endpoint. Recognize generated Dolt server configuration and activity files as tracked runtime artifacts.
+
 ## Verification
 
 Use the affected existing checks selected in engdocs/TESTING.md; verify indexed child contracts.

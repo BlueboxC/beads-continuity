@@ -6,10 +6,10 @@ self: final: prev:
 let
   # Pin the compiler required by the reviewed Dolt/analyzer tuple.
   beadsGo = final.go_1_26.overrideAttrs (old: {
-    version = "1.27.3";
+    version = "1.27.4";
     src = final.fetchurl {
-      url = "https://go.dev/dl/go1.27.3.src.tar.gz";
-      hash = "sha256-bndJA1zzYPBrJXXRYup535/ajvZxiJ5cN1+OUHd/Jrs=";
+      url = "https://go.dev/dl/go1.27.4.src.tar.gz";
+      hash = "sha256-c8+4VxrsDAEXdofbhxY9Rqog6XeWcncokaoXZU2aYJk=";
     };
     env = old.env // {
       GOROOT_BOOTSTRAP = "${final.go_1_26}/share/go";

@@ -776,15 +776,7 @@ func (s *EmbeddedDoltStore) RestoreDatabase(ctx context.Context, dir string, for
 	if s.readOnly {
 		return ErrReadOnly
 	}
-	info, err := os.Stat(dir)
-	if err != nil {
-		return fmt.Errorf("backup source does not exist: %w", err)
-	}
-	if !info.IsDir() {
-		return fmt.Errorf("backup source is not a directory: %s", dir)
-	}
-
-	backupURL, err := versioncontrolops.DirToFileURL(dir)
+	backupURL, err := versioncontrolops.RestoreSourceURL(dir)
 	if err != nil {
 		return err
 	}

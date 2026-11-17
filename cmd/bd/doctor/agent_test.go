@@ -63,3 +63,23 @@ func TestPruneEnrichmentsRecommendRealCommand(t *testing.T) {
 		}
 	}
 }
+
+// Adapted from #8052. An engine open failure needs preservation before
+// recovery, while ordinary schema repairs may still suggest doctor --fix.
+func TestUnopenableDatabaseAgentAdvicePreservesBeforeRecovery(t *testing.T) {
+	check := DoctorCheck{
+		Name:    "Database",
+		Status:  StatusError,
+		Message: "Unable to open database",
+		Fix:     "Check 'bd dolt status'. Preserve the database before recovery.",
+	}
+	advice := enrichDatabase(check)
+	if !strings.Contains(strings.ToLower(advice.explanation), "preserve") {
+		t.Errorf("open failure lacks preservation advice: %q", advice.explanation)
+	}
+	for _, command := range advice.commands {
+		if command == "bd doctor --fix" {
+			t.Errorf("unopenable database offered rebuild through %q", command)
+		}
+	}
+}

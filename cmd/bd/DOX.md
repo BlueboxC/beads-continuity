@@ -22,7 +22,9 @@ Root DOX.md and the parent chain remain binding.
 - Local backup restore refuses missing/non-directory sources and missing, empty or non-regular manifests before the existing Dolt restore call. The embedded adapter additionally rehearses restore/commit in a disposable engine to reject incompatible storage before replacement. These preflights do not establish full integrity or atomic restore publication.
 - Codex recovery uses the event's absolute existing cwd with the original operator environment, clearing inherited path/database selectors so caller startup cannot route the child prime to another project. An uninitialized event workspace emits no context. Missing cwd retains legacy caller behavior; invalid explicit cwd fails without emitting project context. Git observations and authority text name and apply only to the inspected workspace.
 
-- Project `.env` loads only explicit selector and passive Dolt connection keys; executable settings come from the operator environment. Existing values, including empty values, win in both early selection and full loading. Absent selectors retain dotenv routing.
+- Both project `.env` readers admit literal values for explicit selector and passive Dolt connection keys. Refuse interpolation and preserve operator values, including explicitly empty values. Mail delegates come from the operator environment or user-global YAML. Workspace settings cannot write delegate keys, and historical delegate rows remain inert.
+- A recognized YAML/Git-only `config get` reads the selected workspace without opening a store or updating its version stamp. Retain explicit selector, metadata and Preview3 admission rules.
+- Stealth init persists `no-git-ops` in the selected project YAML. The setting controls Git workflow guidance. `dolt.local-only` disables `bd sync`, manual Dolt push and pull, remote add and reset-data, and Dolt auto-push.
 - Legacy embedded database migration validates identifiers and real child directories before any rename or metadata write.
 - Malformed metadata.json blocks backend-selecting diagnostics, ordinary init and data commands. Preserve the selector and restore a known-valid project backup before retrying; never infer a fallback database from a parse failure. Store-free version remains available.
 - Sanitize stored issue text before terminal measurement, styling or truncation. The default DAG also displays title newlines/tabs as spaces within one row; preserve original values in storage, JSON and exports.
@@ -81,13 +83,16 @@ Root DOX.md and the parent chain remain binding.
 
 - AI duplicate analysis uses the first text response block, skipping thinking/redacted blocks without reading their contents. Missing or unparseable text and max_tokens replies preserve the mechanical candidates; later text blocks are not appended.
 
-- Advisory Git remote-ref probes use the existing signal-aware root context with a ten-second deadline and two-second retained-pipe wait. Disable terminal/askpass prompts (including core.askPass) but retain credential.helper. Errors, cancellation and incomplete output remain UNKNOWN; init and configured-bootstrap safety/local-recovery policies stay unchanged. WaitDelay bounds pipes without guaranteeing descendant termination.
+- Refuse option-shaped remote URLs and SSH users or hosts before transport. Init reports the selected flag or config key before writing artifacts. Bootstrap preserves an existing database and local recovery, and never falls back to Git origin when explicit sync configuration is refused. Federation config apply validates before opening the store. Git ref probes and reset-data delimit remote operands with `--` and redact URL userinfo through the shared diagnostics helper.
+- Advisory Git remote-ref probes use the existing signal-aware root context with a ten-second deadline and two-second retained-pipe wait. Disable terminal/askpass prompts (including core.askPass) but retain credential.helper. Errors, cancellation and incomplete output remain UNKNOWN. WaitDelay bounds retained output pipes.
+- `bd dolt push` and `bd dolt pull` accept one configured remote name as a positional or through `--remote`; empty positionals and conflicting names fail before store initialization. Managed `bd dolt start` help describes OS-assigned ports and the shared/default, fixed-port and external lifecycle rules.
 
 - Usage metrics cannot collect or upload. `metrics`/`off`/`example` report the policy without writing configuration; `on` fails and legacy `send-metrics` does nothing. Existing config and historical queues remain untouched.
 
 - Purge/prune reject nonpositive day counts before duration multiplication. Confirmation commands retain the preview's limit, storage plane, age, pattern and explicit reference override; quote age/pattern as literal POSIX shell arguments. Preview and existing deletion protections remain unchanged.
 
-- Hook uninstall removes Beads sections from the effective directory, resets only selected common-local managed configuration, and cleans a different directory only when a successful reset makes it effective. Resolve Git paths afresh to avoid stale repository caches. Preserve foreign content, backups and user/global/worktree-private paths; failures after reset must not report success.
+- Validate Git hook destinations before install and uninstall. Refuse a destination which is itself a symlink, preserve non-regular hook files and backups, and permit supported workspace aliases above the destination. Resolve the effective path afresh after a successful managed reset and preserve the linked worktree's tracked hook copy.
+- Hook staging and intentional staged-deletion checks use only regular index files with accepted Git index names in the selected Git directory. For pathspec commits update both pending indexes and preserve a staged deletion in either.
 
 - Direct configuration and user KV mutations mark real writes for embedded auto-commit. Direct SQL-server config/memory/KV verbs publish scoped config commits when policy is on; batch/off defer to the existing explicit commit. Proxied/Graph routes retain their own transaction ownership. User KV publication refuses observed dirty internal config keys and reports that the mutation remains in the working set.
 
@@ -160,6 +165,10 @@ Root DOX.md and the parent chain remain binding.
 
 - Explicit continuity-v1 graph operations have a finite two-minute transaction budget for their enlarged retained plane; ordinary graph operations keep 30 seconds. Shorter caller deadlines and cancellation remain authoritative, including existing hook/viewer bounds. Continuity callbacks receive that same bounded context for the entire operation. Capacity, guards and at-most-once writes are unchanged.
 
+- Provider push previews skip foreign or unaddressable links and count batch fallthrough issues once. Create-only preview matches the live gate, including explicitly forced links.
+
+- Native backup restore validates the literal filesystem source and nonempty regular manifest before quiescing a backend. Off-host SQL servers cannot restore unchecked local filesystem paths. Embedded restoration keeps its native rehearsal.
+
 ## Work Guidance
 - Routed create adopts a sole metadata-less native database, retaining its prefix and project identity. Refuse ambiguous databases, dirty working sets under committing policy, non-embedded target settings and graph formats before writing selectors. Personal migration shares the guarded adoption; dry-run checks target admission without initialization.
 - A routed/planning target holding only a nonempty regular `issues.jsonl` refuses before initialization and names explicit `bd init --from-jsonl` recovery. Preserve bytes and permissions; empty exports, recognized local workspaces and followed redirects retain existing admission. An unreadable export refuses inspection rather than being treated as absent.
@@ -173,6 +182,11 @@ Integration credentials, including notion.token, route only to local YAML/enviro
 Native prime selects non-code memories and the fixed code manifest from one readonly snapshot, preserving rendered context, stored history and required-read failure withholding. Missing manifests and basic adapters retain the legacy read. Activity list/status select only the literal activity-key namespace. Hook budgets, trust and project selection remain unchanged.
 
 Memory diagnostics expose literal key-prefix inclusion/exclusion without changing default enumeration. Knowledge reads exclude derived code namespaces; symbol-link validation reads only selected indexed files and applicable provenance, retaining the proposal/review guards.
+
+- Formula expansion preserves authored prerequisites through nested loops, waits for each loop endpoint and refuses self dependencies. Condition filtering rejects authored dependencies on steps it drops and reconnects only generated edges. Structural and variable errors retain their diagnostics through CLI formula resolution.
+- Rules compact previews by default. An explicit force can publish a collision-free composite, copy the originals to backup files and retire sources whose backups were saved. Report partial outcomes.
+- Warn on stored, unconfirmed cross-prefix dependency targets after a successful write. Quiet suppresses this diagnostic and optional proxy verification. Personal migration checks the source deletion guard before opening the planning store.
+- Implicit workspace discovery skips standalone user-global account-home storage, while explicit selection and a home that is a Git root remain supported. A selected non-Git workspace does not borrow the caller's Git root.
 
 ## Verification
 

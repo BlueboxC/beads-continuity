@@ -21,6 +21,9 @@ import (
 // with errors.Is, instead of silently falling through to a worse error.
 var ErrVarValidation = errors.New("variable validation failed")
 
+// ErrValidation identifies a formula whose structure cannot be expanded.
+var ErrValidation = errors.New("formula validation failed")
+
 // Formula file extensions. TOML is preferred, JSON is legacy fallback.
 const (
 	FormulaExtTOML = ".formula.toml"

@@ -25,6 +25,9 @@ Root DOX.md and the parent chain remain binding.
 
 - Both ordinary and strict existing-only proxy providers check the external server version before schema work or returning a provider. Identified versions below 2.6.0 refuse without bootstrap; unknown versions preserve advisory behavior.
 
+- Ordinary SQL providers check forward schema drift on the selected database before migration writes and on the converged path. Preserve typed refusal through advisory-lock release.
+- Only a proxy-authored external connection outage shortens the initial ping retry window. Ordinary transient reconnects keep their existing policy and cannot replay a statement.
+
 ## Work Guidance
 
 Verify commit, rollback and failure behavior at the affected transaction boundary.

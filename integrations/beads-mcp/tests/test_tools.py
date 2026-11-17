@@ -5,6 +5,7 @@ from unittest.mock import AsyncMock, patch
 
 import pytest
 
+from beads_mcp.bd_client import BdCommandError, BdError
 from beads_mcp.models import BlockedIssue, Comment, Issue, Stats, StatsSummary
 from beads_mcp.tools import (
     beads_add_comment,
@@ -619,3 +620,71 @@ async def test_beads_init():
 
     assert "bd initialized successfully!" in result
     mock_client.init.assert_called_once()
+
+
+# Regressions from gascity-eddie's upstream PR #7927.
+@pytest.mark.asyncio
+async def test_explicit_reopen_of_open_issue_reports_no_change():
+    mock_client = AsyncMock()
+    mock_client.reopen.return_value = []
+    with (
+        patch("beads_mcp.tools._get_client", return_value=mock_client),
+        pytest.raises(BdError, match="Nothing to reopen"),
+    ):
+        await beads_reopen_issue(issue_ids=["bd-1"])
+    mock_client.update.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_update_open_on_open_issue_applies_fields_and_label_clear(sample_issue):
+    mock_client = AsyncMock()
+    mock_client.reopen.return_value = []
+    expected = sample_issue.model_copy(update={"title": "retitled", "labels": []})
+    mock_client.update.return_value = expected
+    with patch("beads_mcp.tools._get_client", return_value=mock_client):
+        result = await beads_update_issue(issue_id="bd-1", status="open", title="retitled", labels=[])
+
+    assert result == expected
+    mock_client.update.assert_awaited_once()
+    sent = mock_client.update.call_args.args[0]
+    assert sent.title == "retitled"
+    assert sent.labels == []
+    assert sent.defer_until == ""
+
+
+@pytest.mark.asyncio
+async def test_update_open_on_closed_issue_preserves_notes_reason_and_applies_fields(sample_issue):
+    mock_client = AsyncMock()
+    mock_client.reopen.return_value = [sample_issue]
+    expected = sample_issue.model_copy(update={"title": "retitled", "labels": ["kept"]})
+    mock_client.update.return_value = expected
+    with patch("beads_mcp.tools._get_client", return_value=mock_client):
+        result = await beads_update_issue(
+            issue_id="bd-1", status="open", title="retitled", labels=["kept"], notes="reopen reason"
+        )
+
+    assert result == [expected]
+    mock_client.reopen.assert_awaited_once()
+    assert mock_client.reopen.call_args.args[0].reason == "reopen reason"
+    mock_client.update.assert_awaited_once()
+    sent = mock_client.update.call_args.args[0]
+    assert sent.status is None
+    assert sent.notes is None
+    assert sent.title == "retitled"
+    assert sent.labels == ["kept"]
+
+
+@pytest.mark.asyncio
+async def test_update_open_on_closed_issue_reports_partial_failure(sample_issue):
+    mock_client = AsyncMock()
+    mock_client.reopen.return_value = [sample_issue]
+    mock_client.update.side_effect = BdCommandError("fixture timed out", returncode=124)
+    with (
+        patch("beads_mcp.tools._get_client", return_value=mock_client),
+        pytest.raises(BdCommandError, match="was reopened") as exc,
+    ):
+        await beads_update_issue(issue_id="bd-1", status="open", title="retitled")
+
+    assert exc.value.returncode == 124
+    mock_client.reopen.assert_awaited_once()
+    mock_client.update.assert_awaited_once()

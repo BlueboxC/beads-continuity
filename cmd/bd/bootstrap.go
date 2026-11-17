@@ -28,6 +28,7 @@ import (
 	"github.com/steveyegge/beads/internal/storage/embeddeddolt"
 	"github.com/steveyegge/beads/internal/storage/schema"
 	"github.com/steveyegge/beads/internal/storage/versioncontrolops"
+	"github.com/steveyegge/beads/internal/utils"
 	"golang.org/x/term"
 )
 
@@ -128,6 +129,11 @@ Bootstrap auto-detects the right action:
 
 If sync.remote points at a git repository, bootstrap verifies refs/dolt/data
 before cloning. Bootstrap exits non-zero when it cannot set up a database.
+
+Remote URLs in sync.remote or sync.git-remote cannot start with a dash, even
+after git+, and SSH users and hosts cannot start with a dash. When the
+configured remote is refused, bootstrap can still recover from a local backup
+or issues.jsonl. Without a local recovery source it reports a blocked plan.
 
 This is the recommended command for:
   • Setting up beads on a fresh clone
@@ -454,17 +460,22 @@ func detectBootstrapPlan(beadsDir string, cfg *configfile.Config) BootstrapPlan 
 	// remember why so an unverifiable remote can become fatal only after local
 	// recovery is exhausted. With no sync.remote, auto-detect Dolt data on git
 	// origin instead.
-	syncRemote := resolveSyncRemote()
+	syncRemote, syncRemoteErr := resolveSyncRemoteChecked()
 	unusableRemoteReason, unusableRemoteURL := "", ""
-	if syncRemote != "" {
+	switch {
+	case syncRemoteErr != nil:
+		unusableRemoteReason = syncRemoteErr.Error()
+	case syncRemote != "":
 		done, reason, url := planConfiguredSyncRemote(&plan, syncRemote)
 		if done {
 			return plan
 		}
 		// Cloning is off the table; purely local recovery is not.
 		unusableRemoteReason, unusableRemoteURL = reason, url
-	} else if originPlan, ok := gitOriginSyncPlan(plan); ok {
-		return originPlan
+	default:
+		if originPlan, ok := gitOriginSyncPlan(plan); ok {
+			return originPlan
+		}
 	}
 
 	// On-disk recovery sources: a non-empty backup JSONL, then a git-tracked
@@ -570,10 +581,14 @@ func gitOriginSyncPlan(plan BootstrapPlan) (BootstrapPlan, bool) {
 	if err != nil || originURL == "" {
 		return BootstrapPlan{}, false
 	}
+	normalized := normalizeRemoteURL(originURL)
+	if checkRemoteNotOption("git origin", normalized) != nil {
+		return BootstrapPlan{}, false
+	}
 	if !gitOriginHasDoltDataRef() {
 		return BootstrapPlan{}, false
 	}
-	plan.SyncRemote = normalizeRemoteURL(originURL)
+	plan.SyncRemote = normalized
 	plan.Action = "sync"
 	plan.Reason = "Found Dolt data on git origin (refs/dolt/data) — will clone from " + redactRemoteURL(originURL)
 	return plan, true
@@ -1402,10 +1417,13 @@ func findParentConfig(beadsDir string) (*configfile.Config, error) {
 	// Start from the parent of beadsDir's enclosing directory.
 	// beadsDir is typically "<project>/.beads", so we start from <project>'s parent.
 	start := filepath.Dir(filepath.Dir(beadsDir))
-	homeDir, _ := os.UserHomeDir()
+	homeDir := beads.AccountHomeDirectory()
 
 	for dir := start; dir != "/" && dir != "."; {
 		candidate := filepath.Join(dir, ".beads")
+		if beads.SkipImplicitUserGlobalBeadsDir(candidate) {
+			break
+		}
 		cfg, err := configfile.LoadForDiscovery(candidate)
 		if err != nil {
 			return nil, fmt.Errorf("%s: %w", configfile.ConfigPath(candidate), err)
@@ -1418,7 +1436,7 @@ func findParentConfig(beadsDir string) (*configfile.Config, error) {
 		}
 
 		// Don't search above $HOME
-		if homeDir != "" && dir == homeDir {
+		if homeDir != "" && utils.PathsEqual(dir, homeDir) {
 			break
 		}
 

@@ -6,10 +6,13 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"strconv"
 	"strings"
 	"testing"
 
 	sqlmock "github.com/DATA-DOG/go-sqlmock"
+	"github.com/steveyegge/beads/internal/doltserver"
+	"github.com/steveyegge/beads/internal/lockfile"
 	"github.com/steveyegge/beads/internal/storage/doltutil"
 	"github.com/steveyegge/beads/internal/testutil"
 )
@@ -53,18 +56,10 @@ func leftoverRemoteRows(gitURL, azURL string) *sqlmock.Rows {
 		AddRow("cloud", azURL)
 }
 
-// TestCLIRoutesUseALeftoverDatabaseOnlyWhereBdRunsTheServer pins every CLI
-// route of push, pull and fetch (default remote and federation peer) to the
-// server bd may run. CLIDir holds a Dolt database whose remotes match the
-// server's, as a clone bd init left in .beads/dolt/<db> does. That database
-// is the server's only for a plain TCP server where bd runs its server
-// (configfile.BdRunsServerAt) and the environment names no port, or names
-// the port bd's state files show its own live server for the workspace on;
-// there every route keeps taking the dolt CLI. At any other host, for a
-// gateway, a TLS endpoint or a unix socket, or for another port
-// BEADS_DOLT_SERVER_PORT or BEADS_DOLT_PORT names, it is at best a stale
-// copy, and pushing it would report success without the server's commits,
-// so every route falls back to SQL, which the server runs on its own data.
+// TestCLIRoutesUseALeftoverDatabaseOnlyWhereBdRunsTheServer checks that
+// every transfer route requires both a managed endpoint and its live
+// physical Dolt database lock. Matching SQL and disk remotes alone are
+// insufficient.
 func TestCLIRoutesUseALeftoverDatabaseOnlyWhereBdRunsTheServer(t *testing.T) {
 	testutil.RequireDoltBinary(t)
 	clearPredicateEnv(t)
@@ -96,7 +91,7 @@ func TestCLIRoutesUseALeftoverDatabaseOnlyWhereBdRunsTheServer(t *testing.T) {
 		bdServerOnPort int
 		wantCLI        bool
 	}{
-		{name: "host=127.0.0.1", cfg: Config{ServerHost: "127.0.0.1"}, wantCLI: true},
+		{name: "host=127.0.0.1 without recorded port", cfg: Config{ServerHost: "127.0.0.1"}},
 		{name: "host=127.0.0.1/BEADS_DOLT_SERVER_PORT", cfg: Config{ServerHost: "127.0.0.1", ServerPort: 3310}, portVar: "BEADS_DOLT_SERVER_PORT"},
 		{name: "host=127.0.0.1/BEADS_DOLT_PORT", cfg: Config{ServerHost: "127.0.0.1", ServerPort: 3310}, portVar: "BEADS_DOLT_PORT"},
 		{name: "host=127.0.0.1/BEADS_DOLT_SERVER_PORT/bd server on that port", cfg: Config{ServerHost: "127.0.0.1", ServerPort: 3310}, portVar: "BEADS_DOLT_SERVER_PORT", bdServerOnPort: 3310, wantCLI: true},
@@ -128,6 +123,10 @@ func TestCLIRoutesUseALeftoverDatabaseOnlyWhereBdRunsTheServer(t *testing.T) {
 				if err := doltutil.AddCLIRemote(cliDir, name, url); err != nil {
 					t.Fatalf("AddCLIRemote(%s): %v", name, err)
 				}
+			}
+
+			if tc.wantCLI {
+				markCLIDirServed(t, cliDir, tc.bdServerOnPort)
 			}
 
 			for _, tt := range routes {
@@ -163,6 +162,28 @@ func TestCLIRoutesUseALeftoverDatabaseOnlyWhereBdRunsTheServer(t *testing.T) {
 				})
 			}
 		})
+	}
+}
+
+// markCLIDirServed simulates Dolt's physical-directory admission evidence.
+func markCLIDirServed(t *testing.T, dir string, port int) {
+	t.Helper()
+	noms := filepath.Join(dir, ".dolt", "noms")
+	if err := os.MkdirAll(noms, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	lock, err := os.OpenFile(filepath.Join(noms, "LOCK"), os.O_RDWR|os.O_CREATE, 0o600)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = lock.Close() })
+	if err := lockfile.FlockExclusiveNonBlock(lock); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = lockfile.FlockUnlock(lock) })
+	info := strconv.Itoa(os.Getpid()) + ":" + strconv.Itoa(port) + ":test"
+	if err := os.WriteFile(filepath.Join(dir, ".dolt", doltserver.ServerInfoFileName), []byte(info), 0o600); err != nil {
+		t.Fatal(err)
 	}
 }
 
@@ -261,6 +282,9 @@ func TestPushAtAHostBdDoesNotRunRunsNoDoltInTheLeftoverDatabase(t *testing.T) {
 			if err := os.MkdirAll(filepath.Join(store.CLIDir(), ".dolt", "noms"), 0o755); err != nil {
 				t.Fatal(err)
 			}
+			if tc.wantCLI {
+				markCLIDirServed(t, store.CLIDir(), 3310)
+			}
 
 			push := store.Push
 			if tc.force {
@@ -353,6 +377,9 @@ func TestCredentialPushOnAnEnvNamedPortKeepsTheCLIOnlyForBdsOwnServer(t *testing
 			}
 			if err := os.MkdirAll(filepath.Join(store.CLIDir(), ".dolt", "noms"), 0o755); err != nil {
 				t.Fatal(err)
+			}
+			if bdServerOnPort {
+				markCLIDirServed(t, store.CLIDir(), 3310)
 			}
 
 			pushErr := store.Push(context.Background())

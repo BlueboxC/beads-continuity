@@ -84,6 +84,9 @@ func runInitProxiedServer(cmd *cobra.Command, ctx context.Context, in initProxie
 	if err := config.Initialize(); err != nil {
 		fmt.Fprintf(os.Stderr, "Warning: failed to initialize config: %v\n", err)
 	}
+	if err := validateInitRemoteSelection(in.initRemote, in.initRemoteChanged); err != nil {
+		return err
+	}
 
 	if err := checkExistingBeadsData(in.prefix); err != nil {
 		return err
@@ -97,6 +100,10 @@ func runInitProxiedServer(cmd *cobra.Command, ctx context.Context, in initProxie
 	fsProvider := fs.NewFileSystemProvider(cwd, newBeadsDirTemplates(), newFileSystemAdapters())
 	fsUseCase := fsProvider.BeadsDirFSUseCase()
 	gitUC := git.NewGitProvider(cwd).GitUseCase()
+	remoteURL := resolveProxiedInitRemoteURL(ctx, gitUC, in)
+	if err := checkRemoteNotOption("git origin", remoteURL); err != nil {
+		return err
+	}
 
 	if in.stealth {
 		if err := fsUseCase.SetupStealthMode(ctx, !in.quiet); err != nil {
@@ -185,8 +192,6 @@ func runInitProxiedServer(cmd *cobra.Command, ctx context.Context, in initProxie
 		return fmt.Errorf("failed to open uow provider: %v", err)
 	}
 	defer func() { _ = initUOWProvider.Close(ctx) }()
-
-	remoteURL := resolveProxiedInitRemoteURL(ctx, gitUC, in)
 
 	// The order is VERIFY, then bootstrap or adopt: Bootstrapper REFUSES an
 	// already-identified substrate, and asking first is how a front door tells a

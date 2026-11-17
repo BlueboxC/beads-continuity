@@ -500,17 +500,19 @@ func buildGitHubPushHooks(gt *github.Tracker) *tracker.PushHooks {
 	if config == nil {
 		config = github.DefaultMappingConfig()
 	}
+	pushFieldsEqual := func(local *types.Issue, remote *tracker.TrackerIssue) bool {
+		if remote == nil {
+			return false
+		}
+		gh, ok := remote.Raw.(*github.Issue)
+		if !ok || gh == nil {
+			return false
+		}
+		return github.PushFieldsEqual(local, gh, config)
+	}
 	return &tracker.PushHooks{
-		ContentEqual: func(local *types.Issue, remote *tracker.TrackerIssue) bool {
-			if remote == nil {
-				return false
-			}
-			gh, ok := remote.Raw.(*github.Issue)
-			if !ok || gh == nil {
-				return false
-			}
-			return github.PushFieldsEqual(local, gh, config)
-		},
+		ContentEqual:    pushFieldsEqual,
+		PushFieldsEqual: pushFieldsEqual,
 		// ContentHash lets the engine skip the per-issue GitHub fetch entirely
 		// when an issue is unchanged since its last push, so a no-op
 		// `github sync --push-only` makes ~zero REST calls instead of one GET

@@ -386,11 +386,18 @@ func TestExternalProxyOutageAndRestoreReDialsTCPAndUnix(t *testing.T) {
 			fixture.Close()
 			failed := dialInternalProxy(t, running.port)
 			_ = failed.SetReadDeadline(time.Now().Add(2 * time.Second))
-			var b [1]byte
-			if _, err := failed.Read(b[:]); err == nil {
-				t.Fatal("outage client unexpectedly received data")
-			}
+			outage, err := io.ReadAll(failed)
 			_ = failed.Close()
+			if err != nil {
+				t.Fatalf("read outage response: %v", err)
+			}
+			// MySQL ERR replaces the greeting on an external outage. The
+			// managed restart and ordinary EOF paths keep their own policy.
+			if len(outage) < 13 || outage[3] != 0 || outage[4] != 0xff ||
+				outage[5] != 0xd3 || outage[6] != 0x07 ||
+				!strings.HasPrefix(string(outage[13:]), "beads db proxy: ") {
+				t.Errorf("external outage produced no identifiable MySQL error packet: %q", outage)
+			}
 			eventuallyInternal(t, 2*time.Second, func() bool {
 				return running.proxy.stats.Snapshot().BackendDialErrors >= 1
 			}, "proxy did not record outage dial error")

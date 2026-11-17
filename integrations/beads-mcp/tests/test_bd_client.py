@@ -195,8 +195,7 @@ async def test_ready_with_issue_type(bd_client, mock_process):
     assert issues[0].issue_type == "bug"
     # Verify --type flag was passed to CLI
     call_args = mock_exec.call_args[0]
-    assert "--type" in call_args
-    assert call_args[call_args.index("--type") + 1] == "bug"
+    assert "--type=bug" in call_args
 
 
 @pytest.mark.asyncio
@@ -329,9 +328,8 @@ async def test_create_passes_title_as_a_named_flag_not_a_bare_positional(bd_clie
         await bd_client.create(CreateIssueParams(title="--actor=injected", priority=2, issue_type="task"))
 
     call_args = list(mock_exec.call_args[0])
-    assert "--title" in call_args
-    title_idx = call_args.index("--title")
-    assert call_args[title_idx + 1] == "--actor=injected"
+    assert "--title=--actor=injected" in call_args
+    assert "--actor=injected" not in call_args
 
 
 @pytest.mark.asyncio
@@ -433,15 +431,18 @@ async def test_update_with_optional_fields(bd_client, mock_process):
             notes="Additional notes",
             external_ref="gh-456",
             labels=["bug", "urgent"],
+            defer_until="",
         )
         issue = await bd_client.update(params)
 
     assert issue.id == "bd-1"
     assert issue.title == "Updated title"
     command = mock_exec.call_args.args
-    assert command[1:4] == ("update", "bd-1", "--assignee")
-    assert "--set-labels" in command
-    assert command[command.index("--set-labels") + 1] == "bug,urgent"
+    assert command[1] == "update"
+    assert "--assignee=alice" in command
+    assert "--set-labels=bug,urgent" in command
+    assert "--defer=" in command
+    assert command[-2:] == ("--", "bd-1")
 
 
 @pytest.mark.asyncio
@@ -476,7 +477,7 @@ async def test_update_empty_labels_emits_explicit_clear(bd_client, mock_process)
 
     assert issue.labels == []
     command = mock_exec.call_args.args
-    assert command[command.index("--set-labels") + 1] == ""
+    assert "--set-labels=" in command
 
 
 @pytest.mark.asyncio
@@ -988,8 +989,7 @@ async def test_text_commands_keep_untrusted_arguments_positional(bd_client, mock
     assert mock_exec.call_args.args == (
         bd_client.bd_path,
         command,
-        "--actor",
-        "reviewer",
+        "--actor=reviewer",
         "--no-auto-flush",
         "--no-auto-import",
         "--",
@@ -1054,3 +1054,52 @@ async def test_execute_stops_descendants_holding_pipes(tmp_path, monkeypatch):
             ),
             5,
         )
+
+
+# Adapted from Wenjie F.'s upstream PR #7881.
+@pytest.mark.asyncio
+async def test_show_passes_caller_id_as_one_literal_operand(bd_client, mock_process):
+    issue_id = "--fixture-operand"
+    response = [
+        {
+            "id": issue_id,
+            "title": "fixture",
+            "priority": 2,
+            "status": "open",
+            "issue_type": "task",
+            "created_at": "2026-01-02T03:04:05Z",
+            "updated_at": "2026-01-02T03:04:05Z",
+        }
+    ]
+    mock_process.communicate = AsyncMock(return_value=(json.dumps(response).encode(), b""))
+    with patch("asyncio.create_subprocess_exec", return_value=mock_process) as run:
+        issue = await bd_client.show(ShowIssueParams(issue_id=issue_id))
+
+    assert issue.id == issue_id
+    argv = run.call_args.args
+    assert argv[:2] == ("/usr/bin/bd", "show")
+    assert "--json" in argv[:-2]
+    assert argv[-2:] == ("--", issue_id)
+
+
+@pytest.mark.asyncio
+async def test_dependency_passes_both_ids_as_literal_operands(bd_client, mock_process):
+    with patch("asyncio.create_subprocess_exec", return_value=mock_process) as run:
+        await bd_client.add_dependency(
+            AddDependencyParams(issue_id="bd-1", depends_on_id="--fixture-operand", dep_type="blocks")
+        )
+
+    argv = run.call_args.args
+    assert argv[:3] == ("/usr/bin/bd", "dep", "add")
+    assert argv[-3:] == ("--", "bd-1", "--fixture-operand")
+
+
+# Adapted from gascity-eddie's upstream PR #7927.
+@pytest.mark.asyncio
+async def test_reopen_noop_returns_empty_list(bd_client, mock_process):
+    mock_process.communicate = AsyncMock(return_value=(b"", b"fixture was already open\n"))
+    with patch("asyncio.create_subprocess_exec", return_value=mock_process) as run:
+        reopened = await bd_client.reopen(ReopenIssueParams(issue_ids=["bd-1"]))
+
+    assert reopened == []
+    run.assert_awaited_once()

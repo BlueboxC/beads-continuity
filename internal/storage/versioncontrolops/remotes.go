@@ -5,6 +5,7 @@ import (
 	"fmt"
 
 	"github.com/steveyegge/beads/internal/storage"
+	"github.com/steveyegge/beads/internal/storage/doltutil"
 )
 
 // ListRemotes returns all configured Dolt remotes (name and URL).
@@ -54,7 +55,7 @@ func Fetch(ctx context.Context, db DBConn, peer, user string) error {
 		return err
 	})
 	if err != nil {
-		return fmt.Errorf("fetch from %s: %w", peer, err)
+		return fmt.Errorf("fetch from %s: %w", peer, doltutil.RedactRemoteError(err))
 	}
 	return nil
 }
@@ -73,7 +74,7 @@ func Push(ctx context.Context, db DBConn, remote, branch, user string) error {
 		return err
 	})
 	if err != nil {
-		return fmt.Errorf("push to %s/%s: %w", remote, branch, err)
+		return fmt.Errorf("push to %s/%s: %w", remote, branch, doltutil.RedactRemoteError(err))
 	}
 	return nil
 }
@@ -90,7 +91,7 @@ func ForcePush(ctx context.Context, db DBConn, remote, branch, user string) erro
 		return err
 	})
 	if err != nil {
-		return fmt.Errorf("force push to %s/%s: %w", remote, branch, err)
+		return fmt.Errorf("force push to %s/%s: %w", remote, branch, doltutil.RedactRemoteError(err))
 	}
 	return nil
 }
@@ -124,7 +125,7 @@ func PullWithStrategy(ctx context.Context, db DBConn, remote, branch, user, stra
 		_, err := db.ExecContext(ctx, "CALL DOLT_FETCH(?, ?)", remote, branch)
 		return err
 	}); err != nil {
-		return fmt.Errorf("fetch from %s/%s: %w", remote, branch, err)
+		return fmt.Errorf("fetch from %s/%s: %w", remote, branch, doltutil.RedactRemoteError(err))
 	}
 	trackingRef := remote + "/" + branch
 	if err := MergeAndSettleWithStrategy(ctx, db, trackingRef, strategy); err != nil {

@@ -1018,6 +1018,9 @@ Non-interactive mode (--non-interactive or BD_NON_INTERACTIVE=1):
 		// valid (directory names like "001" are common in temp dirs).
 		prefix = normalizeIssuePrefix(prefix)
 		remoteDivergenceConfirmed := false
+		if err := validateInitRemoteSelection(initRemote, initRemoteChanged); err != nil {
+			return err
+		}
 
 		// Cross-boundary safety (bd-q83 / ADR 0002): check remote state
 		// BEFORE any filesystem side-effects so a refusal exits cleanly.
@@ -1052,6 +1055,9 @@ Non-interactive mode (--non-interactive or BD_NON_INTERACTIVE=1):
 				// workspace's remote (see guardInitInHomeDir).
 				if originURL, err := gitOriginGetURL(); err == nil && originURL != "" {
 					earlySyncURL = normalizeRemoteURL(originURL)
+					if err := checkRemoteNotOption("git origin", earlySyncURL); err != nil {
+						return err
+					}
 					hasData, probeErr := gitOriginHasDoltDataRefStatus()
 					earlyRemoteHasDoltData, earlyProbeNote = resolveRemoteHasDoltDataProbe(earlySyncURL, hasData, probeErr)
 				}
@@ -1451,6 +1457,9 @@ Non-interactive mode (--non-interactive or BD_NON_INTERACTIVE=1):
 			// keepHomeClean: as in the early remote check above.
 			if originURL, err := gitOriginGetURL(); err == nil && originURL != "" {
 				syncURL = normalizeRemoteURL(originURL)
+				if err := checkRemoteNotOption("git origin", syncURL); err != nil {
+					return err
+				}
 				syncURLFromGitOrigin = true
 				hasData, probeErr := gitOriginHasDoltDataRefStatus()
 				remoteHasDoltData, lateProbeNote = resolveRemoteHasDoltDataProbe(syncURL, hasData, probeErr)
@@ -1964,7 +1973,7 @@ Non-interactive mode (--non-interactive or BD_NON_INTERACTIVE=1):
 			// In stealth mode, persist no-git-ops: true so bd prime
 			// automatically uses stealth session-close protocol (GH#2159)
 			if stealth {
-				if err := config.SaveConfigValue("no-git-ops", true, beadsDir); err != nil {
+				if err := config.SetYamlConfigInDir(beadsDir, "no-git-ops", "true"); err != nil {
 					fmt.Fprintf(os.Stderr, "Warning: failed to set no-git-ops in config: %v\n", err)
 				}
 			}

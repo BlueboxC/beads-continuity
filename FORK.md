@@ -1,5 +1,40 @@
 # Beads Continuity
 
+## Compatible upstream maintenance
+
+The selected maintenance baseline is original `main` at
+`126b30aad7f52ae3f699d50cdf5544ebb41cc8f5`. Complete compatible backports
+retain the ordinary v1.3.1 API, the fork's supervised knowledge, code/document
+catalogs, native viewer and Codex continuity. Preview3 remains
+schema11/generation13 with the same qualified Dolt/analyzer/driver tuple.
+
+- Tracker pulls overlap their cursor, preserve project-qualified GitLab
+  identity, normalize explicit label updates and retain distinct local label
+  edits. Create-only and foreign-reference previews follow the live policy.
+  Notion read queries have bounded pagination and Retry-After handling.
+- MCP operands remain literal, reopen distinguishes a no-op and subsequent
+  field updates preserve requested values and explicit label clearing.
+  Communication deadlines, cancellation and unknown-outcome refusals remain.
+- Project dotenv values are literal; executable mail delegation belongs to
+  operator configuration. Atomic YAML replacement, hook/recipe admission and
+  confined recovery advice retain the existing ownership boundaries.
+- Storage corrections address schema skew before mutation, complete SQL
+  results, backup source identity, redacted URL-userinfo in transfer errors, migration
+  preservation and bounded external-server lifecycle recovery. The fork's
+  stronger log bounds, restore rehearsal and graph admission remain.
+- Opt-in telemetry omits raw command/flag values, query and label dimensions,
+  and hook output in the affected instrumentation. Anonymous usage collection
+  stays absent. Generic error text is a separate surface.
+- Builds select Go1.27.4 while retaining the Go1.27.3 minimum. Root and
+  independent examples select klauspost/compress1.20.2; MCP retains
+  Python>=3.10/FastMCP3.4.5 with PyJWT>=2.15.1 and locked joserfc1.7.7.
+  The Nix compiler source and proxy-vendor hash track these inputs.
+
+The original's replacement native-history format, removal of graph admission
+and Python/FastMCP major-version transition require separate qualification.
+Contributor regressions and stronger fork controls are retained together.
+
+
 ## October 27–28 report corrections
 
 The selected dependency tuple includes Dolt `1755bb696745` and analyzer `a381cc1d8b6a`. It adapts fulghum's Dolt #12225 and preserves the complete GMS #4078 regressions for keyless unique writes, including REPLACE retries and rejected-insert index integrity. Scoped fixes address skysoul1024's #12218 and #12220–12223: IGNORE text/binary conversion and generated defaults, NULL UNION typing, zero-date numeric zero and YEAR/ENUM/SET booleans. Normal/prepared consumer regressions include valid controls, functional indexes and index reads. The existing fsync, privilege, handshake and continuity corrections remain.
@@ -165,8 +200,8 @@ are introduced. Graph Preview, proxy routing and prior engine protections remain
 
 ## Build toolchain
 
-The root and both independent Go examples require and select Go 1.27.3 for
-Dolt 2.6.0 and its analyzer. The Nix overlay pins the official 1.27.3 source
+The root and both independent Go examples retain the Go 1.27.3 minimum and
+select Go 1.27.4 for Dolt 2.6.0 and its analyzer. The Nix overlay pins the official 1.27.4 source
 archive and SHA-256; MCP CI jobs pin uv 0.13.5. All lint lanes and the optional pre-commit hook pin golangci-lint v2.15.0, because v2.10.1 cannot read Go 1.27 export data. The earlier toolchain hardening adapted Julian Knutsen's
 [PR #7732](https://github.com/gastownhall/beads/pull/7732), including its
 updated Go 1.26 devcontainer. The fork has no Bazel setup to transplant.

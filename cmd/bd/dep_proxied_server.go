@@ -11,6 +11,7 @@ import (
 	"github.com/steveyegge/beads/internal/storage/uow"
 	"github.com/steveyegge/beads/internal/types"
 	"github.com/steveyegge/beads/internal/ui"
+	"github.com/steveyegge/beads/internal/workapi"
 	"github.com/steveyegge/beads/issueops"
 )
 
@@ -159,6 +160,32 @@ func proxiedLookupTitle(ctx context.Context, uw uow.UnitOfWork, id string) strin
 	return ""
 }
 
+// warnProxiedUnverifiedDependency performs advisory exact-target checks after
+// committing a cross-prefix edge. Quiet mode omits those optional reads.
+func warnProxiedUnverifiedDependency(ctx context.Context, source, target string, line int) {
+	sourcePrefix, targetPrefix := types.ExtractPrefix(source), types.ExtractPrefix(target)
+	if quietFlag || IsExternalRef(target) || sourcePrefix == "" || targetPrefix == "" || sourcePrefix == targetPrefix {
+		return
+	}
+	if uowProvider != nil {
+		if uw, err := uowProvider.NewUOW(ctx); err == nil {
+			issue, _, lookupErr := workapi.GetIssueOrWisp(ctx, workapi.NewUOWDetailSource(uw), target)
+			uw.Close(ctx)
+			if lookupErr == nil && issue != nil && issue.ID == target {
+				return
+			}
+		}
+	}
+	routed, err := resolveViaPrefixRoutingWithAccess(ctx, target, false)
+	if err == nil && routed != nil {
+		defer routed.Close()
+		if routed.ResolvedID == target {
+			return
+		}
+	}
+	warnMissingDependencyTarget(source, target, line)
+}
+
 func runDepBlocksProxiedServer(cmd *cobra.Command, ctx context.Context, blockerID, blockedID string) error {
 	if isDisallowedHierarchicalDependency(blockedID, blockerID, types.DepBlocks) {
 		return HandleErrorRespectJSON("cannot add dependency: %s is already a child of %s. Children inherit dependency on parent completion via hierarchy. Adding an explicit dependency would create a deadlock", blockedID, blockerID)
@@ -171,6 +198,7 @@ func runDepBlocksProxiedServer(cmd *cobra.Command, ctx context.Context, blockerI
 		return HandleErrorRespectJSON("%v", err)
 	}
 	res := depEdgeFeedback(ctx, blockedID, blockerID, !noCycleCheck)
+	warnProxiedUnverifiedDependency(ctx, blockedID, blockerID, 0)
 
 	printCycleDetectionError(res.cycleErr)
 	printCycleWarnings(res.cycles)
@@ -246,6 +274,7 @@ func runDepAddProxiedServer(cmd *cobra.Command, ctx context.Context, args []stri
 
 	explicit := cmd.Flags().Changed("type") || cmd.Flags().Changed("blocked-by") || cmd.Flags().Changed("depends-on")
 	warnImplicitBlocksDefault(dt, explicit)
+	warnProxiedUnverifiedDependency(ctx, fromID, toID, 0)
 
 	if jsonOutput {
 		_ = outputJSON(map[string]interface{}{
@@ -298,6 +327,9 @@ func runDepAddBulkProxied(cmd *cobra.Command, ctx context.Context, file, default
 		return HandleErrorRespectJSON("%v", err)
 	}
 	res := depEdgeFeedback(ctx, "", "", !noCycleCheck)
+	for _, edge := range edges {
+		warnProxiedUnverifiedDependency(ctx, edge.IssueID, edge.DependsOnID, edge.Line)
+	}
 
 	printCycleDetectionError(res.cycleErr)
 	printCycleWarnings(res.cycles)

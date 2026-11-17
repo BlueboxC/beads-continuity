@@ -43,9 +43,21 @@ func ValidateSettingWrite(key, value string) (string, error) {
 	if _, err := ValidateSettingKey(key); err != nil {
 		return "", err
 	}
+	if config.IsCommandSettingKey(key) {
+		return "", fmt.Errorf("%w: %q must come from the operator environment or user config", issueops.ErrValidation, key)
+	}
 	if config.IsYamlOnlyKey(key) {
 		return "", fmt.Errorf("%w: %q is local-only; use config.yaml or its environment variable, not the synced settings API", issueops.ErrValidation, key)
 	}
+	// This role stores ordinary settings. Lengths match VARCHAR(255)
+	// characters for keys and TEXT bytes for values.
+	if err := types.CheckFieldLen("config key", key); err != nil {
+		return "", fmt.Errorf("%w: %w", issueops.ErrValidation, err)
+	}
+	if err := types.CheckTextLen("config value", value); err != nil {
+		return "", fmt.Errorf("%w: %w", issueops.ErrValidation, err)
+	}
+
 	// The prefix is owned by bd init --prefix, bd bootstrap and bd
 	// rename-prefix. Refused HERE rather than at the front door because `bd
 	// config set` is not the only door that reaches this plane: before this

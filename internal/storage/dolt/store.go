@@ -311,11 +311,12 @@ var _ storage.EventsJournalConfigurer = (*DoltStore)(nil)
 
 // DoltStore implements the Storage interface using Dolt
 type DoltStore struct {
-	db       *sql.DB
-	dbPath   string      // Path to Dolt data directory (server root, e.g. .beads/dolt/)
-	beadsDir string      // Path to .beads directory (parent of dbPath)
-	database string      // Database name (subdirectory under dbPath)
-	closed   atomic.Bool // Tracks whether Close() has been called
+	db          *sql.DB
+	dbPath      string      // Path to Dolt data directory (server root, e.g. .beads/dolt/)
+	beadsDir    string      // Path to .beads directory (parent of dbPath)
+	database    string      // Database name (subdirectory under dbPath)
+	closed      atomic.Bool // Tracks whether Close() has been called
+	untrackPool func()
 	// Report migrations performed by this writable open once (#7283).
 	openApplied atomic.Int64
 	// eventsJournalEnabled activates the durable events journal for THIS store
@@ -953,45 +954,122 @@ func init() {
 	)
 }
 
-// registerPoolGauges registers observable gauges that report sql.DB pool stats
-// on each OTel collection cycle. These are essential for diagnosing shared-server
-// degradation under multi-worktree load (GH#3140).
-func (s *DoltStore) registerPoolGauges() {
-	m := otel.Meter("github.com/steveyegge/beads/storage/dolt")
-	db := s.db
+// poolSet is the set of sql.DB pools of the stores open in this process,
+// which the bd.db.pool_* gauges report on each collection.
+//
+// The gauges are registered once per process, and each store adds its pool
+// on open and removes it on Close. Registering them per store with an inline
+// callback does not work: the SDK keeps only the first callback of an
+// instrument, so a process that opened a second store reported the first
+// store's pool forever, closed or not, and kept its database handle
+// reachable.
+//
+// With several stores open the gauges report the sum over their pools: the
+// connections this process holds against its servers. With none open they
+// report the stats each pool had when its store closed, summed over the
+// stores closed since the last open. A short command closes its store before
+// telemetry.Shutdown exports the final collection, so without that the
+// command's only export would read zero.
+type poolSet struct {
+	mu  sync.Mutex
+	dbs map[*sql.DB]struct{}
+	// closed holds the stats of pools closed since the last track, read
+	// only while dbs is empty.
+	closed []sql.DBStats
+}
 
-	m.Int64ObservableGauge("bd.db.pool_open", //nolint:errcheck,gosec
-		metric.WithDescription("Current number of open connections (in-use + idle)"),
-		metric.WithUnit("{connection}"),
-		metric.WithInt64Callback(func(_ context.Context, o metric.Int64Observer) error {
-			o.Observe(int64(db.Stats().OpenConnections))
-			return nil
-		}),
-	)
-	m.Int64ObservableGauge("bd.db.pool_in_use", //nolint:errcheck,gosec
-		metric.WithDescription("Connections currently in use"),
-		metric.WithUnit("{connection}"),
-		metric.WithInt64Callback(func(_ context.Context, o metric.Int64Observer) error {
-			o.Observe(int64(db.Stats().InUse))
-			return nil
-		}),
-	)
-	m.Int64ObservableGauge("bd.db.pool_idle", //nolint:errcheck,gosec
-		metric.WithDescription("Idle connections in pool"),
-		metric.WithUnit("{connection}"),
-		metric.WithInt64Callback(func(_ context.Context, o metric.Int64Observer) error {
-			o.Observe(int64(db.Stats().Idle))
-			return nil
-		}),
-	)
-	m.Int64ObservableGauge("bd.db.pool_max_open", //nolint:errcheck,gosec
-		metric.WithDescription("Maximum number of open connections (pool limit)"),
-		metric.WithUnit("{connection}"),
-		metric.WithInt64Callback(func(_ context.Context, o metric.Int64Observer) error {
-			o.Observe(int64(db.Stats().MaxOpenConnections))
-			return nil
-		}),
-	)
+// track adds db to the set and returns a func that removes it, keeping the
+// pool's stats at that moment for the gauges (call it before db.Close). The
+// returned func is idempotent.
+func (p *poolSet) track(db *sql.DB) (untrack func()) {
+	p.mu.Lock()
+	if p.dbs == nil {
+		p.dbs = make(map[*sql.DB]struct{})
+	}
+	p.dbs[db] = struct{}{}
+	p.closed = nil
+	p.mu.Unlock()
+	var once sync.Once
+	return func() {
+		once.Do(func() {
+			last := db.Stats()
+			p.mu.Lock()
+			delete(p.dbs, db)
+			p.closed = append(p.closed, last)
+			p.mu.Unlock()
+		})
+	}
+}
+
+// stats returns the summed pool stats of the open stores or, with none
+// open, of the stores closed since the last open.
+func (p *poolSet) stats() (open, inUse, idle, maxOpen int64) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	add := func(st sql.DBStats) {
+		open += int64(st.OpenConnections)
+		inUse += int64(st.InUse)
+		idle += int64(st.Idle)
+		maxOpen += int64(st.MaxOpenConnections)
+	}
+	if len(p.dbs) == 0 {
+		for _, st := range p.closed {
+			add(st)
+		}
+		return open, inUse, idle, maxOpen
+	}
+	for db := range p.dbs {
+		add(db.Stats())
+	}
+	return open, inUse, idle, maxOpen
+}
+
+// register creates the four pool gauges on m with one callback over the set.
+func (p *poolSet) register(m metric.Meter) error {
+	gauge := func(name, desc string) (metric.Int64ObservableGauge, error) {
+		return m.Int64ObservableGauge(name, metric.WithDescription(desc), metric.WithUnit("{connection}"))
+	}
+	openG, err := gauge("bd.db.pool_open", "Current number of open connections (in-use + idle)")
+	if err != nil {
+		return err
+	}
+	inUseG, err := gauge("bd.db.pool_in_use", "Connections currently in use")
+	if err != nil {
+		return err
+	}
+	idleG, err := gauge("bd.db.pool_idle", "Idle connections in pool")
+	if err != nil {
+		return err
+	}
+	maxG, err := gauge("bd.db.pool_max_open", "Maximum number of open connections (pool limit)")
+	if err != nil {
+		return err
+	}
+	_, err = m.RegisterCallback(func(_ context.Context, o metric.Observer) error {
+		open, inUse, idle, maxOpen := p.stats()
+		o.ObserveInt64(openG, open)
+		o.ObserveInt64(inUseG, inUse)
+		o.ObserveInt64(idleG, idle)
+		o.ObserveInt64(maxG, maxOpen)
+		return nil
+	}, openG, inUseG, idleG, maxG)
+	return err
+}
+
+var (
+	processPools          = &poolSet{}
+	processPoolGaugesOnce sync.Once
+)
+
+// registerPoolGauges adds the store's pool to the process pool gauges, which
+// report sql.DB pool stats on each OTel collection cycle. These are essential
+// for diagnosing shared-server degradation under multi-worktree load
+// (GH#3140). Close removes the pool again.
+func (s *DoltStore) registerPoolGauges() {
+	processPoolGaugesOnce.Do(func() {
+		_ = processPools.register(otel.Meter("github.com/steveyegge/beads/storage/dolt"))
+	})
+	s.untrackPool = processPools.track(s.db)
 }
 
 // doltSpanAttrs returns the fixed attributes shared by all SQL spans.
@@ -1422,15 +1500,11 @@ func (s *DoltStore) BackupDatabase(ctx context.Context, dir string) error {
 // RestoreDatabase restores the database from a Dolt backup at dir.
 // When force is true, an existing database is overwritten.
 func (s *DoltStore) RestoreDatabase(ctx context.Context, dir string, force bool) error {
-	info, err := os.Stat(dir)
-	if err != nil {
-		return fmt.Errorf("backup source does not exist: %w", err)
+	// The connected SQL server resolves the file path on its side.
+	if s.cfg != nil && s.cfg.ServerSocket == "" && !configfile.IsLocalHostString(s.cfg.ServerHost) {
+		return fmt.Errorf("backup restore requires a shared filesystem with the Dolt server at %s", doltutil.PrintedValue(s.cfg.ServerHost))
 	}
-	if !info.IsDir() {
-		return fmt.Errorf("backup source is not a directory: %s", dir)
-	}
-
-	backupURL, err := versioncontrolops.DirToFileURL(dir)
+	backupURL, err := versioncontrolops.RestoreSourceURL(dir)
 	if err != nil {
 		return err
 	}
@@ -2128,9 +2202,9 @@ func newServerMode(ctx context.Context, cfg *Config) (*DoltStore, error) {
 	if !cfg.CreateIfMissing || dbFacts.alreadyExisted {
 		var verifyErr error
 		if cfg.Database == doltserver.GlobalDatabaseName {
-			verifyErr = store.verifyGlobalProjectIdentity(ctx, cfg.BeadsDir)
+			verifyErr = store.verifyGlobalProjectIdentity(ctx, beadsDir)
 		} else {
-			verifyErr = store.verifyProjectIdentity(ctx, cfg.BeadsDir)
+			verifyErr = store.verifyProjectIdentity(ctx, beadsDir)
 		}
 		if verifyErr != nil {
 			return nil, verifyErr
@@ -2404,8 +2478,8 @@ func (s *DoltStore) verifyGlobalProjectIdentity(ctx context.Context, beadsDir st
 		return fmt.Errorf(
 			"GLOBAL PROJECT IDENTITY MISMATCH — refusing to connect\n\n"+
 				"  Expected global project ID (metadata.json): %s\n"+
-				"  Database project ID:                        %s\n\n"+
-				expectedID, dbID)
+				"  Database project ID:                        %s",
+			expectedID, dbID)
 	}
 	return nil
 }
@@ -2508,11 +2582,11 @@ func (s *DoltStore) execWithLongTimeout(ctx context.Context, query string, args 
 	if err != nil {
 		return fmt.Errorf("failed to begin transaction: %w", err)
 	}
-	if _, err := tx.ExecContext(ctx, query, args...); err != nil {
+	if err := schema.DrainCall(ctx, tx, query, args...); err != nil {
 		_ = tx.Rollback()
-		return err
+		return doltutil.RedactRemoteError(err)
 	}
-	return tx.Commit()
+	return doltutil.RedactRemoteError(tx.Commit())
 }
 
 // execWithLongTimeoutNoTx executes a long-running Dolt stored procedure without
@@ -2530,7 +2604,7 @@ func (s *DoltStore) execWithLongTimeoutNoTx(ctx context.Context, query string, a
 	}
 	defer db.Close()
 	_, err = db.ExecContext(ctx, query, args...)
-	return err
+	return doltutil.RedactRemoteError(err)
 }
 
 // oneShotConn opens a one-shot connection with the given read deadline
@@ -3238,6 +3312,10 @@ func (s *DoltStore) Close() error {
 	s.closed.Store(true)
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	if s.untrackPool != nil {
+		s.untrackPool()
+		s.untrackPool = nil
+	}
 	var err error
 	if s.db != nil {
 		if cerr := doltutil.CloseWithTimeout("db", s.db.Close); cerr != nil {
@@ -4034,10 +4112,10 @@ func (s *DoltStore) cliDirServesServer() bool {
 		!isLocalHost(cfg.ServerHost) || configfile.IsIPv6LoopbackHost(cfg.ServerHost) {
 		return false
 	}
-	if cfg.ServerPort == 0 && os.Getenv("BEADS_DOLT_SERVER_PORT") == "" && os.Getenv("BEADS_DOLT_PORT") == "" {
-		return true
-	}
-	return s.beadsDir != "" && doltserver.ManagesLiveServerOnPort(doltserver.ResolveServerDir(s.beadsDir), cfg.ServerPort)
+	return cfg.ServerPort > 0 &&
+		s.beadsDir != "" &&
+		doltserver.ManagesLiveServerOnPort(doltserver.ResolveServerDir(s.beadsDir), cfg.ServerPort) &&
+		doltserver.ServesDatabaseDirOnPort(s.CLIDir(), cfg.ServerPort)
 }
 
 // ensureMatchingCLIRemote materializes the local CLI remote needed before
@@ -4356,11 +4434,15 @@ func (s *DoltStore) doltCLIPush(ctx context.Context, remote string, force bool, 
 // hit the bounded timeout (actionable: raise BEADS_CLI_TRANSFER_TIMEOUT, or
 // check what holds the database directory busy) from an ordinary failure.
 func cliTransferError(op, remote string, transferCtx context.Context, out []byte, err error) error {
+	op = doltutil.RedactRemoteText(op)
+	remote = doltutil.RedactRemoteURL(remote)
+	detail := doltutil.RedactRemoteText(strings.TrimSpace(string(out)))
+	err = doltutil.RedactRemoteError(err)
 	if errors.Is(transferCtx.Err(), context.DeadlineExceeded) {
 		return fmt.Errorf("%s to %q timed out after %s (override with %s=<duration>; large transfers to cloud remotes can run long, and a busy dolt sql-server serving the database directory can stall CLI transfers): %s: %w",
-			op, remote, cliExecTimeoutDuration(), cliExecTimeoutEnv, strings.TrimSpace(string(out)), err)
+			op, remote, cliExecTimeoutDuration(), cliExecTimeoutEnv, detail, err)
 	}
-	return fmt.Errorf("%s failed: %s: %w", op, strings.TrimSpace(string(out)), err)
+	return fmt.Errorf("%s failed: %s: %w", op, detail, err)
 }
 
 // doltCLIPull shells out to `dolt pull` from the database directory.
@@ -4765,7 +4847,7 @@ func (s *DoltStore) refreshTrackingRef(ctx context.Context, remote string) error
 	}
 	defer db.Close()
 	return withRemoteOperationEnv(s.credentialsForRemote(remote), s.isS3Remote(ctx, remote), func() error {
-		return schema.DrainCall(ctx, db, "CALL DOLT_FETCH(?, ?)", remote, s.branch)
+		return doltutil.RedactRemoteError(schema.DrainCall(ctx, db, "CALL DOLT_FETCH(?, ?)", remote, s.branch))
 	})
 }
 
@@ -4888,7 +4970,7 @@ func (s *DoltStore) pullWithAutoResolveReporting(ctx context.Context, remote str
 		report, err = s.pullWithAutoResolveUnchecked(ctx, remote, query, args...)
 		return err
 	})
-	return report, err
+	return report, doltutil.RedactRemoteError(err)
 }
 
 func (s *DoltStore) pullWithAutoResolveUnchecked(ctx context.Context, remote string, query string, args ...any) (pullReport, error) {
@@ -5036,8 +5118,8 @@ func (s *DoltStore) settleMergeInTx(ctx context.Context, tx *sql.Tx, pullErr err
 	// Conclude the merge for resolved conflicts only now, after the FK repair:
 	// DOLT_COMMIT refuses a violated working set, so a merge carrying both
 	// classes could never settle when the resolver committed first (bd-578h9.14).
-	if resolved {
-		if err := versioncontrolops.CommitResolvedConflicts(ctx, tx); err != nil {
+	if resolved || repairedViol {
+		if err := versioncontrolops.CommitServerMergeSettlement(ctx, tx, resolved, repairedViol); err != nil {
 			_ = tx.Rollback()
 			if pullErr != nil {
 				return pullErr
@@ -5377,8 +5459,8 @@ func (s *DoltStore) autoResolveConflictsAfterCLIPull(ctx context.Context, pullEr
 	// A decoded server rejection is determinate and needs cleanup of the merge
 	// created outside this transaction. An untyped/lost commit response may
 	// have succeeded: preserve that state and never abort or replay it.
-	if resolved {
-		if err := versioncontrolops.CommitResolvedConflicts(ctx, tx); err != nil {
+	if resolved || repairedViol {
+		if err := versioncontrolops.CommitServerMergeSettlement(ctx, tx, resolved, repairedViol); err != nil {
 			_ = tx.Rollback()
 			if !isIndeterminateCommitResponse(err) {
 				versioncontrolops.AbortMerge(ctx, conn, preMergeClean)

@@ -50,3 +50,52 @@ func TestLoadBeadsEnvFile(t *testing.T) {
 		loadBeadsEnvFile("")
 	})
 }
+
+// Adapted from the contributor's #8137 checks for both project dotenv readers.
+func TestProjectEnvRejectsInterpolation(t *testing.T) {
+	for _, tt := range []struct {
+		name string
+		key  string
+		load func(string)
+	}{
+		{"full load", "BEADS_DOLT_SERVER_USER", loadBeadsEnvFile},
+		{"selection load", "BEADS_DB", loadBeadsSelectionEnvFile},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			dir := t.TempDir()
+			t.Setenv(tt.key, "")
+			if err := os.Unsetenv(tt.key); err != nil {
+				t.Fatal(err)
+			}
+			t.Setenv("BD_LITERAL_FIXTURE", "example")
+			if err := os.WriteFile(filepath.Join(dir, ".env"), []byte(tt.key+"=sample-${BD_LITERAL_FIXTURE}\n"), 0o600); err != nil {
+				t.Fatal(err)
+			}
+			tt.load(dir)
+			if _, present := os.LookupEnv(tt.key); present {
+				t.Errorf("%s accepted an interpolated dotenv value", tt.key)
+			}
+		})
+	}
+}
+
+func TestProjectEnvPreservesLiteralAndExplicitEmpty(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("BEADS_DOLT_SERVER_USER", "")
+	if err := os.Unsetenv("BEADS_DOLT_SERVER_USER"); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("BEADS_DOLT_SERVER_HOST", "")
+	t.Setenv("BD_LITERAL_FIXTURE", "example")
+	const contents = "BEADS_DOLT_SERVER_USER='literal$BD_LITERAL_FIXTURE'\nBEADS_DOLT_SERVER_HOST=from-file\n"
+	if err := os.WriteFile(filepath.Join(dir, ".env"), []byte(contents), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	loadBeadsEnvFile(dir)
+	if got := os.Getenv("BEADS_DOLT_SERVER_USER"); got != "literal$BD_LITERAL_FIXTURE" {
+		t.Errorf("literal value = %q", got)
+	}
+	if got, present := os.LookupEnv("BEADS_DOLT_SERVER_HOST"); got != "" || !present {
+		t.Errorf("operator's explicit empty value = (%q, %v)", got, present)
+	}
+}

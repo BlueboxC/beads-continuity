@@ -23,6 +23,7 @@ import (
 	"github.com/steveyegge/beads/internal/types"
 	"github.com/steveyegge/beads/internal/ui"
 	"github.com/steveyegge/beads/internal/utils"
+	"github.com/steveyegge/beads/issueops"
 )
 
 func openMigrationPlanningStore(ctx context.Context, planningBeadsDir string, projectStore storage.DoltStorage, actor string) (storage.DoltStorage, error) {
@@ -286,6 +287,10 @@ func runMigratePersonal(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
+	if err := refuseDependentsLeftBehind(ctx, store, personal); err != nil {
+		return err
+	}
+
 	fmt.Printf("Move to planning repo: %s\n\n", ui.RenderAccent(planningPath))
 
 	if !migratePersonalYes && !confirmMigratePersonal(ctx, len(personal)) {
@@ -424,6 +429,29 @@ func commitPlanningWrites(ctx context.Context, dst storage.DoltStorage, message 
 		return err
 	}
 	return maybeAutoCommitStore(ctx, dst, doltAutoCommitParams{MessageOverride: message})
+}
+
+// refuseDependentsLeftBehind asks the same source deletion policy that the
+// final move uses, before opening or writing the planning database.
+func refuseDependentsLeftBehind(ctx context.Context, projectStore storage.DoltStorage, personal []*types.Issue) error {
+	ids := make([]string, len(personal))
+	for i, issue := range personal {
+		ids[i] = issue.ID
+	}
+	_, err := projectStore.DeleteIssues(ctx, ids, false, false, true)
+	var blocked *issueops.DependentsOutsideRequestError
+	if errors.As(err, &blocked) {
+		names := make([]string, len(blocked.Dependents))
+		for i, id := range blocked.Dependents {
+			names[i] = printedValue(id)
+		}
+		return fmt.Errorf("issue %s has dependents that would stay in the project database (%s); remove those dependencies before migrating",
+			printedValue(blocked.IssueID), strings.Join(names, ", "))
+	}
+	if err != nil {
+		return fmt.Errorf("check dependencies before migrating personal issues: %w", err)
+	}
+	return nil
 }
 
 func deleteMovedIssues(ctx context.Context, projectStore storage.DoltStorage, ids []string, planningPath string) error {

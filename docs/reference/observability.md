@@ -25,8 +25,7 @@ docker compose up -d
 ## Configuration
 
 Telemetry is **explicit opt-in**. Set `BD_OTEL_ENABLED=true` and configure the
-exporter via standard OpenTelemetry SDK environment variables — both go in
-your shell profile or workspace `.env`:
+exporter with standard OpenTelemetry variables in your shell environment:
 
 ```bash
 export BD_OTEL_ENABLED=true
@@ -37,8 +36,8 @@ A standard `OTEL_*` variable alone will not turn bd telemetry on — `bd` won't
 auto-activate from a machine-global `OTEL_*` setting that was set for some
 other instrumented tool.
 
-Log export is not implemented yet. `BD_OTEL_LOGS_URL` is reserved for a future
-VictoriaLogs exporter and does not activate telemetry today.
+Log export is reserved for future use. The legacy `BD_OTEL_LOGS_URL` setting
+still opts in and translates the logs endpoint for compatibility.
 
 ### Shell profile (recommended)
 
@@ -52,9 +51,9 @@ export OTEL_EXPORTER_OTLP_METRICS_ENDPOINT=http://localhost:8428/opentelemetry/a
 
 | Variable | Example | Description |
 |----------|---------|-------------|
-| `BD_OTEL_ENABLED` | `true` | **Master switch.** Activates telemetry. Without it, the variables below are ignored. |
+| `BD_OTEL_ENABLED` | `true` | Opt in to telemetry. The deprecated Beads selectors below also opt in. |
 | `OTEL_EXPORTER_OTLP_METRICS_ENDPOINT` | `http://localhost:8428/opentelemetry/api/v1/push` | Push metrics to an OTLP HTTP receiver. |
-| `OTEL_EXPORTER_OTLP_LOGS_ENDPOINT` | `http://localhost:9428/insert/opentelemetry/v1/logs` | Push logs to an OTLP HTTP receiver (reserved for future log export). |
+| `OTEL_EXPORTER_OTLP_LOGS_ENDPOINT` | `http://localhost:9428/insert/opentelemetry/v1/logs` | Reserved for future log export. |
 | `OTEL_TRACES_EXPORTER` | `console` | Write spans to stderr (dev/debug). |
 | `OTEL_METRICS_EXPORTER` | `console` | Metric exporter selection, comma-separated (`otlp`, `console`, `none`). Unset defaults to `otlp`; `console` writes to stderr (dev/debug); a selection without `otlp` never exports to an OTLP endpoint, even if one is configured machine-globally. |
 | `OTEL_SERVICE_NAME` | `bd` | Override the `service.name` resource attribute. |
@@ -70,10 +69,9 @@ Every metric and span carries the OTel resource describing the bd process:
 | `service.name` | `bd` | Override with `OTEL_SERVICE_NAME`. |
 | `service.version` | bd version | |
 
-The default resource also includes host name, process PID, executable name/path
-and Go runtime name/version/description. It does not automatically collect
-`process.command_args`, `process.command_line` or `process.owner`, so issue text
-and long argument lists do not enter every metric resource.
+The default resource includes the host name, process PID, executable name, and
+Go runtime name, version and description. It omits command arguments, the
+command line, executable paths, and the process owner.
 
 Add or override attributes via `OTEL_RESOURCE_ATTRIBUTES`. Explicit values are
 exported as configured; this is not a filter for operator-supplied attributes.
@@ -99,6 +97,9 @@ that sees one logs a one-line deprecation warning to stderr:
 | `BD_OTEL_LOGS_URL` | `OTEL_EXPORTER_OTLP_LOGS_ENDPOINT` |
 | `BD_OTEL_STDOUT=true` | `OTEL_TRACES_EXPORTER=console` + `OTEL_METRICS_EXPORTER=console` |
 
+Setting both `BD_OTEL_STDOUT=true` and `BD_OTEL_METRICS_URL` selects
+`OTEL_METRICS_EXPORTER=console,otlp`.
+
 ## Verification
 
 ```bash
@@ -115,7 +116,7 @@ sum(rate(bd_storage_operations_total[5m]))               # operation rate
 ### Confirm storage instrumentation locally
 
 To verify the storage decorator chain is wired up without standing up a
-collector, run `bd` with stdout exporters and look for `bd.storage.*`
+collector, run `bd` with console exporters and look for `bd.storage.*`
 records on stderr:
 
 ```bash
@@ -136,17 +137,19 @@ present, the storage decorator is not in the chain — check
 | Metric | Type | Attributes | Description |
 |--------|------|------------|-------------|
 | `bd_storage_operations_total` | Counter | `db.operation` | Storage operations executed |
-| `bd_storage_operation_duration_ms` | Histogram | `db.operation` | Operation duration (ms) |
+| `bd_storage_operation_duration_ms` | Histogram | `db.operation` | Operation duration in fractional milliseconds |
 | `bd_storage_errors_total` | Counter | `db.operation` | Storage errors |
 
-> These metrics are emitted by `InstrumentedStorage`, the beads SDK wrapper.
+`InstrumentedStorage` uses only `db.operation` on these metrics. Issue query
+text is omitted from operation metrics and search spans. Storage transaction
+spans omit commit messages.
 
 ### Dolt database (`bd_db_*`)
 
 | Metric | Type | Attributes | Description |
 |--------|------|------------|-------------|
 | `bd_db_retry_count_total` | Counter | — | SQL retries in server mode |
-| `bd_db_lock_wait_ms` | Histogram | `dolt_lock_exclusive` | Wait time to acquire database locks |
+| `bd_db_lock_wait_ms` | Histogram | — | Registered for lock wait timing. No observations are recorded yet. |
 
 ### Issues (`bd_issue_*`)
 
@@ -162,7 +165,7 @@ present, the storage decorator is not in the chain — check
 |--------|------|------------|-------------|
 | `bd_ai_input_tokens_total` | Counter | `bd_ai_model` | Anthropic input tokens |
 | `bd_ai_output_tokens_total` | Counter | `bd_ai_model` | Anthropic output tokens |
-| `bd_ai_request_duration_ms` | Histogram | `bd_ai_model` | API call latency |
+| `bd_ai_request_duration_ms` | Histogram | `bd_ai_model` | API call latency in fractional milliseconds |
 
 ---
 
@@ -188,7 +191,7 @@ Spans are only exported when `OTEL_TRACES_EXPORTER=console` — there is no trac
 |-----------|-------------|
 | `bd.command` | Subcommand name (`list`, `create`, ...) |
 | `bd.version` | bd version |
-| `bd.args` | Credential-scrubbed arguments in local console traces; issue text may remain. This is separate from the resource and is not sent to a remote trace backend. |
+| `bd.args` | Parsed command path below `bd` and sorted long names of explicitly set flags. Positional arguments and flag values are omitted. |
 | `bd.actor` | Actor (resolved from git config / env) |
 
 **`hook.exec`**
@@ -198,10 +201,12 @@ Spans are only exported when `OTEL_TRACES_EXPORTER=console` — there is no trac
 | `hook.event` | Event type (`create`, `update`, `close`) |
 | `hook.path` | Absolute path to the script |
 | `bd.issue_id` | ID of the triggering issue |
-| event `hook.stdout` | Script standard output (truncated to 1 024 bytes) |
-| event `hook.stderr` | Script error output (truncated to 1 024 bytes) |
+| event `hook.stdout` | Byte count of nonempty standard output |
+| event `hook.stderr` | Byte count of nonempty standard error |
 
-The `hook.stdout` / `hook.stderr` events carry two attributes: `output` (the text) and `bytes` (original size before truncation).
+Both hook events carry only `bytes`. Lower-level Dolt spans can still include
+truncated SQL and generic error text. AI compaction spans may also retain
+generic error text. Resource overrides remain operator-controlled.
 
 ---
 
@@ -210,8 +215,8 @@ The `hook.stdout` / `hook.stderr` events carry two attributes: `output` (the tex
 ```
 cmd/bd/main.go
   └─ telemetry.Init()
-      ├─ OTEL_TRACES_EXPORTER=console        → TracerProvider stdout
-      ├─ OTEL_METRICS_EXPORTER=console       → MeterProvider stdout
+      ├─ OTEL_TRACES_EXPORTER=console        → TracerProvider stderr
+      ├─ OTEL_METRICS_EXPORTER=console       → MeterProvider stderr
       └─ OTEL_EXPORTER_OTLP_METRICS_ENDPOINT → MeterProvider HTTP → VictoriaMetrics
 
 internal/storage/dolt/        → bd_db_* metrics + dolt.* spans
@@ -222,6 +227,5 @@ internal/compact/             → bd_ai_* metrics + anthropic.* spans
 internal/telemetry/storage.go → bd_storage_* metrics (SDK wrapper)
 ```
 
-When no OpenTelemetry SDK environment variable selects an exporter,
-`telemetry.Init()` installs **no-op** providers: hot paths execute only no-op
-calls with no memory allocation.
+When telemetry is disabled, `telemetry.Init()` installs no-op providers.
+Console exporters leave stdout available for command output, including JSON.

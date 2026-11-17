@@ -17,6 +17,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   reads them back, and `note` appends to the notes field.
 
 ### Fixed
+- Bind caller-supplied CLI arguments as literal values, including issue IDs
+  and dependency operands (Wenjie F., PR #7881).
+- Report reopen no-ops and apply additional fields when updating an issue to
+  open. Preserve the reopen reason and report partial failures
+  (gascity-eddie, PR #7927).
+- Update PyJWT to 2.15.1 and joserfc to 1.7.7 while retaining Python 3.10
+  compatibility (gascityinc-randy, PR #7466, and Julian Knutsen, PR #8115).
 - `mcp__beads__show()` no longer crashes with `pydantic literal_error` when an
   issue has dependency types beyond the original four (`blocks`, `related`,
   `parent-child`, `discovered-from`). `DependencyType` is now `str`, matching

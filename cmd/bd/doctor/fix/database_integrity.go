@@ -1,12 +1,14 @@
 package fix
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
 	"time"
 
 	"github.com/steveyegge/beads/internal/configfile"
+	"github.com/steveyegge/beads/internal/storage/doltutil"
 )
 
 // DatabaseIntegrity attempts to recover from database corruption by:
@@ -26,32 +28,54 @@ func DatabaseIntegrity(path string) error {
 	return doltIntegrityRecovery(absPath, beadsDir)
 }
 
+// integrityBdBinary finds the bd binary integrity recovery re-runs; tests
+// replace it to drive the recovery's failure paths.
+var integrityBdBinary = getBdBinary
+
 // doltIntegrityRecovery backs up the corrupted Dolt database and reinitializes.
 func doltIntegrityRecovery(path, beadsDir string) error {
 	if err := serverModeIntegrityRecoveryGuard(beadsDir); err != nil {
 		return err
 	}
 
-	doltPath := getDatabasePath(beadsDir)
+	target, err := captureRepairTarget(beadsDir, getDatabasePath(beadsDir))
+	if err != nil {
+		return err
+	}
+	defer target.close()
+	doltPath := target.path
 
-	// Check if dolt directory exists
-	if _, err := os.Stat(doltPath); os.IsNotExist(err) {
+	if target.original == nil {
 		return fmt.Errorf("no Dolt database to recover at %s", doltPath)
 	}
 
-	// Back up corrupted dolt directory
+	// Back up the admitted entry through the bound parent.
 	ts := time.Now().UTC().Format("20060102T150405Z")
 	backupPath := doltPath + "." + ts + ".corrupt.backup"
-	fmt.Printf("  Backing up corrupted Dolt database to %s\n", filepath.Base(backupPath))
-	if err := os.Rename(doltPath, backupPath); err != nil {
+	backupName := filepath.Base(backupPath)
+	fmt.Printf("  Backing up corrupted Dolt database to %s\n", backupName)
+	if err := target.validateOriginal(); err != nil {
+		return err
+	}
+	if existing, err := target.entry(backupName); err != nil {
+		return fmt.Errorf("checking backup destination: %w", err)
+	} else if existing != nil {
+		return fmt.Errorf("backup destination already exists at %s", doltutil.PrintedValue(backupPath))
+	}
+	if err := target.parent.Rename(filepath.Base(doltPath), backupName); err != nil {
 		return fmt.Errorf("failed to backup corrupted Dolt database: %w", err)
+	}
+	if err := revalidateIntegrityRestore(target, backupPath); err != nil {
+		return err
 	}
 
 	// Get bd binary path
-	bdBinary, err := getBdBinary()
+	bdBinary, err := integrityBdBinary()
 	if err != nil {
 		// Restore corrupted database on failure
-		_ = os.Rename(backupPath, doltPath)
+		if cerr := restoreIntegrityBackup(target, backupPath, false); cerr != nil {
+			return fmt.Errorf("%w\n%w", err, cerr)
+		}
 		return err
 	}
 
@@ -63,22 +87,78 @@ func doltIntegrityRecovery(path, beadsDir string) error {
 	initCmd.Stdout = os.Stdout
 	initCmd.Stderr = os.Stderr
 
+	if err := revalidateIntegrityRestore(target, backupPath); err != nil {
+		return err
+	}
 	if err := initCmd.Run(); err != nil {
 		// Restore backup on failure
-		fmt.Printf("  Warning: recovery failed, restoring corrupted Dolt database from %s\n", filepath.Base(backupPath))
-		_ = os.RemoveAll(doltPath)
-		_ = os.Rename(backupPath, doltPath)
+		if cerr := restoreIntegrityBackup(target, backupPath, true); cerr != nil {
+			return fmt.Errorf("failed to reinitialize Dolt database: %w\n%w", err, cerr)
+		}
+		fmt.Printf("  Warning: recovery failed, restored corrupted Dolt database from %s\n", backupName)
 		return fmt.Errorf("failed to reinitialize Dolt database: %w", err)
+	}
+	if err := revalidateIntegrityRestore(target, backupPath); err != nil {
+		return fmt.Errorf("bd init succeeded, but the recovery location could not be verified: %w", err)
 	}
 
 	fmt.Printf("  Recovered Dolt database\n")
-	fmt.Printf("  Corrupted database preserved at: %s\n", filepath.Base(backupPath))
+	fmt.Printf("  Corrupted database preserved at: %s\n", backupName)
 	return nil
 }
 
+func restoreIntegrityBackup(target *repairTarget, backupPath string, removePartial bool) error {
+	if err := revalidateIntegrityRestore(target, backupPath); err != nil {
+		return err
+	}
+	dbName := filepath.Base(target.path)
+	if removePartial {
+		if err := target.parent.RemoveAll(dbName); err != nil {
+			return fmt.Errorf("removing incomplete database before rollback, recovery retained at %s: %w", doltutil.PrintedValue(backupPath), err)
+		}
+	} else {
+		entry, err := target.entry(dbName)
+		if err != nil {
+			return fmt.Errorf("checking rollback destination, recovery retained at %s: %w", doltutil.PrintedValue(backupPath), err)
+		}
+		if entry != nil {
+			return fmt.Errorf("rollback destination is occupied, recovery retained at %s", doltutil.PrintedValue(backupPath))
+		}
+	}
+	if err := revalidateIntegrityRestore(target, backupPath); err != nil {
+		return err
+	}
+	if err := target.parent.Rename(filepath.Base(backupPath), dbName); err != nil {
+		return fmt.Errorf("restoring original database from %s: %w", doltutil.PrintedValue(backupPath), err)
+	}
+	return nil
+}
+
+// Check the originally admitted workspace, parent and recovery entry before
+// allowing a rollback to operate on the bound directory.
+func revalidateIntegrityRestore(target *repairTarget, backupPath string) error {
+	err := target.validateRecovery(backupPath)
+	if err == nil {
+		return nil
+	}
+	// Report only the reason: the admission remedy, selecting the location
+	// through BEADS_DOLT_DATA_DIR, would exempt the changed location.
+	var refusal *databaseRefusal
+	if errors.As(err, &refusal) {
+		err = errors.New(refusal.why)
+	}
+	return fmt.Errorf("not restoring the corrupted Dolt database: its location %s changed during recovery: %w\n"+
+		"Check what is there now, then move the backup back by hand. It was written to %s; "+
+		"if a directory above the database was replaced, the backup moved with that directory",
+		doltutil.PrintedValue(target.path), err, doltutil.PrintedValue(backupPath))
+}
+
 func serverModeIntegrityRecoveryGuard(beadsDir string) error {
-	cfg, err := configfile.Load(beadsDir)
-	if err != nil || cfg == nil || !cfg.IsDoltServerMode() {
+	cfg, err := configfile.LoadNativeForDiscovery(beadsDir)
+	if err != nil {
+		return err
+	}
+	if cfg == nil || !cfg.IsDoltServerMode() && !cfg.IsDoltProxiedServerMode() {
 		return nil
 	}
 

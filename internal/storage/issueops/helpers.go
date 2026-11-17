@@ -170,11 +170,13 @@ func RecordEventInTable(ctx context.Context, tx DBTX, table, issueID string, eve
 	})
 }
 
-// GenerateIssueIDInTable generates a unique ID, checking for collisions
-// in the specified table. Supports counter mode for non-ephemeral issues.
-//
-//nolint:gosec // G201: table is a hardcoded constant
+// GenerateIssueIDInTable mints an ID unclaimed across both storage planes.
 func GenerateIssueIDInTable(ctx context.Context, tx DBTX, table, prefix string, issue *types.Issue, actor string) (string, error) {
+	return generateUnclaimedIssueID(ctx, tx, table, prefix, issue, actor, nil)
+}
+
+// generateUnclaimedIssueID additionally reserves IDs named elsewhere in a batch.
+func generateUnclaimedIssueID(ctx context.Context, tx DBTX, table, prefix string, issue *types.Issue, actor string, claimed map[string]bool) (string, error) {
 	// Counter mode only applies to the issues table (not wisps).
 	if table == "issues" {
 		counterMode, err := IsCounterModeTx(ctx, tx)
@@ -182,7 +184,19 @@ func GenerateIssueIDInTable(ctx context.Context, tx DBTX, table, prefix string, 
 			return "", err
 		}
 		if counterMode {
-			return NextCounterIDTx(ctx, tx, prefix)
+			for {
+				candidate, err := NextCounterIDTx(ctx, tx, prefix)
+				if err != nil {
+					return "", err
+				}
+				reserved, err := issueIDClaimedInTx(ctx, tx, candidate, claimed)
+				if err != nil {
+					return "", err
+				}
+				if !reserved {
+					return candidate, nil
+				}
+			}
 		}
 	}
 
@@ -201,19 +215,37 @@ func GenerateIssueIDInTable(ctx context.Context, tx DBTX, table, prefix string, 
 		for nonce := 0; nonce < 10; nonce++ {
 			candidate := idgen.GenerateHashID(prefix, issue.Title, issue.Description, actor, issue.CreatedAt, length, nonce)
 
-			var count int
-			err = tx.QueryRowContext(ctx, fmt.Sprintf(`SELECT COUNT(*) FROM %s WHERE id = ?`, table), candidate).Scan(&count)
+			reserved, err := issueIDClaimedInTx(ctx, tx, candidate, claimed)
 			if err != nil {
-				return "", fmt.Errorf("failed to check for ID collision: %w", err)
+				return "", err
 			}
-
-			if count == 0 {
+			if !reserved {
 				return candidate, nil
 			}
 		}
 	}
 
 	return "", fmt.Errorf("failed to generate unique ID after trying lengths %d-%d with 10 nonces each", baseLength, maxLength)
+}
+
+//nolint:gosec // G201: the table names are fixed literals.
+func issueIDClaimedInTx(ctx context.Context, tx DBTX, id string, claimed map[string]bool) (bool, error) {
+	if claimed[id] {
+		return true, nil
+	}
+	for _, table := range []string{"issues", "wisps"} {
+		var count int
+		if err := tx.QueryRowContext(ctx, "SELECT COUNT(*) FROM "+table+" WHERE id = ?", id).Scan(&count); err != nil {
+			if table == "wisps" && isTableNotExistError(err) {
+				continue
+			}
+			return false, fmt.Errorf("check %s for ID collision: %w", table, err)
+		}
+		if count > 0 {
+			return true, nil
+		}
+	}
+	return false, nil
 }
 
 // IsCounterModeTx checks whether issue_id_mode=counter is configured.

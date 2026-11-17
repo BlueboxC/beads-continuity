@@ -6,6 +6,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/spf13/cobra"
 )
 
 // --- Helpers ---
@@ -587,4 +589,68 @@ func rulesContains(s, substr string) bool {
 
 func rulesIndexOf(s, substr string) int {
 	return strings.Index(s, substr)
+}
+
+// Adapted from the contributor's #8051 preview regression.
+func TestRulesCompactPreviewsBeforeApplying(t *testing.T) {
+	dir := t.TempDir()
+	first := writeRule(t, dir, "first", "# First\n**Do:** Keep an independent copy.\n")
+	second := writeRule(t, dir, "second", "# Second\n**Do:** Verify against the original.\n")
+	entriesBefore, err := os.ReadDir(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	cmd := &cobra.Command{}
+	cmd.Flags().String("path", dir, "")
+	cmd.Flags().StringSlice("group", []string{"first", "second"}, "")
+	cmd.Flags().Bool("auto", false, "")
+	cmd.Flags().Bool("dry-run", false, "")
+	cmd.Flags().Bool("force", false, "")
+	if err := runRulesCompact(cmd, nil); err != nil {
+		t.Fatal(err)
+	}
+
+	entriesAfter, err := os.ReadDir(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(entriesAfter) != len(entriesBefore) || entriesAfter[0].Name() != entriesBefore[0].Name() || entriesAfter[1].Name() != entriesBefore[1].Name() {
+		t.Errorf("rules compact without --force changed the directory: before %v, after %v", entriesBefore, entriesAfter)
+	}
+	for _, original := range []string{first, second} {
+		if _, err := os.Stat(original); err != nil {
+			t.Errorf("preview lost %s: %v", original, err)
+		}
+	}
+}
+
+// Adapted from the contributor's #8051 backup and explicit-apply regression.
+func TestRulesCompactForceKeepsOriginalBytes(t *testing.T) {
+	dir := t.TempDir()
+	contents := map[string]string{
+		"first":  "# First\n**Do:** Keep an independent copy.\n",
+		"second": "# Second\n**Do:** Verify against the original.\n",
+	}
+	for name, body := range contents {
+		writeRule(t, dir, name, body)
+	}
+	cmd := &cobra.Command{}
+	cmd.Flags().String("path", dir, "")
+	cmd.Flags().StringSlice("group", []string{"first", "second"}, "")
+	cmd.Flags().Bool("auto", false, "")
+	cmd.Flags().Bool("dry-run", false, "")
+	cmd.Flags().Bool("force", true, "")
+	if err := runRulesCompact(cmd, nil); err != nil {
+		t.Fatal(err)
+	}
+	for name, body := range contents {
+		original := filepath.Join(dir, name+".md")
+		if _, err := os.Stat(original); !os.IsNotExist(err) {
+			t.Errorf("expected the merged source to be retired: %v", err)
+		}
+		if got, err := os.ReadFile(original + ".backup"); err != nil || string(got) != body {
+			t.Errorf("backup for %s = %q, %v; want original bytes", name, got, err)
+		}
+	}
 }

@@ -402,14 +402,16 @@ func TestFindMailDelegate(t *testing.T) {
 	})
 }
 
-// TestMailDelegateFromConfig tests mail delegate resolution from store config.
-// Kept separate because it modifies global store and rootCtx.
-func TestMailDelegateFromConfig(t *testing.T) {
+// A historical workspace value remains inert.
+func TestMailDelegateIgnoresStoredConfig(t *testing.T) {
 	tmpDir := t.TempDir()
+	t.Setenv("HOME", tmpDir)
+	t.Setenv("USERPROFILE", tmpDir)
+	t.Setenv("XDG_CONFIG_HOME", filepath.Join(tmpDir, ".config"))
 	testStore := newTestStore(t, filepath.Join(tmpDir, ".beads", "beads.db"))
 	ctx := context.Background()
 
-	if err := testStore.SetConfig(ctx, "mail.delegate", "gt mail"); err != nil {
+	if _, err := testStore.DB().ExecContext(ctx, "INSERT INTO config (key, value) VALUES (?, ?)", "mail.delegate", "gt mail"); err != nil {
 		t.Fatalf("SetConfig failed: %v", err)
 	}
 
@@ -432,7 +434,7 @@ func TestMailDelegateFromConfig(t *testing.T) {
 	}()
 
 	got := findMailDelegate()
-	if got != "gt mail" {
-		t.Errorf("findMailDelegate() = %q, want \"gt mail\"", got)
+	if got != "" {
+		t.Errorf("findMailDelegate() selected the stored value %q", got)
 	}
 }

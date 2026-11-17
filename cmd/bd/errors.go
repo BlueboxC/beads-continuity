@@ -56,6 +56,9 @@ func whereDiagHint() string {
 }
 
 func workspaceDiagHint(includeWhere bool) string {
+	if skipped := beads.SkippedUserGlobalBeadsDir(); skipped != "" {
+		return "workspace discovery skipped the user-global " + printedValue(skipped) + "; set BEADS_DIR to select it explicitly, or run 'bd init' in the project"
+	}
 	if includeWhere {
 		if !usesSQLServer() {
 			return "run 'bd where' to inspect the resolved workspace, or 'bd init' to create a new database"

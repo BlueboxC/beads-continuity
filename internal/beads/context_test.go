@@ -1300,3 +1300,71 @@ func initGitRepoWithCommit(dir string) error {
 	commitCmd.Dir = dir
 	return commitCmd.Run()
 }
+
+// Adapted from #7930. Explicit selection from a Git working directory must
+// bind the selected non-Git project rather than reuse the caller's root.
+func TestGetRepoContextSelectedNonGitProjectFromGitCaller(t *testing.T) {
+	caller, target := t.TempDir(), t.TempDir()
+	if err := initGitRepo(caller); err != nil {
+		t.Fatal(err)
+	}
+	beadsDir := filepath.Join(target, ".beads")
+	if err := os.Mkdir(beadsDir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(beadsDir, "beads.db"), nil, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	t.Chdir(caller)
+	t.Setenv("BEADS_DIR", beadsDir)
+	ResetCaches()
+	git.ResetCaches()
+	t.Cleanup(func() { ResetCaches(); git.ResetCaches() })
+
+	rc, err := GetRepoContext()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if rc.RepoRoot != resolveSymlinks(target) || rc.CWDRepoRoot != resolveSymlinks(caller) {
+		t.Errorf("resolved roots = (%q, %q), want selected project %q and caller %q",
+			rc.RepoRoot, rc.CWDRepoRoot, target, caller)
+	}
+}
+
+// This account-home fixture bypasses environment fallbacks and leaves the
+// operator's workspace outside the discovery walk.
+func TestImplicitDiscoverySkipsStandaloneAccountWorkspace(t *testing.T) {
+	home := t.TempDir()
+	project := filepath.Join(home, "project")
+	beadsDir := filepath.Join(home, ".beads")
+	for _, dir := range []string{project, beadsDir} {
+		if err := os.Mkdir(dir, 0o700); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := os.WriteFile(filepath.Join(beadsDir, "beads.db"), nil, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	oldHome := accountHomeDirectory
+	accountHomeDirectory = func() string { return home }
+	t.Cleanup(func() { accountHomeDirectory = oldHome; ResetCaches(); git.ResetCaches() })
+	t.Chdir(project)
+	t.Setenv("BEADS_DIR", "")
+	t.Setenv("BEADS_DB", "")
+	t.Setenv("BD_DB", "")
+	ResetCaches()
+	git.ResetCaches()
+	if got := FindBeadsDir(); got != "" {
+		t.Errorf("implicit workspace = %q, want no workspace", got)
+	}
+	if got := FindBeadsDirFrom(project); got != "" {
+		t.Errorf("explicit project discovery = %q, want no ancestor workspace", got)
+	}
+	if got := SkippedUserGlobalBeadsDir(); resolveSymlinks(got) != resolveSymlinks(beadsDir) {
+		t.Errorf("skipped directory = %q, want %q", got, beadsDir)
+	}
+	t.Setenv("BEADS_DIR", beadsDir)
+	if got := FindBeadsDir(); resolveSymlinks(got) != resolveSymlinks(beadsDir) {
+		t.Errorf("explicit workspace = %q, want %q", got, beadsDir)
+	}
+}

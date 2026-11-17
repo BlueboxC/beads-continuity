@@ -132,3 +132,23 @@ func TestEmbeddedBackupRestoreReadOnlyAndClosed(t *testing.T) {
 		}
 	}
 }
+
+// The restore guard must reject ambiguous URL paths before the engine's
+// disposable rehearsal, even when the source is a genuine backup.
+func TestEmbeddedBackupRestoreRejectsMangledSourcePath(t *testing.T) {
+	source := backupGuardStore(t, "source")
+	plain := t.TempDir()
+	dir := filepath.Join(t.TempDir(), "project%23archive")
+	require.NoError(t, source.BackupDatabase(t.Context(), plain))
+	require.NoError(t, os.Rename(plain, dir))
+	target := backupGuardStore(t, "destination")
+	before, err := target.GetCurrentCommit(t.Context())
+	require.NoError(t, err)
+
+	err = target.RestoreDatabase(t.Context(), dir, true)
+	require.ErrorContains(t, err, "cannot be restored where it is")
+	require.Equal(t, "destination", backupGuardValue(t, target))
+	after, err := target.GetCurrentCommit(t.Context())
+	require.NoError(t, err)
+	require.Equal(t, before, after)
+}

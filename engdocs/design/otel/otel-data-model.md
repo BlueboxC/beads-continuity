@@ -1,19 +1,19 @@
 # OpenTelemetry Data Model
 
-Last reviewed: 2026-08-07
+Last reviewed for privacy and export behavior: 2026-11-17.
 
-Freshness source: `internal/telemetry/`, `internal/storage/dolt/store.go`,
-`internal/compact/haiku.go`, `cmd/bd/find_duplicates.go`, and hook execution
-code under `internal/hooks/`.
+The sources are `internal/telemetry/`, `cmd/bd/command_telemetry.go`,
+`internal/storage/dolt/store.go`, `internal/hooks/`, `internal/compact/haiku.go`,
+and `cmd/bd/find_duplicates.go`.
 
-Complete schema of all telemetry events emitted by Beads. Each event consists of:
+OpenTelemetry requires `BD_OTEL_ENABLED=true` or a supported legacy
+`BD_OTEL_*` selector. Standard `OTEL_*` settings configure the opt-in, and
+`OTEL_SDK_DISABLED=true` overrides it.
 
-1. **Span** (→ stdout/console only, when `OTEL_TRACES_EXPORTER=console`; the legacy `BD_OTEL_STDOUT=true` translates to that — no remote/OTLP trace backend is wired) with full structured attributes
-2. **Metric counter/histogram** (→ any OTLP v1.x+ backend, defaults to VictoriaMetrics) for aggregation
-
-Telemetry is hard opt-in: nothing is emitted unless `BD_OTEL_ENABLED=true` is set (a legacy `BD_OTEL_*` variable also activates it); standard `OTEL_*` variables on their own do not.
-
-All command spans automatically carry `bd.command`, `bd.version`, `bd.args` from startup context; `bd.actor` is added after actor resolution.
+Spans use the console exporter when `OTEL_TRACES_EXPORTER=console`. Metrics
+support console export and OTLP HTTP export to a configured metrics or shared
+OTLP endpoint. Both console exporters write to stderr, leaving stdout available
+for command output such as JSON. There is no remote trace or log exporter.
 
 ---
 
@@ -55,22 +55,20 @@ OTel SDK names use **dot notation** internally. Prometheus-compatible backends (
 
 ### 1.1 Instance
 
-The outermost grouping. Derived at command startup time from the machine hostname and the working directory.
-
-| Attribute | Type | Description |
-|---|---|---|
-| `host` | string | System hostname |
-| `os` | string | System OS information |
+The resource uses `service.name`, `service.version`, and SDK detectors for the
+host, process ID, executable name, and runtime. Default detection omits raw
+argv, executable paths, and account owners. `OTEL_SERVICE_NAME` and
+`OTEL_RESOURCE_ATTRIBUTES` are operator-controlled overrides.
 
 ### 1.2 Command
 
-Each `bd` command execution generates a span with full context.
+The command span has a bounded startup attribute set.
 
 | Attribute | Type | Source |
 |---|---|---|
 | `bd.command` | string | Subcommand name (`create`, `list`, `show`, etc.) |
 | `bd.version` | string | Current bd version string |
-| `bd.args` | string | Full argument list |
+| `bd.args` | string | Parsed command path and sorted long names of explicitly set flags |
 | `bd.actor` | string | Actor identity — set after actor resolution (may lag span start) |
 
 ---
@@ -85,14 +83,19 @@ Emitted once per `bd` subcommand execution. Anchors all subsequent events for th
 |---|---|---|
 | `bd.command` | string | Subcommand name |
 | `bd.version` | string | bd version |
-| `bd.args` | string | Full arguments passed to command, scrubbed via `scrubArgsForTelemetry` (secret-flag values and DSN userinfo redacted) |
+| `bd.args` | string | Parsed command path below `bd` plus sorted long names of explicitly set flags, such as `comments add --file`. Positional arguments, flag values, and raw argv are omitted |
 | `bd.actor` | string | Actor identity (set after actor resolution) |
 
 ---
 
 ## 3. Storage Events
 
-Every `storage.DoltStorage` method AND every issueops role method is instrumented: the facade wave's role decorators in `internal/telemetry/` emit `storage.<Method>` and `storage.<Role>.<Method>` spans (e.g. `storage.IssueReader.Ready`, `storage.ReadyClaimer.ClaimNext`, `storage.Sweeper.Sweep`), all feeding the same `bd.storage.*` metrics with `db.operation` as the label. The tables below are representative examples, not an exhaustive enumeration.
+Direct storage and issueops role decorators emit `storage.<Method>` and
+`storage.<Role>.<Method>` spans. The `bd.storage.operations`,
+`bd.storage.operation.duration`, and `bd.storage.errors` metrics use only
+`db.operation` as a dimension. Method-specific span attributes never become
+operation labels. Failed operations record an error status without error text
+on the storage decorator span.
 
 ### `storage.CreateIssue`
 
@@ -131,8 +134,9 @@ Emitted when searching for issues.
 | Attribute | Type | Description |
 |---|---|---|
 | `db.operation` | string | `"SearchIssues"` |
-| `bd.query` | string | Search query string |
 | `bd.result.count` | int | Number of results returned |
+
+The issue search text is omitted from spans and operation metrics.
 
 ### `storage.GetReadyWork`
 
@@ -159,7 +163,6 @@ Emitted when executing a transaction.
 | Attribute | Type | Description |
 |---|---|---|
 | `db.operation` | string | `"RunInTransaction"` |
-| `db.commit_msg` | string | Commit message |
 
 ### Naming rule and complete inventory
 
@@ -229,6 +232,11 @@ therefore comparable across both paths.
 
 **Shared attributes**: every `dolt.*` SQL span carries the fixed attribute set from `doltSpanAttrs()` — `db.system` (string, `"dolt"`), `db.readonly` (bool, whether the store is read-only), and `db.server_mode` (bool, currently always `true`). The tables below list only each span's additional attributes.
 
+The privacy rules for `bd.args`, storage operation dimensions, and hook output
+apply to those surfaces. Generic errors can still include text on lower-level
+spans, including Dolt's `endSpan` and AI compaction errors. Dolt SQL spans can
+also carry a truncated statement. Treat console traces as diagnostic data.
+
 ### `dolt.query`
 
 Emitted for each SQL read query via `queryContext()`.
@@ -236,7 +244,7 @@ Emitted for each SQL read query via `queryContext()`.
 | Attribute | Type | Description |
 |---|---|---|
 | `db.operation` | string | `"query"` |
-| `db.statement` | string | SQL statement (truncated to 300 chars) |
+| `db.statement` | string | SQL statement (up to 300 bytes before an ellipsis) |
 
 ### `dolt.exec`
 
@@ -245,7 +253,7 @@ Emitted for each SQL write statement via `execContext()`.
 | Attribute | Type | Description |
 |---|---|---|
 | `db.operation` | string | `"exec"` |
-| `db.statement` | string | SQL statement (truncated to 300 chars) |
+| `db.statement` | string | SQL statement (up to 300 bytes before an ellipsis) |
 
 ### `dolt.query_row`
 
@@ -254,11 +262,13 @@ Emitted for single-row queries via `queryRowContext()`.
 | Attribute | Type | Description |
 |---|---|---|
 | `db.operation` | string | `"query_row"` |
-| `db.statement` | string | SQL statement (truncated to 300 chars) |
+| `db.statement` | string | SQL statement (up to 300 bytes before an ellipsis) |
 
 ### `dolt.commit`
 
-Emitted for DOLT_COMMIT operations. Carries only the shared `doltSpanAttrs()` (see the note at the top of this section) — the commit message no longer appears on this span. It survives only as `db.commit_msg` on the `storage.RunInTransaction` / `storage.RunInIssueLifecycleTransaction` spans (`internal/telemetry/storage.go:556,564`).
+Emitted for DOLT_COMMIT operations with the shared `doltSpanAttrs()`. The Dolt
+commit span and the storage transaction decorators omit commit messages from
+their structured attributes.
 
 ### `dolt.push`
 
@@ -347,9 +357,8 @@ Emitted for hook execution. **Span only** — no metric counters or histograms e
 | `hook.path` | string | Absolute path to hook script |
 | `bd.issue_id` | string | ID of triggering issue |
 
-Stdout/stderr are added as span **events** (not attributes):
-- `hook.stdout` event: `output` (string, truncated), `bytes` (int, original size)
-- `hook.stderr` event: `output` (string, truncated), `bytes` (int, original size)
+For each nonempty stream, a `hook.stdout` or `hook.stderr` span event carries
+only the integer `bytes` count. Output text is omitted.
 
 ---
 
@@ -361,7 +370,8 @@ Emitted by the compaction engine (`bd compact`) via `internal/compact/haiku.go`,
 
 ### `anthropic.messages.new`
 
-One span per Anthropic API call. The `bd.ai.operation` attribute distinguishes the two callers.
+One span per compaction request or duplicate-analysis batch. Compaction can
+make multiple attempts within its span. `bd.ai.operation` identifies the caller.
 
 | Attribute | Type | Description |
 |---|---|---|
@@ -371,13 +381,16 @@ One span per Anthropic API call. The `bd.ai.operation` attribute distinguishes t
 | `bd.ai.output_tokens` | int | Output tokens generated |
 | `bd.ai.attempts` | int | Number of attempts, including retries (`compact` only) |
 | `bd.ai.batch_size` | int | Candidate pairs evaluated (`find_duplicates` only) |
-| `bd.ai.duration_ms` | float | Request duration in ms (`find_duplicates` only; `compact` records the `bd.ai.request.duration` metric instead) |
+| `bd.ai.duration_ms` | float | Fractional milliseconds (`find_duplicates` only). Compaction records `bd.ai.request.duration` on successful API responses |
 
 **Retry policy** (compact only; `find_duplicates` makes a single unretried call): exponential backoff, up to 4 attempts (1 initial + up to 3 retries, `maxRetries = 3`), on HTTP 429, 5xx, and network timeout errors.
 
 ---
 
 ## 8. Metrics Reference
+
+Storage operation timings, Dolt connection acquisition and pool wait timings,
+and the AI request histogram preserve fractional milliseconds.
 
 | Metric (code name) | Type | Labels | Status |
 |--------|------|--------|--------|
@@ -394,19 +407,24 @@ One span per Anthropic API call. The `bd.ai.operation` attribute distinguishes t
 | `bd.db.conn_acquire_ms` | Histogram | — | ✅ Implemented |
 | `bd.db.pool_wait_count` | Counter | — | ✅ Implemented |
 | `bd.db.pool_wait_ms` | Histogram | — | ✅ Implemented |
+| `bd.db.pool_open`, `bd.db.pool_in_use`, `bd.db.pool_idle`, `bd.db.pool_max_open` | Observable gauges | — | ✅ Implemented |
 | `bd.claim_verify_lost_total` | Counter | `op` (`claim` \| `unclaim` \| `guarded-update` \| `ready-claim`) | ✅ Implemented |
 | `bd.claim_verify_recovered_total` | Counter | `op`, `outcome` | 🔲 Registered, not recorded |
 | `bd.ai.input_tokens` | Counter | `bd.ai.model` | ✅ Implemented (compact only) |
 | `bd.ai.output_tokens` | Counter | `bd.ai.model` | ✅ Implemented (compact only) |
 | `bd.ai.request.duration` | Histogram (ms) | `bd.ai.model` | ✅ Implemented (compact only) |
 
+Pool gauges sum open SQL stores in this process. With none open, they report
+close-time snapshots since the last open so the final export of a short-lived
+command can still report its pool statistics.
+
 ---
 
 ## 9. Recommended Indexed Attributes
 
 ```
-host, os, bd.command, bd.version, bd.actor, db.operation, db.statement,
-bd.issue.id, bd.issue.type, hook.event, hook.path, bd.ai.model, bd.ai.operation
+service.name, service.version, host.name, bd.command, bd.version, db.operation,
+bd.issue.type, hook.event, bd.ai.model, bd.ai.operation
 ```
 
 ---
@@ -415,58 +433,28 @@ bd.issue.id, bd.issue.type, hook.event, hook.path, bd.ai.model, bd.ai.operation
 
 Environment variables, backend compatibility, Dolt system tables, and roadmap are documented in [otel-architecture.md](otel-architecture.md) to avoid duplication.
 
-Key variables: `BD_OTEL_ENABLED=true` (master switch) plus the standard SDK vars — `OTEL_EXPORTER_OTLP_METRICS_ENDPOINT`, `OTEL_EXPORTER_OTLP_LOGS_ENDPOINT`, `OTEL_TRACES_EXPORTER`/`OTEL_METRICS_EXPORTER=console`, `OTEL_SDK_DISABLED`. The legacy `BD_OTEL_METRICS_URL`/`BD_OTEL_LOGS_URL`/`BD_OTEL_STDOUT` trio is deprecated but still honored: each is translated to its `OTEL_*` equivalent with a stderr deprecation warning (commit `1cf7490c7`, #3859).
+The exporter settings are `OTEL_TRACES_EXPORTER=console`,
+`OTEL_METRICS_EXPORTER` (`otlp`, `console`, or a comma-separated list), and
+`OTEL_EXPORTER_OTLP_METRICS_ENDPOINT` or `OTEL_EXPORTER_OTLP_ENDPOINT`.
+`OTEL_METRICS_EXPORTER=none` disables metric export. The deprecated
+`BD_OTEL_METRICS_URL`, `BD_OTEL_LOGS_URL`, and `BD_OTEL_STDOUT` selectors are
+translated with a stderr warning. `BD_OTEL_STDOUT=true` selects both console
+exporters. The logs endpoint translation provides compatibility only.
 
 ---
 
 ## Appendix: Source Reference Audit
 
-Audited against **`main` @ `5eb7c25dd`**. All line numbers below refer to that commit.
-
-Every metric name, span name, and attribute listed in this document is backed by a specific source location. This table exists to prevent documentation drift and to make re-verification straightforward after code changes.
-
-### Metrics (`internal/telemetry/storage.go`, `internal/storage/dolt/store.go`, `internal/compact/haiku.go`)
-
-| Metric (SDK name) | Type | Source |
-|-------------------|------|--------|
-| `bd.storage.operations` | Counter | `storage.go:46` — `m.Int64Counter("bd.storage.operations")` |
-| `bd.storage.operation.duration` | Histogram | `storage.go:49` — `m.Float64Histogram("bd.storage.operation.duration")` |
-| `bd.storage.errors` | Counter | `storage.go:53` — `m.Int64Counter("bd.storage.errors")` |
-| `bd.issue.count` | Gauge | `storage.go:56` — `m.Int64Gauge("bd.issue.count")` |
-| `bd.db.retry_count` | Counter | `store.go:872` — `m.Int64Counter("bd.db.retry_count")` |
-| `bd.db.lock_wait_ms` | Histogram | `store.go:876` — registered; `.Record()` not called anywhere |
-| `bd.db.circuit_trips` | Counter | `store.go:880` — `m.Int64Counter("bd.db.circuit_trips")` |
-| `bd.db.circuit_rejected` | Counter | `store.go:884` — `m.Int64Counter("bd.db.circuit_rejected")` |
-| `bd.db.serialization_errors` | Counter | `store.go:888` — registered; recorded at `store.go:1103,1116` |
-| `bd.write_retries_total` | Counter | `store.go:892` — registered; recorded at `store.go:1104,1117,1124` (`type=serialization\|connection`) |
-| `bd.db.conn_acquire_ms` | Histogram | `store.go:896` — registered; recorded at `transaction.go:167` |
-| `bd.db.pool_wait_count` | Counter | `store.go:900` — registered; recorded at `transaction.go:174` |
-| `bd.db.pool_wait_ms` | Histogram | `store.go:904` — registered; recorded at `transaction.go:176` |
-| `bd.claim_verify_lost_total` | Counter | `store.go:908` — registered; recorded at `claim_verify.go:196`, `issues.go:439` |
-| `bd.claim_verify_recovered_total` | Counter | `store.go:912` — registered; `.Add()` not called anywhere |
-| `bd.ai.input_tokens` | Counter | `haiku.go:117` — `m.Int64Counter("bd.ai.input_tokens")` |
-| `bd.ai.output_tokens` | Counter | `haiku.go:121` — `m.Int64Counter("bd.ai.output_tokens")` |
-| `bd.ai.request.duration` | Histogram | `haiku.go:125` — `m.Float64Histogram("bd.ai.request.duration")` |
-
-### Spans and attributes
-
-| Span name | Attributes | Source |
-|-----------|-----------|--------|
-| `bd.command.<name>` | `bd.command`, `bd.version`, `bd.args` (scrubbed) | built in `cmd/bd/command_telemetry.go` (`startCommandSpan`/`commandSpanAttrs`), called from `cmd/bd/main.go:938` |
-| `bd.command.<name>` | `bd.actor` (added later) | `cmd/bd/main.go:1367` |
-| `storage.<op>` / `storage.<Role>.<Method>` (all methods) | `db.operation` + method-specific attrs | `internal/telemetry/storage.go:75-76` (role decorators throughout `internal/telemetry/`) |
-| `dolt.query` | `db.operation="query"`, `db.statement` + `doltSpanAttrs()` | `store.go:1309` |
-| `dolt.exec` | `db.operation="exec"`, `db.statement` + `doltSpanAttrs()` | `store.go:1168` |
-| `dolt.query_row` | `db.operation="query_row"`, `db.statement` + `doltSpanAttrs()` | `store.go:1338` |
-| `dolt.commit` | `doltSpanAttrs()` only | `store.go:2901` |
-| `dolt.push` / `dolt.force_push` | `dolt.remote`, `dolt.branch` | `store.go:3674-3682` |
-| `dolt.pull` | `dolt.remote`, `dolt.branch` | `store.go:3777-3781` |
-| `dolt.merge` | `dolt.merge_branch`; `dolt.conflicts` | `store.go:4348`; conflicts at `store.go:4370` |
-| `dolt.merge_with_strategy` | `dolt.merge_branch`, `dolt.merge_strategy` | `store.go:4395` |
-| `dolt.branch` | `dolt.branch` | `store.go:4309-4312` |
-| `dolt.checkout` | `dolt.branch` | `store.go:4326-4329` |
-| `hook.exec` | `hook.event`, `hook.path`, `bd.issue_id` | `hooks_unix.go:31-36` |
-| `hook.exec` events | `hook.stdout` / `hook.stderr` with `output`, `bytes` | `hooks_otel.go:14, 20` |
-| `anthropic.messages.new` | `bd.ai.model`, `bd.ai.operation` | `haiku.go:133-138` |
-| `anthropic.messages.new` | `bd.ai.input_tokens`, `bd.ai.output_tokens`, `bd.ai.attempts` | `haiku.go:171-175` |
-| `anthropic.messages.new` | `bd.ai.batch_size`; `bd.ai.duration_ms` (find_duplicates only) | `find_duplicates.go:466-470`; `find_duplicates.go:491` |
+| Surface | Source |
+|---|---|
+| Opt-in, default resource, exporter selection and fractional milliseconds | `internal/telemetry/telemetry.go`: `Enabled`, `buildResource`, `buildTraceProvider`, `buildMetricProvider`, `Milliseconds` |
+| `bd.command.<name>`, `bd.command`, `bd.version`, `bd.args` | `cmd/bd/command_telemetry.go`: `startCommandSpan`, `commandSpanAttrs`, `commandTelemetryArgs` |
+| Resolved `bd.actor` on the command span | `cmd/bd/main.go`: `commandSpan.SetAttributes` after actor resolution |
+| Storage spans, operation metrics and issue status gauge | `internal/telemetry/storage.go`: `WrapStorage`, `InstrumentedStorage.op`, `done`, `GetStatistics` |
+| Search result count and storage transaction attribute sets | `internal/telemetry/storage.go`: `SearchIssues`, `RunInTransaction`, `RunInIssueLifecycleTransaction` |
+| Dolt counters, pool gauges, and connection durations | `internal/storage/dolt/store.go`: `init`, `poolSet.register`, `poolSet.stats`. See `connAcquireMs` and `poolWaitMs` in `internal/storage/dolt/transaction.go` |
+| Dolt query and execution spans, SQL truncation and error text | `internal/storage/dolt/store.go`: `queryContext`, `queryRowContext`, `execContext`, `spanSQL`, `endSpan` |
+| Dolt commit, push, pull, branch, checkout and merge spans | `internal/storage/dolt/store.go`: `commitWorkingSet`, `pushToRemote`, `pullFromRemoteUnchecked`, `Branch`, `Checkout`, `Merge`, `MergeWithStrategy` |
+| `hook.exec` and the `hook.stdout` and `hook.stderr` byte counts | `internal/hooks/hooks_unix.go`, `hooks_windows.go`, and `hooks_otel.go` (`addHookOutputEvents`) |
+| Compaction spans, token counters and AI request histogram | `internal/compact/haiku.go`: `initAIMetrics`, `callWithRetry` |
+| Duplicate-analysis span and `bd.ai.duration_ms` | `cmd/bd/find_duplicates.go`: `analyzeWithAI` |

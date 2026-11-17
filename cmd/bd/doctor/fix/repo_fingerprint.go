@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"path/filepath"
 	"strings"
 
 	"github.com/steveyegge/beads/internal/beads"
@@ -134,11 +135,22 @@ func RepoFingerprint(path string, autoYes bool) error {
 
 	case "2":
 		// Detect backend to determine what to remove
-		cfg, cfgErr := configfile.Load(beadsDir)
-		if cfgErr != nil || cfg == nil {
+		cfg, cfgErr := configfile.LoadNativeForDiscovery(beadsDir)
+		if cfgErr != nil {
+			return cfgErr
+		}
+		if cfg == nil {
 			cfg = configfile.DefaultConfig()
 		}
-		dbPath := cfg.DatabasePath(beadsDir)
+		if cfg.IsDoltServerMode() || cfg.IsDoltProxiedServerMode() {
+			return fmt.Errorf("automatic reinitialization refuses a server-owned database")
+		}
+		target, err := captureRepairTarget(beadsDir, cfg.DatabasePath(beadsDir))
+		if err != nil {
+			return err
+		}
+		defer target.close()
+		dbPath := target.path
 		isDolt := cfg.GetBackend() == configfile.BackendDolt
 
 		// Confirm before destructive action
@@ -153,21 +165,31 @@ func RepoFingerprint(path string, autoYes bool) error {
 			return nil
 		}
 
-		// Remove database and reinitialize in-process
+		// Confirmation can outlive the path admission above.
 		fmt.Printf("  → Removing %s...\n", dbPath)
-		if isDolt {
-			if err := os.RemoveAll(dbPath); err != nil && !os.IsNotExist(err) {
-				return fmt.Errorf("failed to remove Dolt database: %w", err)
+		if err := target.validateOriginal(); err != nil {
+			return fmt.Errorf("refusing to reinitialize a database that changed during confirmation: %w", err)
+		}
+		// Remove database and reinitialize in-process
+		if target.parent != nil {
+			dbName := filepath.Base(dbPath)
+			if isDolt {
+				if err := target.parent.RemoveAll(dbName); err != nil && !os.IsNotExist(err) {
+					return fmt.Errorf("failed to remove Dolt database: %w", err)
+				}
+			} else {
+				if err := target.parent.Remove(dbName); err != nil && !os.IsNotExist(err) {
+					return fmt.Errorf("failed to remove database: %w", err)
+				}
+				_ = target.parent.Remove(dbName + "-wal")
+				_ = target.parent.Remove(dbName + "-shm")
 			}
-		} else {
-			if err := os.Remove(dbPath); err != nil && !os.IsNotExist(err) {
-				return fmt.Errorf("failed to remove database: %w", err)
-			}
-			_ = os.Remove(dbPath + "-wal")
-			_ = os.Remove(dbPath + "-shm")
 		}
 
 		// Reinitialize by creating a new store (auto-bootstraps from JSONL)
+		if err := target.validateLocation(); err != nil {
+			return fmt.Errorf("database location changed before reinitialization: %w", err)
+		}
 		fmt.Println("  → Reinitializing database from JSONL...")
 		ctx := context.Background()
 		store, err := dolt.NewFromConfig(ctx, beadsDir)

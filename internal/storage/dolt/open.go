@@ -304,6 +304,9 @@ func applyResolvedConfig(ctx context.Context, beadsDir string, fileCfg *configfi
 	if cfg.ServerHost == "" {
 		cfg.ServerHost = fileCfg.GetDoltServerHost()
 	}
+	if cfg.ServerSocket == "" {
+		cfg.ServerSocket = fileCfg.GetDoltServerSocket()
+	}
 	if cfg.ServerPort == 0 {
 		// fileCfg.GetDoltServerPort() falls back to 3307, which is wrong for
 		// standalone repos; ApplyResolvedServerPort walks doltserver's real

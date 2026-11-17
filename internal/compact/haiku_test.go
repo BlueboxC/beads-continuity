@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"math"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -15,6 +16,8 @@ import (
 	"github.com/anthropics/anthropic-sdk-go/option"
 	"github.com/steveyegge/beads/internal/config"
 	"github.com/steveyegge/beads/internal/types"
+	sdkmetric "go.opentelemetry.io/otel/sdk/metric"
+	"go.opentelemetry.io/otel/sdk/metric/metricdata"
 )
 
 type timeoutErr struct{}
@@ -433,4 +436,53 @@ func TestCallWithRetry_ResponseBlocks(t *testing.T) {
 			}
 		})
 	}
+}
+
+// Adapted from #8224. Drive the real SDK client against a loopback fixture
+// and read the duration histogram. Whole milliseconds cannot produce a
+// fractional sum, regardless of how busy the test host is.
+func TestCallWithRetryRecordsFractionalDuration(t *testing.T) {
+	fakeMessagesServer(t, `[{"type":"text","text":"summary"}]`)
+	client, err := newHaikuClient("fixture-key")
+	if err != nil {
+		t.Fatal(err)
+	}
+	reader := sdkmetric.NewManualReader()
+	provider := sdkmetric.NewMeterProvider(sdkmetric.WithReader(reader))
+	defer func() { _ = provider.Shutdown(context.Background()) }()
+	duration, err := provider.Meter("fixture").Float64Histogram("bd.ai.request.duration")
+	if err != nil {
+		t.Fatal(err)
+	}
+	oldDuration := aiMetrics.duration
+	aiMetrics.duration = duration
+	defer func() { aiMetrics.duration = oldDuration }()
+
+	ctx := context.Background()
+	for range 4 {
+		if got, err := client.callWithRetry(ctx, "fixture"); err != nil || got != "summary" {
+			t.Fatalf("call = %q, %v", got, err)
+		}
+	}
+	var out metricdata.ResourceMetrics
+	if err := reader.Collect(ctx, &out); err != nil {
+		t.Fatal(err)
+	}
+	for _, scope := range out.ScopeMetrics {
+		for _, instrument := range scope.Metrics {
+			if instrument.Name != "bd.ai.request.duration" {
+				continue
+			}
+			hist, ok := instrument.Data.(metricdata.Histogram[float64])
+			if !ok || len(hist.DataPoints) != 1 {
+				t.Fatalf("unexpected duration data: %+v", instrument.Data)
+			}
+			point := hist.DataPoints[0]
+			if point.Count != 4 || point.Sum <= 0 || point.Sum == math.Trunc(point.Sum) {
+				t.Errorf("duration histogram count = %d, sum = %g ms; want four calls and fractional total", point.Count, point.Sum)
+			}
+			return
+		}
+	}
+	t.Fatal("duration histogram missing")
 }

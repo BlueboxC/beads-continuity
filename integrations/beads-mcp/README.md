@@ -215,7 +215,7 @@ await beads_ready_work(workspace_root="/Users/you/project-a")
 - `list` - List issues with filters (status, priority, type, assignee)
 - `ready` - Find tasks with no blockers ready to work on
 - `show` - Show detailed issue info including dependencies
-- `update` - Update issue (status, priority, design, notes, etc). Note: `status="closed"` or `status="open"` automatically route to `close` or `reopen` tools to respect approval workflows
+- `update` - Update issue fields. Setting status to `closed` uses the close operation. Setting status to `open` reopens a closed issue or one in a configured done status first and then applies any other supplied fields. If the issue was already non-closed, the update applies the fields and clears any dated defer.
 - `close` - Close completed issue
 - `dep` - Add dependency (blocks, related, parent-child, discovered-from)
 - `comment` - Add a durable, timestamped comment to an issue (a record of work/decisions)
@@ -223,7 +223,7 @@ await beads_ready_work(workspace_root="/Users/you/project-a")
 - `note` - Append a note to an issue's notes field
 - `blocked` - Get blocked issues
 - `stats` - Get project statistics
-- `reopen` - Reopen a closed issue with optional reason
+- `reopen` - Reopen issues in a closed or configured done status, with an optional reason. The tool reports when no issue was reopened.
 - `set_context` - Set default workspace for subsequent calls (backward compatibility)
 
 ## Known Issues

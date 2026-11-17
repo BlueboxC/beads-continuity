@@ -2,9 +2,9 @@
 
 ## Overview
 
-Beads uses OpenTelemetry (OTel) for structured observability of all database operations, CLI commands, and Dolt version control. Opt-in metrics can use OTLP HTTP; traces currently export only to the local console.
+Beads uses OpenTelemetry (OTel) for structured observability of storage operations, CLI commands, and Dolt version control. Opt-in metrics can use OTLP HTTP. Traces export to the local console on stderr.
 
-**Backend-agnostic design**: The system emits standard OpenTelemetry Protocol (OTLP) — any OTLP v1.x+ compatible backend can consume it. You are **not obligated** to use VictoriaMetrics/VictoriaLogs; these are simply development defaults.
+OTLP metrics can go to a compatible backend such as VictoriaMetrics. Beads leaves endpoint selection to the operator.
 
 **Best-effort design**: Telemetry initialization errors are returned but do not affect normal `bd` operation. The system remains functional even when telemetry is unavailable.
 
@@ -18,10 +18,10 @@ Beads uses OpenTelemetry (OTel) for structured observability of all database ope
 |---------|--------|-------|
 | Core OTel initialization | ✅ Implemented | `telemetry.Init()`, providers setup |
 | Metrics export (counters) | ✅ Implemented | Storage operations, Dolt operations |
-| Metrics export (histograms) | ✅ Implemented | Operation durations, query latency |
-| Traces (stdout only) | ✅ Implemented | OTLP traces via stdout (dev mode) |
-| Storage layer instrumentation | ✅ Implemented | `InstrumentedStorage` wrapper for all storage ops |
-| Command lifecycle tracing | ✅ Implemented | Per-command spans with arguments |
+| Metrics export (histograms) | ✅ Implemented | Storage operation durations in fractional milliseconds |
+| Console traces | ✅ Implemented | `OTEL_TRACES_EXPORTER=console` writes traces to stderr |
+| Storage layer instrumentation | ✅ Implemented | Direct storage and issueops role decorators |
+| Command lifecycle tracing | ✅ Implemented | Per-command spans with the parsed command path and changed flag names |
 | Dolt version control tracing | ✅ Implemented | Commit, push, pull, merge operations |
 
 ### Dolt Backend Telemetry (Implemented ✅)
@@ -43,7 +43,7 @@ Beads uses OpenTelemetry (OTel) for structured observability of all database ope
 
 ## Roadmap
 
-Current coverage: ~40% of the codebase. Below is a prioritized plan based on operational value vs. implementation effort.
+The names, dimensions, and polling intervals below are design proposals. See Implementation Status and the data model for emitted signals.
 
 ### Tier 1 — High value, moderate effort
 
@@ -127,7 +127,7 @@ Periodic SQL queries against Dolt system tables to surface metrics unavailable v
 - **Command-level sub-spans**: Instrument validation vs. DB vs. render breakdown per command (`bd create`, `bd list`, `bd compact`, etc.)
 - **Molecules & recipes**: `molecule.create`, `recipe.execute` spans
 - **Hook duration metrics**: Currently only spans (`hook.exec`), no histogram for aggregation
-- **OTel test suite**: Integration tests that verify telemetry output (currently none)
+- **OTel test suite**: Expand integration coverage for the proposed signals as they are implemented
 - **Lock wait recording**: `bd.db.lock_wait_ms` histogram is registered but `.Record()` is not yet called
 
 ---
@@ -145,50 +145,41 @@ if err := telemetry.Init(ctx, "bd", version); err != nil {
 defer telemetry.Shutdown(ctx)
 ```
 
-**Providers:**
-- **Metrics**: Any OTLP-compatible metrics backend via `otlpmetrichttp` exporter
-- **Traces**: Stdout only (local debug). No remote trace backend in default stack.
-
-**Default endpoints** (when `BD_OTEL_METRICS_URL` is not set):
-- Metrics: `http://localhost:8428/opentelemetry/api/v1/push`
-- Traces: stdout (via `BD_OTEL_STDOUT=true`)
-
-> **Note**: These defaults target VictoriaMetrics for local development convenience. Beads uses standard OTLP — you can override endpoints to use any OTLP v1.x+ compatible backend (Prometheus, Grafana Mimir, Datadog, New Relic, Grafana Cloud, Loki, OpenTelemetry Collector, etc.).
+Set `BD_OTEL_ENABLED=true` or use a supported legacy `BD_OTEL_*` selector to
+opt in. `OTEL_SDK_DISABLED=true` disables telemetry. With opt-in active,
+`OTEL_TRACES_EXPORTER=console` writes traces to stderr. Metrics use stderr
+with the `console` selector and OTLP HTTP with the `otlp` selector and a
+configured metrics or shared OTLP endpoint. Both outputs can be selected for
+metrics. The console exporters leave stdout available for the command's own
+output, including JSON. Beads has no remote trace or log exporter.
 
 **OTLP Compatibility**:
 - Uses standard OpenTelemetry Protocol (OTLP) over HTTP
 - Protobuf encoding (VictoriaMetrics, Prometheus, and others accept this)
 - Compatible with any backend that supports OTLP v1.x+
 
-**Resource attributes** (set at init time):
-- `service.name`: "bd"
-- `service.version`: bd binary version
-- `host`: system hostname
-- `os`: system OS info
+The resource starts with `service.name`, `service.version`, `host.name`, process
+ID, executable name and runtime attributes. Default detection omits raw argv,
+executable paths, and account owners. `OTEL_SERVICE_NAME` and
+`OTEL_RESOURCE_ATTRIBUTES` are operator-controlled resource overrides.
 
-**Custom resource attributes** (via `OTEL_RESOURCE_ATTRIBUTES` env var or `BEADS_ACTOR`):
-- `bd.actor`: Actor identity (from git config or env) — set after actor resolution
-- `bd.command`: Current command name
-- `bd.args`: Full arguments passed to command
+`bd.command`, `bd.version`, and `bd.args` belong to the command span. `bd.args`
+contains the path parsed by Cobra below `bd` and the sorted long names of flags
+explicitly set for that command. Flag values and positional arguments are omitted.
+`bd.actor` is attached to the command span after actor resolution.
 
 ---
 
 ### 2. Storage Instrumentation (`internal/telemetry/storage.go`)
 
-The `InstrumentedStorage` wraps `storage.Storage` with OTel tracing and metrics:
-- Every storage method gets a span
-- Counters track operation counts
-- Histograms track operation duration
-- Error counters track failures
+`InstrumentedStorage` wraps `storage.DoltStorage` with operation spans,
+counters, and duration histograms. Operation counts, durations and errors use
+`db.operation` as their sole metric dimension. Span attributes such as result
+counts stay on spans. Issue search text and transaction commit messages are
+omitted. Failed decorator operations set a span error status without error text.
 
 ```go
-func WrapStorage(s storage.Storage) storage.Storage {
-    if !Enabled() {
-        return s  // Zero overhead when telemetry disabled
-    }
-    // Wrap with instrumentation
-    return &InstrumentedStorage{inner: s, tracer, ops, dur, errs, issueGauge}
-}
+store = telemetry.WrapStorage(store) // Returns the original store when disabled.
 ```
 
 **Metric names in code** (OTel SDK notation with dots):
@@ -216,6 +207,12 @@ Dolt storage layer emits metrics for:
 - `bd.db.circuit_rejected`: Requests rejected by open circuit breaker (fail-fast path)
 - SQL query spans via `queryContext()`, `execContext()`, `queryRowContext()` wrappers using `doltTracer`
 - Dolt version control spans: `dolt.commit`, `dolt.push`, `dolt.pull`, `dolt.merge`, `dolt.branch`, `dolt.checkout`
+- Pool gauges aggregate the currently open SQL stores. A final collection with no open store can report the retained close-time statistics.
+
+Lower-level Dolt spans retain truncated `db.statement` and can record generic
+error text. AI compaction spans can also record generic error text. The
+command-argument, storage-dimension, and hook-output rules apply to their
+respective attributes and events.
 
 **SQL Span pattern (`queryContext`):**
 ```go
@@ -243,7 +240,7 @@ func (s *DoltStore) queryContext(ctx context.Context, query string, args ...any)
 
 Version control operations emit spans directly in `store.go` via `doltTracer.Start()`. These are **not** in `versioned.go` (which has no OTel imports).
 
-Implemented spans (see Appendix for exact source locations):
+Implemented spans (see the source reference below):
 - `dolt.commit` — `CALL DOLT_COMMIT`
 - `dolt.push` — `CALL DOLT_PUSH`
 - `dolt.pull` — `CALL DOLT_PULL`
@@ -255,7 +252,9 @@ Implemented spans (see Appendix for exact source locations):
 
 ### 5. Hook Telemetry (`internal/hooks/`)
 
-Hooks emit a single root span per execution (`hook.exec`). There are no metric counters or histograms for hooks — only span-level observability. Duration metrics are a roadmap item (Tier 3).
+Hooks emit a `hook.exec` span. A `hook.stdout` or `hook.stderr` event for a
+nonempty stream carries only its `bytes` count. Hook counters and histograms
+remain roadmap items.
 
 ---
 
@@ -285,9 +284,10 @@ OTel SDK uses dot-notation internally. Prometheus-compatible backends (VictoriaM
 
 | Variable | Set by | Description |
 |-----------|----------|-------------|
-| `BD_OTEL_METRICS_URL` | Operator | OTLP metrics endpoint (default: localhost:8428) |
-| `BD_OTEL_LOGS_URL` | Operator | OTLP logs endpoint (reserved for future log export) |
-| `BD_OTEL_STDOUT` | Operator | **Opt-in**: Write spans and metrics to stderr (dev/debug). Also activates telemetry. |
+| `BD_OTEL_ENABLED` | Operator | Set `true` to opt in |
+| `BD_OTEL_METRICS_URL` | Operator | Deprecated opt-in and metrics endpoint override |
+| `BD_OTEL_LOGS_URL` | Operator | Deprecated opt-in and logs endpoint translation. Compatibility setting for a future log exporter |
+| `BD_OTEL_STDOUT` | Operator | Deprecated opt-in that selects console traces and metrics on stderr |
 
 ### Context Variables
 
@@ -295,7 +295,7 @@ OTel SDK uses dot-notation internally. Prometheus-compatible backends (VictoriaM
 |-----------|--------|----------|
 | `BEADS_ACTOR` | Git config / env var | Actor identity for audit trails (BD_ACTOR still works as deprecated alias) |
 | `BD_NAME` | Environment | Binary name override (for multi-instance setups) |
-| `OTEL_RESOURCE_ATTRIBUTES` | Operator | Custom resource attributes for all spans |
+| `OTEL_RESOURCE_ATTRIBUTES`, `OTEL_SERVICE_NAME` | Operator | Resource overrides for exported spans and metrics |
 
 ### Dolt-Specific Variables (See DOLT.md)
 
@@ -326,13 +326,13 @@ OTel SDK uses dot-notation internally. Prometheus-compatible backends (VictoriaM
 
 | Event | Trigger | Key Attributes |
 |-------|---------|----------------|
-| `storage.CreateIssue` | Issue creation | `bd.issue.id`, `bd.issue.type`, `bd.actor` |
+| `storage.CreateIssue` | Issue creation | `bd.issue.type`, `bd.actor` |
 | `storage.UpdateIssue` | Issue update | `bd.issue.id`, `bd.update.count`, `bd.actor` |
 | `storage.GetIssue` | Issue lookup | `bd.issue.id` |
-| `storage.SearchIssues` | Issue search | `bd.query`, `bd.result.count` |
+| `storage.SearchIssues` | Issue search | `db.operation`, `bd.result.count` |
 | `storage.GetReadyWork` | Ready work query | `bd.result.count` |
 | `storage.GetBlockedIssues` | Blocked issues query | `bd.result.count` |
-| `storage.RunInTransaction` | Transaction execution | `db.commit_msg` |
+| `storage.RunInTransaction` | Transaction execution | `db.operation` |
 
 ### Dolt Events
 
@@ -341,7 +341,7 @@ OTel SDK uses dot-notation internally. Prometheus-compatible backends (VictoriaM
 | `dolt.query` | Each SQL query (`queryContext`) | `db.operation`, `db.statement` |
 | `dolt.exec` | Each SQL write (`execContext`) | `db.operation`, `db.statement` |
 | `dolt.query_row` | Single-row queries (`queryRowContext`) | `db.operation`, `db.statement` |
-| `dolt.commit` | DOLT_COMMIT operation | `commit_msg` |
+| `dolt.commit` | DOLT_COMMIT operation | `db.system`, `db.readonly`, `db.server_mode` |
 | `dolt.push` | DOLT_PUSH operation | `dolt.branch` |
 | `dolt.pull` | DOLT_PULL operation | `dolt.branch` |
 | `dolt.merge` | DOLT_MERGE operation | `dolt.merge_branch` |
@@ -353,6 +353,7 @@ OTel SDK uses dot-notation internally. Prometheus-compatible backends (VictoriaM
 | Event | Trigger | Key Attributes |
 |-------|---------|----------------|
 | `hook.exec` | Hook execution (span only — no metric counters) | `hook.event`, `hook.path`, `bd.issue_id` |
+| `hook.stdout`, `hook.stderr` | Nonempty output stream (span event) | `bytes` |
 
 ---
 
@@ -363,11 +364,12 @@ OTel SDK uses dot-notation internally. Prometheus-compatible backends (VictoriaM
 | Area | Coverage |
 |-------|----------|
 | Storage operations | Full (all CRUD, queries, transactions) |
-| CLI command lifecycle | Full (all commands with arguments) |
+| CLI command lifecycle | Command spans with parsed command path and changed flag names |
 | Dolt SQL queries | Full (all queries via queryContext/execContext wrappers) |
 | Dolt retry counting | Full (retry counter incremented in withRetry) |
 | Dolt version control | Full (commit, push, pull, merge, branch, checkout) |
 | AI compaction | Full (bd.ai.* metrics in compact/haiku.go) |
+| Connection pool utilization | Open, in-use, idle, and max-open gauges for Beads SQL stores |
 
 ### Not Currently Monitored ❌
 
@@ -377,31 +379,30 @@ OTel SDK uses dot-notation internally. Prometheus-compatible backends (VictoriaM
 | **Dolt server lifecycle** | `internal/doltserver/` has no OTel imports | Server crashes are silent |
 | **Hook execution time** | `hook.exec` span exists but no duration histogram | Cannot detect hook regressions |
 | **versioned.go operations** | `versioned.go` has no OTel imports | History/AsOf/Diff invisible |
-| **Dolt server metrics** | Dolt has internal metrics but not exposed to OTel | Cannot monitor server health, connection count, query load |
+| **Dolt server metrics** | Dolt server-wide metrics are outside Beads' OTel instrumentation | Beads pool gauges cover this process |
 | **Working set size** | Uncommitted changes count unknown | Cannot detect batch mode accumulation |
 | **Database size growth** | Dolt database size not tracked | Cannot plan capacity or detect bloat |
 | **Branch proliferation** | Branch count not exposed | Cannot detect cleanup needed |
 | **Remote sync bandwidth** | Bytes transferred not tracked | Cannot monitor network usage or cost |
 | **Query execution plans** | EXPLAIN ANALYZE not captured | Cannot identify slow queries |
-| **Connection pool utilization** | Active/idle counts not tracked | Cannot tune connection pool sizing |
 
 ---
 
 ## Queries
 
-### Metrics (Any OTLP-compatible backend)
+### Metrics (Prometheus-style names and labels)
 
 **Total counts by operation:**
 ```promql
-sum(rate(bd_storage_operations_total[5m])) by (db.operation)
+sum by (db_operation) (rate(bd_storage_operations_total[5m]))
 sum(rate(bd_db_retry_count_total[5m]))
 ```
 
 **Latency distributions:**
 ```promql
-histogram_quantile(0.50, bd_storage_operation_duration_ms) by (db.operation)
-histogram_quantile(0.95, bd_storage_operation_duration_ms) by (db.operation)
-histogram_quantile(0.99, bd_storage_operation_duration_ms) by (db.operation)
+histogram_quantile(0.50, sum by (db_operation, le) (rate(bd_storage_operation_duration_ms_bucket[5m])))
+histogram_quantile(0.95, sum by (db_operation, le) (rate(bd_storage_operation_duration_ms_bucket[5m])))
+histogram_quantile(0.99, sum by (db_operation, le) (rate(bd_storage_operation_duration_ms_bucket[5m])))
 ```
 
 **Issue counts by status:**
@@ -479,7 +480,7 @@ FROM dolt_conflicts;
 
 ## Related Documentation
 
-- [OTel Data Model](otel-data-model.md) — Complete event schema
+- [OTel Data Model](otel-data-model.md) — Emitted attributes and metric dimensions
 - [OBSERVABILITY.md](../../../docs/reference/observability.md) — Quick reference for metrics
 - [Dolt Backend](../../../docs/architecture/dolt.md) — Dolt configuration and usage
 - [Dolt Concurrency](../dolt-concurrency.md) — Concurrency model and transactions
@@ -488,8 +489,7 @@ FROM dolt_conflicts;
 
 | Backend | Notes |
 |---------|-------|
-| **VictoriaMetrics** | Default for metrics (localhost:8428) — open source. Override with `BD_OTEL_METRICS_URL` |
-| **VictoriaLogs** | Reserved for future log export. Override with `BD_OTEL_LOGS_URL` |
+| **VictoriaMetrics** | Metrics backend. Set its OTLP metrics endpoint explicitly |
 | **Prometheus** | Supports OTLP via remote_write receiver — open source |
 | **Grafana Mimir** | Supports OTLP via write endpoint — open source |
 | **Loki** | Requires OTLP bridge (Loki uses different format) — open source |
@@ -505,103 +505,16 @@ FROM dolt_conflicts;
 
 ## Appendix: Source Reference Audit
 
-Audited against **`main` @ `371df32b`**. Line numbers below refer to that commit; the resource-detector row records the current fork correction.
+The [data model](otel-data-model.md#appendix-source-reference-audit) links emitted
+signals to their implementation. The lifecycle entry points are listed below.
 
-Every factual claim in this document is backed by a specific source location. This table exists to prevent documentation drift and to make it easy to re-verify after code changes.
-
-### Initialization (`internal/telemetry/telemetry.go`, `cmd/bd/main.go`)
-
-| Claim | Source |
-|-------|--------|
-| `Init` signature — returns only `error` | `telemetry.go:64` |
-| `Enabled()` — true when `BD_OTEL_METRICS_URL` set or `BD_OTEL_STDOUT=true` | `telemetry.go:53-55` |
-| Traces: stdout only when `BD_OTEL_STDOUT=true` | `telemetry.go:84-93` |
-| Metrics: HTTP OTLP when `BD_OTEL_METRICS_URL` set | `telemetry.go:131-139` |
-| Resource: `service.name`, `service.version` | `telemetry.go:73-75` |
-| Resource: `WithHost()` plus explicit PID, executable and runtime detectors; no automatic argv or owner | `telemetry.go` `buildResource` (fork #7277) |
-| `Shutdown(ctx)` signature | `telemetry.go:162` |
-| `Init` called in `PersistentPreRun` | `main.go:256` |
-| Command span started with `bd.command`, `bd.version`, `bd.args` | `main.go:262-266` |
-| `bd.actor` set on span after actor resolution | `main.go:474` |
-| `Shutdown` called in `PersistentPostRun` | `main.go:681` |
-
-### Storage Instrumentation (`internal/telemetry/storage.go`)
-
-| Claim | Source |
-|-------|--------|
-| `WrapStorage` returns original store when telemetry disabled | `storage.go:33-36` |
-| Metric `bd.storage.operations` (Counter) | `storage.go:38-40` |
-| Metric `bd.storage.operation.duration` (Histogram, ms) | `storage.go:41-44` |
-| Metric `bd.storage.errors` (Counter) | `storage.go:45-47` |
-| Gauge `bd.issue.count` | `storage.go:48-50` |
-| `CreateIssue` — attrs: `bd.actor`, `bd.issue.type` | `storage.go:86` |
-| `UpdateIssue` — attrs: `bd.issue.id`, `bd.update.count`, `bd.actor` | `storage.go:131` |
-| `GetIssue` — attr: `bd.issue.id` | `storage.go:108` |
-| `SearchIssues` — attrs: `bd.query`, `bd.result.count` | `storage.go:162` |
-| `GetReadyWork` — attr: `bd.result.count` | `storage.go:283` |
-| `GetBlockedIssues` — attr: `bd.result.count` | `storage.go:293` |
-| `RunInTransaction` — attr: `db.commit_msg` | `storage.go:393` |
-| `GetStatistics` emits gauge broken down by status | `storage.go:349` |
-| `AddDependency`, `RemoveDependency`, `GetDependencies` instrumented | `storage.go:175, 187, 198` |
-| `AddLabel`, `RemoveLabel`, `GetLabels` instrumented | `storage.go:243, 254, 265` |
-
-### Dolt Backend (`internal/storage/dolt/store.go`)
-
-| Claim | Source |
-|-------|--------|
-| `doltTracer` package-level var | `store.go:288` |
-| Metric `bd.db.retry_count` (Counter) registered | `store.go:302` |
-| `retryCount.Add()` called when `attempts > 1` | `store.go:281` |
-| Metric `bd.db.lock_wait_ms` (Histogram) registered | `store.go:306` |
-| `lockWaitMs.Record()` never called anywhere | grep `store.go` for `lockWaitMs\.Record` → zero matches |
-| Metric `bd.db.circuit_trips` (Counter) registered | `store.go:310` |
-| `circuitTrips.Add()` called on circuit open | `store.go:265` |
-| Metric `bd.db.circuit_rejected` (Counter) registered | `store.go:314` |
-| `circuitRejected.Add()` called on fail-fast | `store.go:250, 554` |
-| `withRetry()` function | `store.go:247` |
-| `execContext()` uses `doltTracer.Start()` + `withRetry()` | `store.go:359` |
-| `queryContext()` uses `doltTracer.Start()` + `withRetry()` | `store.go:396` |
-| `queryRowContext()` uses `doltTracer.Start()` + `withRetry()` | `store.go:425` |
-| Span `dolt.commit` | `store.go:1086` |
-| Span `dolt.push` | `store.go:1231, 1266` |
-| Span `dolt.pull` | `store.go:1295` |
-| Span `dolt.merge` | `store.go:1389` |
-| Span `dolt.branch` | `store.go:1357` |
-| Span `dolt.checkout` | `store.go:1372` |
-
-### versioned.go — no OTel
-
-| Claim | Source |
-|-------|--------|
-| `versioned.go` has no OTel imports | `versioned.go:1-9` — imports: `context`, `fmt`, `storage`, `types` only |
-
-### doltserver — no OTel
-
-| Claim | Source |
-|-------|--------|
-| `internal/doltserver/` has no OTel imports | grep `internal/doltserver/*.go` for `otel\|telemetry\|otlp` → zero matches |
-
-### Hooks (`internal/hooks/`)
-
-| Claim | Source |
-|-------|--------|
-| Span `hook.exec` created in `runHook` | `hooks_unix.go:31` |
-| Span attrs: `hook.event`, `hook.path`, `bd.issue_id` | `hooks_unix.go:33-35` |
-| Stdout/stderr added as span events via `addHookOutputEvents` | `hooks_otel.go:14, 20` |
-| `hook.stdout` / `hook.stderr` events carry `output`, `bytes` attrs | `hooks_otel.go:15-16, 21-22` |
-| No metric counters or histograms for hooks | grep `internal/hooks/` for `Counter\|Histogram` → zero matches |
-
-### AI (`internal/compact/haiku.go`, `cmd/bd/find_duplicates.go`)
-
-| Claim | Source |
-|-------|--------|
-| Metric `bd.ai.input_tokens` (Counter) | `haiku.go:110` |
-| Metric `bd.ai.output_tokens` (Counter) | `haiku.go:114` |
-| Metric `bd.ai.request.duration` (Histogram, ms) | `haiku.go:118` |
-| Metrics initialized lazily via `aiMetricsOnce` | `haiku.go:62, 106` |
-| Span `anthropic.messages.new` | `haiku.go:126` |
-| Span attrs: `bd.ai.model`, `bd.ai.operation` | `haiku.go:129-130` |
-| Span attrs: `bd.ai.input_tokens`, `bd.ai.output_tokens`, `bd.ai.attempts` | `haiku.go:165-167` |
-| Retry on HTTP 429 and 5xx | `haiku.go:217` |
-| `find_duplicates.go` — span attrs only, no `aiMetrics.*` calls | `find_duplicates.go:429-454` |
-| `find_duplicates.go` — `bd.ai.batch_size` attr | `find_duplicates.go:433` |
+| Behavior | Source |
+|---|---|
+| Providers, opt-in and legacy mapping | `internal/telemetry/telemetry.go`: `Init`, `Enabled`, `translateLegacyEnv`, `selectedMetricExporters` |
+| Resource metadata and console writers | `internal/telemetry/telemetry.go`: `buildResource`, `buildTraceProvider`, `buildMetricProvider` |
+| Command context and actor resolution | `cmd/bd/command_telemetry.go`: `startCommandSpan`, `commandTelemetryArgs`. See `commandSpan.SetAttributes` in `cmd/bd/main.go` |
+| End the command span and flush providers | `cmd/bd/main.go`: `commandSpan.End`, `telemetry.Shutdown` |
+| Storage decorator, metric dimensions and error status | `internal/telemetry/storage.go`: `WrapStorage`, `InstrumentedStorage.op`, `done` |
+| Dolt process pool registration and snapshots | `internal/storage/dolt/store.go`: `registerPoolGauges`, `poolSet.track`, `poolSet.stats` |
+| Hook spans and byte-count events | `internal/hooks/hooks_unix.go` and `internal/hooks/hooks_windows.go`: `runHook`. See `addHookOutputEvents` in `internal/hooks/hooks_otel.go` |
+| AI request spans and fractional timings | `internal/compact/haiku.go`: `callWithRetry`. See `analyzeWithAI` in `cmd/bd/find_duplicates.go` |

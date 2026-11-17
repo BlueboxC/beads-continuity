@@ -142,3 +142,74 @@ func TestDatabaseIntegrity_SharedWorktreeRestoresSharedRootOnTestBinaryError(t *
 		t.Fatalf("expected no worktree-local .beads directory, got err=%v", err)
 	}
 }
+
+// Adapted from #8077. The entire fixture, including the target of the alias,
+// is disposable. The repair must refuse before moving the database entry.
+func TestDatabaseIntegrityRefusesSymlinkedDatabase(t *testing.T) {
+	dir := setupTestWorkspace(t)
+	beadsDir := filepath.Join(dir, ".beads")
+	t.Setenv("BEADS_DOLT_SERVER_MODE", "")
+	t.Setenv("BEADS_DOLT_SHARED_SERVER", "")
+	t.Setenv("BEADS_DOLT_DATA_DIR", "")
+	doltDir := filepath.Join(beadsDir, "dolt")
+	target := t.TempDir()
+	if err := os.Symlink(target, doltDir); err != nil {
+		t.Skipf("symlink unavailable: %v", err)
+	}
+	err := DatabaseIntegrity(dir)
+	if err == nil || errors.Is(err, ErrTestBinary) || !strings.Contains(err.Error(), "symlink") {
+		t.Errorf("repair did not refuse the alias before recovery: %v", err)
+	}
+	if got, err := os.Readlink(doltDir); err != nil || got != target {
+		t.Errorf("database alias = %q, %v, want unchanged %q", got, err, target)
+	}
+}
+
+func TestIntegrityRollbackAdmissionRequiresConservedRecovery(t *testing.T) {
+	t.Setenv("BEADS_DOLT_DATA_DIR", "")
+	for _, name := range []string{"missing recovery entry", "recovery in a different parent", "symbolic-link recovery entry"} {
+		t.Run(name, func(t *testing.T) {
+			root := t.TempDir()
+			beadsDir := filepath.Join(root, ".beads")
+			doltPath := filepath.Join(beadsDir, "dolt")
+			backupPath := doltPath + ".fixture.corrupt.backup"
+			held := filepath.Join(root, "retained-recovery")
+			markers := map[string]string{
+				filepath.Join(doltPath, "entry"): "current",
+				filepath.Join(held, "entry"):     "retained recovery",
+			}
+			for path, content := range markers {
+				if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
+					t.Fatal(err)
+				}
+				if err := os.WriteFile(path, []byte(content), 0o600); err != nil {
+					t.Fatal(err)
+				}
+			}
+			target, err := captureRepairTarget(beadsDir, doltPath)
+			if err != nil {
+				t.Fatal(err)
+			}
+			t.Cleanup(target.close)
+			switch name {
+			case "recovery in a different parent":
+				backupPath = held
+			case "symbolic-link recovery entry":
+				if err := os.Symlink(held, backupPath); err != nil {
+					t.Skipf("symlink unavailable: %v", err)
+				}
+			}
+
+			// Exercise admission by itself. No database or recovery operation
+			// runs, and the fixtures contain only inert marker files.
+			if err := revalidateIntegrityRestore(target, backupPath); err == nil {
+				t.Error("rollback admission accepted a missing or displaced recovery entry")
+			}
+			for path, want := range markers {
+				if got, err := os.ReadFile(path); err != nil || string(got) != want {
+					t.Errorf("fixture entry %q changed: got %q, err %v, want %q", path, got, err, want)
+				}
+			}
+		})
+	}
+}

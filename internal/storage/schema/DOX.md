@@ -18,6 +18,10 @@ Root DOX.md and the parent chain remain binding.
 
 - Native open table probes use SHOW TABLES and case-insensitive exact names, after the existing selected-database guard. Wildcards cannot match neighboring tables. Column probes and migration authority retain their existing contracts.
 
+- The pinned migration session suspends automatic transaction commits before its first write, including ignore seeding and cursor repair. A converged open leaves the setting alone. Restore the original setting on success or failure. Discard a session whose setting cannot be restored.
+- Check pending main and ignored migrations against committable dirty rows before numbered migrations or rekeys. Allow clone-local ignored changes through and preserve typed refusal for committable rows.
+- Preserve original updated_at values around registered frozen migrations without changing the shipped SQL bytes. The guard runs before repair and restores values before recording a migration cursor.
+
 ## Work Guidance
 
 Prefer existing issue metadata for extension data. Schema changes need a justified durable contract, migration and persistence coverage.

@@ -553,3 +553,43 @@ func TestRunRecipe_RemoveKeepsDirItDidNotEmpty(t *testing.T) {
 		})
 	}
 }
+
+// Adapted from #7901. Use a read-only setup check against a disposable fixture.
+func TestWorkspaceRecipeCheckRefusesPathOutsideSelectedProject(t *testing.T) {
+	base := t.TempDir()
+	project := filepath.Join(base, "project")
+	beadsDir := filepath.Join(project, ".beads")
+	writeTestConfigYAML(t, beadsDir, "")
+	fixture := filepath.Join(base, "example.md")
+	if err := os.WriteFile(fixture, []byte("sample\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := recipes.SaveUserRecipe(beadsDir, "custom-check", fixture); err != nil {
+		t.Fatal(err)
+	}
+	t.Chdir(project)
+	t.Setenv("BEADS_DIR", beadsDir)
+	resetSetupResolutionCaches(t)
+	resetSetupGlobals(t)
+	setupCheck = true
+	if err := runRecipe("custom-check"); err == nil {
+		t.Error("workspace recipe check accepted a path outside the selected project")
+	}
+}
+
+func TestAddWorkspaceRecipeRefusesPathOutsideSelectedProject(t *testing.T) {
+	base := t.TempDir()
+	project := filepath.Join(base, "project")
+	beadsDir := filepath.Join(project, ".beads")
+	writeTestConfigYAML(t, beadsDir, "")
+	t.Chdir(project)
+	t.Setenv("BEADS_DIR", beadsDir)
+	resetSetupResolutionCaches(t)
+
+	if err := addRecipe("custom-add", filepath.Join(base, "example.md")); err == nil {
+		t.Error("workspace recipe saved a path outside the selected project")
+	}
+	if _, err := os.Stat(filepath.Join(beadsDir, "recipes.toml")); !os.IsNotExist(err) {
+		t.Errorf("refused recipe performed a write: %v", err)
+	}
+}

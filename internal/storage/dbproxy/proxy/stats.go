@@ -16,6 +16,9 @@ type Counters struct {
 	HandledConns         int64
 	BytesClientToBackend int64
 	BytesBackendToClient int64
+
+	// UpstreamErrorsReported counts attempts to send an outage response.
+	UpstreamErrorsReported int64
 }
 
 type Stats struct {
@@ -57,4 +60,8 @@ func (s *Stats) AddBytesClientToBackend(n int64) {
 }
 func (s *Stats) AddBytesBackendToClient(n int64) {
 	s.update(func(c *Counters) { c.BytesBackendToClient += n })
+}
+
+func (s *Stats) IncUpstreamErrorReported() {
+	s.update(func(c *Counters) { c.UpstreamErrorsReported++ })
 }

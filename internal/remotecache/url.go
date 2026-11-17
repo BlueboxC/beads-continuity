@@ -69,10 +69,59 @@ func IsRemoteURL(s string) bool {
 	return gitSSHPattern.MatchString(s)
 }
 
+// OptionShapedPart identifies a remote component that could be read as an
+// option by a transport. It reports only the component name.
+func OptionShapedPart(remote string) string {
+	remote = strings.TrimSpace(remote)
+	const gitPrefix = "git+"
+	if len(remote) >= len(gitPrefix) && strings.EqualFold(remote[:len(gitPrefix)], gitPrefix) {
+		remote = strings.TrimSpace(remote[len(gitPrefix):])
+	}
+	if startsWithDash(remote) {
+		return "URL"
+	}
+	scheme, authority, ok := strings.Cut(remote, "://")
+	if !ok || !strings.EqualFold(strings.TrimSpace(scheme), "ssh") {
+		return ""
+	}
+	if end := strings.IndexAny(authority, "/?#"); end >= 0 {
+		authority = authority[:end]
+	}
+	host := authority
+	if at := strings.LastIndex(authority, "@"); at >= 0 {
+		user, _, _ := strings.Cut(authority[:at], ":")
+		if startsWithDash(user) {
+			return "user name"
+		}
+		if decoded, err := url.PathUnescape(user); err == nil && startsWithDash(decoded) {
+			return "user name"
+		}
+		host = authority[at+1:]
+	}
+	if startsWithDash(strings.TrimPrefix(strings.TrimSpace(host), "[")) {
+		return "host"
+	}
+	// Check the same parsed components the SSH transport reads. The raw
+	// authority check above also gives a useful refusal for malformed URLs.
+	if parsed, err := url.Parse(remote); err == nil {
+		if parsed.User != nil && startsWithDash(parsed.User.Username()) {
+			return "user name"
+		}
+		if startsWithDash(parsed.Hostname()) {
+			return "host"
+		}
+	}
+	return ""
+}
+
+func startsWithDash(s string) bool {
+	return strings.HasPrefix(strings.TrimSpace(s), "-")
+}
+
 // ValidateRemoteURL performs strict security validation on a remote URL.
 // It rejects URLs containing control characters (including null bytes),
-// validates structural correctness per scheme, and rejects leading dashes
-// that could be interpreted as CLI flags.
+// validates structural correctness per scheme, and rejects components that
+// would be treated as CLI options.
 //
 // This is a security boundary — all remote URLs should pass through this
 // before reaching exec.Command arguments or SQL parameters.
@@ -88,9 +137,12 @@ func ValidateRemoteURL(rawURL string) error {
 		}
 	}
 
-	// Reject leading dash (CLI flag injection via exec.Command arguments)
-	if strings.HasPrefix(rawURL, "-") {
+	switch part := OptionShapedPart(rawURL); part {
+	case "":
+	case "URL":
 		return fmt.Errorf("remote URL must not start with a dash")
+	default:
+		return fmt.Errorf("the %s in a remote URL must not start with a dash", part)
 	}
 
 	// SCP-style URLs (user@host:path) are validated separately

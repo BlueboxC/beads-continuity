@@ -230,6 +230,7 @@ func markBlockedTemplateForIssues() string {
 		      WHERE d.issue_id = i.id
 		        AND d.type = 'parent-child'
 		        AND p.is_blocked = 1
+		        AND p.status <> 'closed' AND p.status <> 'pinned'
 		    )
 		    OR EXISTS (
 		      SELECT 1 FROM dependencies d
@@ -237,6 +238,7 @@ func markBlockedTemplateForIssues() string {
 		      WHERE d.issue_id = i.id
 		        AND d.type = 'parent-child'
 		        AND p.is_blocked = 1
+		        AND p.status <> 'closed' AND p.status <> 'pinned'
 		    )
 		    OR EXISTS (
 		      SELECT 1 FROM dependencies d
@@ -275,6 +277,7 @@ func unmarkBlockedTemplateForIssues() string {
 		        WHERE d.issue_id = i.id
 		          AND d.type = 'parent-child'
 		          AND p.is_blocked = 1
+		          AND p.status <> 'closed' AND p.status <> 'pinned'
 		      )
 		      AND NOT EXISTS (
 		        SELECT 1 FROM dependencies d
@@ -282,6 +285,7 @@ func unmarkBlockedTemplateForIssues() string {
 		        WHERE d.issue_id = i.id
 		          AND d.type = 'parent-child'
 		          AND p.is_blocked = 1
+		          AND p.status <> 'closed' AND p.status <> 'pinned'
 		      )
 		      AND NOT EXISTS (
 		        SELECT 1 FROM dependencies d
@@ -336,6 +340,7 @@ func markBlockedTemplateForWisps() string {
 		      WHERE d.issue_id = w.id
 		        AND d.type = 'parent-child'
 		        AND p.is_blocked = 1
+		        AND p.status <> 'closed' AND p.status <> 'pinned'
 		    )
 		    OR EXISTS (
 		      SELECT 1 FROM wisp_dependencies d
@@ -343,6 +348,7 @@ func markBlockedTemplateForWisps() string {
 		      WHERE d.issue_id = w.id
 		        AND d.type = 'parent-child'
 		        AND p.is_blocked = 1
+		        AND p.status <> 'closed' AND p.status <> 'pinned'
 		    )
 		    OR EXISTS (
 		      SELECT 1 FROM wisp_dependencies d
@@ -381,6 +387,7 @@ func unmarkBlockedTemplateForWisps() string {
 		        WHERE d.issue_id = w.id
 		          AND d.type = 'parent-child'
 		          AND p.is_blocked = 1
+		          AND p.status <> 'closed' AND p.status <> 'pinned'
 		      )
 		      AND NOT EXISTS (
 		        SELECT 1 FROM wisp_dependencies d
@@ -388,6 +395,7 @@ func unmarkBlockedTemplateForWisps() string {
 		        WHERE d.issue_id = w.id
 		          AND d.type = 'parent-child'
 		          AND p.is_blocked = 1
+		          AND p.status <> 'closed' AND p.status <> 'pinned'
 		      )
 		      AND NOT EXISTS (
 		        SELECT 1 FROM wisp_dependencies d

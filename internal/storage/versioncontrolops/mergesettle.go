@@ -7,11 +7,13 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"regexp"
 	"sort"
 	"strings"
 
 	"github.com/steveyegge/beads/internal/storage"
 	"github.com/steveyegge/beads/internal/storage/kvkeys"
+	"github.com/steveyegge/beads/internal/storage/schema"
 )
 
 // memoryConfigKeyPrefix is the config-table key prefix under which `bd remember`
@@ -73,7 +75,7 @@ func MergeAndSettleWithStrategy(ctx context.Context, db DBConn, ref, strategy st
 		return fmt.Errorf("set dolt_force_transaction_commit: %w", err)
 	}
 
-	_, mergeErr := db.ExecContext(ctx, "CALL DOLT_MERGE(?)", ref)
+	mergeErr := schema.DrainCall(ctx, db, "CALL DOLT_MERGE(?)", ref)
 	if mergeErr != nil && strings.Contains(mergeErr.Error(), "up to date") {
 		// DOLT_PULL swallows "Already up to date." internally; we do the same.
 		mergeErr = nil
@@ -171,7 +173,7 @@ func SettleMerge(ctx context.Context, db DBConn, mergeErr error, preMergeDirty m
 					abortMerge(ctx, db, preMergeClean)
 					return fmt.Errorf("resolve %s conflicts with '%s' strategy: %w", table, strategy, err)
 				}
-				if _, err := db.ExecContext(ctx, "CALL DOLT_ADD(?)", table); err != nil {
+				if err := schema.DrainCall(ctx, db, "CALL DOLT_ADD(?)", table); err != nil {
 					abortMerge(ctx, db, preMergeClean)
 					return fmt.Errorf("stage resolved %s: %w", table, err)
 				}
@@ -230,7 +232,7 @@ func SettleMerge(ctx context.Context, db DBConn, mergeErr error, preMergeDirty m
 			return err
 		}
 		msg := fmt.Sprintf("Resolve merge conflicts using '%s' strategy", strategy)
-		if _, err := db.ExecContext(ctx, "CALL DOLT_COMMIT('-m', ?)", msg); err != nil {
+		if err := schema.DrainCall(ctx, db, "CALL DOLT_COMMIT('-m', ?)", msg); err != nil {
 			abortMerge(ctx, db, preMergeClean)
 			if mergeErr != nil {
 				return mergeErr
@@ -289,7 +291,7 @@ func MergeWithStrategy(ctx context.Context, db DBConn, ref, author, strategy str
 		return nil, fmt.Errorf("set dolt_force_transaction_commit: %w", err)
 	}
 
-	_, mergeErr := db.ExecContext(ctx, "CALL DOLT_MERGE('--author', ?, ?)", author, ref)
+	mergeErr := schema.DrainCall(ctx, db, "CALL DOLT_MERGE('--author', ?, ?)", author, ref)
 	if mergeErr != nil && strings.Contains(mergeErr.Error(), "up to date") {
 		mergeErr = nil
 	}
@@ -374,8 +376,8 @@ func AbortMerge(ctx context.Context, db DBConn, preMergeClean bool) {
 }
 
 func abortMerge(ctx context.Context, db DBConn, preMergeClean bool) {
-	if _, err := db.ExecContext(ctx, "CALL DOLT_MERGE('--abort')"); err != nil && preMergeClean {
-		_, _ = db.ExecContext(ctx, "CALL DOLT_RESET('--hard')")
+	if err := schema.DrainCall(ctx, db, "CALL DOLT_MERGE('--abort')"); err != nil && preMergeClean {
+		_ = schema.DrainCall(ctx, db, "CALL DOLT_RESET('--hard')")
 	}
 }
 
@@ -411,8 +413,89 @@ func stageMergedTables(ctx context.Context, db DBConn, preserve map[string]bool)
 	}
 	sort.Strings(tables)
 	for _, table := range tables {
-		if _, err := db.ExecContext(ctx, "CALL DOLT_ADD(?)", table); err != nil {
+		if err := schema.DrainCall(ctx, db, "CALL DOLT_ADD(?)", table); err != nil {
 			return fmt.Errorf("stage merged table %s: %w", table, err)
+		}
+	}
+	return nil
+}
+
+// doltCommitHashRE matches a Dolt commit hash (32 base32 characters), the
+// same shape as issueops' unexported validator: dolt_diff_summary and
+// dolt_schema_diff take literal arguments only, so a merge's source commit
+// read from dolt_merge_status must be validated before it is inlined into a
+// query.
+var doltCommitHashRE = regexp.MustCompile(`^[0-9a-v]{32}$`)
+
+// stageMergeResult stages the tables a conflicted DOLT_MERGE merged cleanly
+// but left unstaged. A conflicted merge parks its whole merged root in the
+// working set and leaves the staged root at HEAD, so a conclusion that stages
+// only the tables it resolved (DOLT_ADD per resolved table before
+// DOLT_COMMIT) records HEAD's copy of every cleanly merged sibling table: the
+// merge commit — what `bd dolt push` sends — reverts the peer's change on
+// that table while this clone's working set keeps reading the merged value
+// forever, because later pulls see nothing new to merge (GH#7811).
+//
+// The staged set is exact by construction: unstaged tables (dolt_status
+// staged = 0) that also differ between HEAD and the merge source (the
+// two-commit dolt_diff_summary names peer-added tables as to_table_name and
+// peer-dropped ones as from_table_name). dolt_diff_summary skips a table
+// whose primary key changed (key column count or a key column's type) with
+// only a session warning, yet the merge fast-forwards a key change only the
+// peer made, so the two-commit dolt_schema_diff, which names every table
+// whose definition changed, is unioned in. A table the peer renamed is a
+// single dolt_status row named "<from> -> <to>", which matches neither
+// column, so the join also matches that display name and stages the new
+// name: DOLT_ADD of a rename's new name stages the rename. Dolt refuses to
+// start a merge whose dirty tables differ from HEAD by table hash, so an
+// unstaged diff-vs-HEAD table while a merge is open is merge output, never
+// pre-existing pending work — and that pending work stays pending in tables
+// the merge did not change (server mode deliberately leaves some config
+// uncommitted, GH#2455). DOLT_ADD without --force applies dolt_ignore
+// patterns, so ignored tables (wisps, ...) that dolt_status hides cannot
+// sneak in.
+func stageMergeResult(ctx context.Context, db DBConn) error {
+	var sourceCommit sql.NullString
+	if err := db.QueryRowContext(ctx,
+		"SELECT source_commit FROM dolt_merge_status WHERE is_merging").Scan(&sourceCommit); err != nil {
+		if errors.Is(err, sql.ErrNoRows) || isMissingSystemTable(err) {
+			return nil // no merge is open — there is nothing to stage
+		}
+		return fmt.Errorf("query merge source commit: %w", err)
+	}
+	if !sourceCommit.Valid || !doltCommitHashRE.MatchString(sourceCommit.String) {
+		// An unvalidated value must never be inlined into the diff query
+		// below, and concluding without staging would record a revert.
+		return fmt.Errorf("merge source commit %q is not a valid commit hash; refusing to stage the merge result", sourceCommit.String)
+	}
+	//nolint:gosec // G201: sourceCommit is validated against doltCommitHashRE above; the diff table functions require literal arguments.
+	rows, err := db.QueryContext(ctx, fmt.Sprintf(
+		"SELECT DISTINCT CASE WHEN s.table_name = CONCAT(d.from_table_name, ' -> ', d.to_table_name) "+
+			"THEN d.to_table_name ELSE s.table_name END FROM dolt_status s "+
+			"JOIN (SELECT from_table_name, to_table_name FROM dolt_diff_summary('HEAD', '%[1]s') "+
+			"UNION SELECT from_table_name, to_table_name FROM dolt_schema_diff('HEAD', '%[1]s')) d "+
+			"ON s.table_name IN (d.from_table_name, d.to_table_name, CONCAT(d.from_table_name, ' -> ', d.to_table_name)) "+
+			"WHERE s.staged = 0", sourceCommit.String))
+	if err != nil {
+		return fmt.Errorf("query merged-but-unstaged tables: %w", err)
+	}
+	var tables []string
+	for rows.Next() {
+		var table string
+		if err := rows.Scan(&table); err != nil {
+			_ = rows.Close()
+			return fmt.Errorf("scan merged-but-unstaged table: %w", err)
+		}
+		tables = append(tables, table)
+	}
+	// Drain and close before the next statement: db is a single session and
+	// the DOLT_ADD calls below must not race the open cursor.
+	if err := errors.Join(rows.Err(), rows.Close()); err != nil {
+		return fmt.Errorf("list merged-but-unstaged tables: %w", err)
+	}
+	for _, table := range tables {
+		if err := schema.DrainCall(ctx, db, "CALL DOLT_ADD(?)", table); err != nil {
+			return fmt.Errorf("stage merged %s: %w", table, err)
 		}
 	}
 	return nil
@@ -595,7 +678,7 @@ func TryAutoResolveMergeConflicts(ctx context.Context, db DBConn) (bool, error) 
 						"local edits to %s were superseded\n",
 					len(keys), strings.Join(keys, ", "))
 			}
-			if _, err := db.ExecContext(ctx, "CALL DOLT_CONFLICTS_RESOLVE('--theirs', 'config')"); err != nil {
+			if err := schema.DrainCall(ctx, db, "CALL DOLT_CONFLICTS_RESOLVE('--theirs', 'config')"); err != nil {
 				return false, fmt.Errorf("failed to resolve config conflicts: %w", err)
 			}
 		case "issues":
@@ -611,12 +694,12 @@ func TryAutoResolveMergeConflicts(ctx context.Context, db DBConn) (bool, error) 
 			}
 		default:
 			//nolint:gosec // G201: table is one of the hardcoded constants above.
-			if _, err := db.ExecContext(ctx, "CALL DOLT_CONFLICTS_RESOLVE('--theirs', '"+table+"')"); err != nil {
+			if err := schema.DrainCall(ctx, db, "CALL DOLT_CONFLICTS_RESOLVE('--theirs', '"+table+"')"); err != nil {
 				return false, fmt.Errorf("failed to resolve %s conflicts: %w", table, err)
 			}
 		}
 		//nolint:gosec // G201: table is one of the hardcoded constants above.
-		if _, err := db.ExecContext(ctx, "CALL DOLT_ADD('"+table+"')"); err != nil {
+		if err := schema.DrainCall(ctx, db, "CALL DOLT_ADD('"+table+"')"); err != nil {
 			return false, fmt.Errorf("failed to stage %s: %w", table, err)
 		}
 	}
@@ -632,10 +715,26 @@ func TryAutoResolveMergeConflicts(ctx context.Context, db DBConn) (bool, error) 
 // cascade violation could never settle while the resolver committed first
 // (bd-578h9.14).
 func CommitResolvedConflicts(ctx context.Context, db DBConn) error {
-	if _, err := db.ExecContext(ctx, "CALL DOLT_COMMIT('-m', 'auto-resolve merge conflicts: metadata, dependencies, schema_migrations, config, issues (field-level three-way merge), labels/comments/events (union)')"); err != nil {
+	if err := schema.DrainCall(ctx, db, "CALL DOLT_COMMIT('-m', 'auto-resolve merge conflicts: metadata, dependencies, schema_migrations, config, issues (field-level three-way merge), labels/comments/events (union)')"); err != nil {
 		return fmt.Errorf("failed to commit resolved conflicts: %w", err)
 	}
 	return nil
+}
+
+// CommitServerMergeSettlement stages the merge's own companion tables before
+// concluding a server-side settlement. The source-commit comparison keeps
+// unrelated dirty tables outside this commit.
+func CommitServerMergeSettlement(ctx context.Context, db DBConn, resolved, repairedViolations bool) error {
+	if !resolved && !repairedViolations {
+		return nil
+	}
+	if err := stageMergeResult(ctx, db); err != nil {
+		return err
+	}
+	if resolved {
+		return CommitResolvedConflicts(ctx, db)
+	}
+	return schema.DrainCall(ctx, db, "CALL DOLT_COMMIT('-m', 'repair merge foreign key cascade violations')")
 }
 
 // dependencyConflictsAreAuditOnly reports whether every conflicted row in the
@@ -835,7 +934,7 @@ func resolveSchemaMigrationsVintageConflicts(ctx context.Context, db DBConn) err
 			return fmt.Errorf("backfill content_hash for migration %d: %w", f.version, err)
 		}
 	}
-	if _, err := db.ExecContext(ctx, "CALL DOLT_CONFLICTS_RESOLVE('--ours', 'schema_migrations')"); err != nil {
+	if err := schema.DrainCall(ctx, db, "CALL DOLT_CONFLICTS_RESOLVE('--ours', 'schema_migrations')"); err != nil {
 		return fmt.Errorf("failed to resolve schema_migrations conflicts: %w", err)
 	}
 	return nil
@@ -931,7 +1030,7 @@ func TryRepairFKCascadeViolations(ctx context.Context, db DBConn) (repaired, had
 			return false, true, fmt.Errorf("clear %s constraint violations: %w", t, err)
 		}
 		//nolint:gosec // G202: hardcoded table name.
-		if _, err := db.ExecContext(ctx, "CALL DOLT_ADD('"+t+"')"); err != nil {
+		if err := schema.DrainCall(ctx, db, "CALL DOLT_ADD('"+t+"')"); err != nil {
 			return false, true, fmt.Errorf("stage repaired %s: %w", t, err)
 		}
 		fmt.Fprintf(os.Stderr,

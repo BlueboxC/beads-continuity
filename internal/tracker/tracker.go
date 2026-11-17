@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"time"
 
 	"github.com/steveyegge/beads/internal/config"
 	"github.com/steveyegge/beads/internal/types"
@@ -54,6 +55,7 @@ type IssueTracker interface {
 	IsExternalRef(ref string) bool
 
 	// ExtractIdentifier extracts the human-readable identifier from an external_ref.
+	// An empty result means the configured tracker cannot address the ref.
 	ExtractIdentifier(ref string) string
 
 	// BuildExternalRef constructs an external_ref string for a tracker issue.
@@ -76,6 +78,12 @@ type BatchPushDryRunner interface {
 // raw fetch counts separately from incremental pull candidates.
 type PullStatsProvider interface {
 	LastPullStats() (queried int, candidates int)
+}
+
+// SinceGranularityProvider describes coarse incremental matching such as
+// Jira and Notion's minute granularity or Azure DevOps' UTC day.
+type SinceGranularityProvider interface {
+	SinceGranularity() time.Duration
 }
 
 // MatchKeyer is implemented by trackers whose ExtractIdentifier values are

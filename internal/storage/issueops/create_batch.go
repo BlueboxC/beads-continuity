@@ -133,6 +133,12 @@ func ExecuteCreateBatch(ctx context.Context, tx *sql.Tx, request publicops.Creat
 	}
 	infraTypes := ResolveInfraTypesInTx(ctx, tx)
 
+	batch.claimedIDs = make(map[string]bool, len(attempt.Items))
+	for _, item := range attempt.Items {
+		if item.Issue != nil && item.Issue.ID != "" {
+			batch.claimedIDs[item.Issue.ID] = true
+		}
+	}
 	issues := make([]*types.Issue, len(attempt.Items))
 	for i, item := range attempt.Items {
 		prepared, err := PreparePublicCreateRequest(CreateBatchItemRequest(attempt, item), createContext)
@@ -154,6 +160,7 @@ func ExecuteCreateBatch(ctx context.Context, tx *sql.Tx, request publicops.Creat
 		if err := assignCreateIssueIDInTx(ctx, tx, batch, issue, attempt.Actor); err != nil {
 			return publicops.CreateBatchResult{}, nil, CreateBatchItemError(i, ClassifyPublicCreateError(err))
 		}
+		batch.claimedIDs[issue.ID] = true
 		issue.Dependencies = storage.CreatePublicCreateDependencies(issue.ID, prepared)
 		issues[i] = issue
 	}

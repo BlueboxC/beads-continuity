@@ -129,6 +129,10 @@ func CompactAtHead(ctx context.Context, conn DBConn, plannedHead, initialHash, b
 		}
 	}
 
+	if err := verifyCompactReplay(ctx, conn, meta, recentHashes, initialHash, boundary.date); err != nil {
+		return err
+	}
+
 	if err := execSQL("checkout main", "CALL DOLT_CHECKOUT('main')"); err != nil {
 		return err
 	}
@@ -137,6 +141,15 @@ func CompactAtHead(ctx context.Context, conn DBConn, plannedHead, initialHash, b
 	}
 	if err := requireCleanCompactWorkingSet(ctx, conn); err != nil {
 		return err
+	}
+	// Verify against main only after confirming it still names plannedHead.
+	// The pinned Dolt table function requires literal reference arguments.
+	var changedTables int
+	if err := conn.QueryRowContext(ctx, "SELECT COUNT(*) FROM dolt_diff_summary('main', 'compact-tmp')").Scan(&changedTables); err != nil {
+		return fmt.Errorf("compact: verify replayed history: %w", err)
+	}
+	if changedTables != 0 {
+		return fmt.Errorf("compact: replayed history differs from main in %d table(s)", changedTables)
 	}
 	if err := execSQL("reset main to compacted", "CALL DOLT_RESET('--hard', 'compact-tmp')"); err != nil {
 		return err
@@ -151,24 +164,63 @@ func CompactAtHead(ctx context.Context, conn DBConn, plannedHead, initialHash, b
 // Adapted from uschtwill's #7296 metadata snapshot and bee-ghosttrack's
 // committer-variable review. Formatting in SQL retains UTC millisecond dates
 // across both driver paths without imposing the connection's local time zone.
-type compactCommit struct{ name, email, date string }
+type compactCommit struct {
+	name, email, date                        string
+	author, authorEmail, authorDate, message string
+}
+
+const compactLogQuery = "SELECT commit_hash, committer, email, DATE_FORMAT(date, '%Y-%m-%dT%H:%i:%s.%fZ'), author, author_email, DATE_FORMAT(author_date, '%Y-%m-%dT%H:%i:%s.%fZ'), message FROM dolt_log"
 
 func compactCommitMetadata(ctx context.Context, conn DBConn) (map[string]compactCommit, error) {
-	rows, err := conn.QueryContext(ctx, "SELECT commit_hash, committer, email, DATE_FORMAT(date, '%Y-%m-%dT%H:%i:%s.%fZ') FROM dolt_log")
+	log, err := readCompactLog(ctx, conn, compactLogQuery)
+	if err != nil {
+		return nil, err
+	}
+	meta := make(map[string]compactCommit, len(log))
+	for _, row := range log {
+		meta[row.hash] = row.commit
+	}
+	return meta, nil
+}
+
+type compactLogRow struct {
+	hash   string
+	commit compactCommit
+}
+
+func readCompactLog(ctx context.Context, conn DBConn, query string) ([]compactLogRow, error) {
+	rows, err := conn.QueryContext(ctx, query)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	meta := make(map[string]compactCommit)
+	var result []compactLogRow
 	for rows.Next() {
-		var hash string
-		var m compactCommit
-		if err := rows.Scan(&hash, &m.name, &m.email, &m.date); err != nil {
+		var row compactLogRow
+		m := &row.commit
+		if err := rows.Scan(&row.hash, &m.name, &m.email, &m.date, &m.author, &m.authorEmail, &m.authorDate, &m.message); err != nil {
 			return nil, err
 		}
-		meta[hash] = m
+		result = append(result, row)
 	}
-	return meta, rows.Err()
+	return result, rows.Err()
+}
+
+// Verify both identities, dates and message before replacing main.
+func verifyCompactReplay(ctx context.Context, conn DBConn, originals map[string]compactCommit, kept []string, initial, boundaryDate string) error {
+	replay, err := readCompactLog(ctx, conn, compactLogQuery+" ORDER BY commit_order ASC")
+	if err != nil {
+		return fmt.Errorf("compact: read replayed commit metadata: %w", err)
+	}
+	if len(replay) != len(kept)+2 || replay[0].hash != initial || replay[1].commit.date != boundaryDate {
+		return errors.New("compact: replayed history has an unexpected initial commit, boundary date or commit count")
+	}
+	for i, hash := range kept {
+		if replay[i+2].commit != originals[hash] {
+			return fmt.Errorf("compact: replayed metadata differs from original commit %s", hash)
+		}
+	}
+	return nil
 }
 
 // Head guards adapted from uschtwill's gastownhall/beads#7502.

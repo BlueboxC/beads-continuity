@@ -379,6 +379,7 @@ Examples:
 		}
 		defer fromCleanup()
 
+		targetUnverified := false
 		if isExternalRef {
 			toID = dependsOnArg
 			if err := validateExternalRef(toID); err != nil {
@@ -392,6 +393,7 @@ Examples:
 				tgtPrefix := types.ExtractPrefix(dependsOnArg)
 				if srcPrefix != "" && tgtPrefix != "" && srcPrefix != tgtPrefix {
 					toID = dependsOnArg
+					targetUnverified = true
 				} else {
 					return HandleErrorRespectJSON("resolving dependency ID %s: %v", dependsOnArg, err)
 				}
@@ -432,6 +434,9 @@ Examples:
 
 		explicit := cmd.Flags().Changed("type") || cmd.Flags().Changed("blocked-by") || cmd.Flags().Changed("depends-on")
 		warnImplicitBlocksDefault(dt, explicit)
+		if targetUnverified {
+			warnMissingDependencyTarget(fromID, toID, 0)
+		}
 
 		if jsonOutput {
 			return outputJSON(map[string]interface{}{
@@ -446,6 +451,18 @@ Examples:
 			ui.RenderPass("✓"), formatFeedbackIDParen(fromID, lookupTitle(fromID)), depRelationFor(dt).phrase, formatFeedbackIDParen(toID, lookupTitle(toID)), dt)
 		return nil
 	},
+}
+
+func warnMissingDependencyTarget(source, target string, line int) {
+	if quietFlag {
+		return
+	}
+	prefix := ""
+	if line > 0 {
+		prefix = fmt.Sprintf("line %d: ", line)
+	}
+	fmt.Fprintf(os.Stderr, "Warning: %sstored dependency %s → %s without confirming its target\n",
+		prefix, printedValue(source), printedValue(target))
 }
 
 // warnImplicitBlocksDefault is the D1 guard: when a dep add edge is created
@@ -513,10 +530,11 @@ type bulkDepEdge struct {
 	// Defaulted is true when the line carried no "type" and fell back to
 	// the command-line default (D1 guard: the implicit default is what the
 	// stderr warning targets; explicit per-line types are the user's choice).
-	Defaulted bool
-	Store     storage.DoltStorage
-	StoreKey  string
-	Cleanups  []func()
+	Defaulted        bool
+	UnverifiedTarget bool
+	Store            storage.DoltStorage
+	StoreKey         string
+	Cleanups         []func()
 }
 
 func addBulkDependencies(cmd *cobra.Command, file string, defaultType string) error {
@@ -575,6 +593,12 @@ func addBulkDependencies(cmd *cobra.Command, file string, defaultType string) er
 
 	if !noCycleCheck {
 		warnIfCyclesExist(targetStore)
+	}
+
+	for _, edge := range resolved {
+		if edge.UnverifiedTarget {
+			warnMissingDependencyTarget(edge.IssueID, edge.DependsOnID, edge.Line)
+		}
 	}
 
 	if !cmd.Flags().Changed("type") {
@@ -718,6 +742,7 @@ func validateBulkDepEdges(ctx context.Context, edges []bulkDepEdge) ([]bulkDepEd
 				tgtPrefix := types.ExtractPrefix(edge.DependsOnID)
 				if srcPrefix != "" && tgtPrefix != "" && srcPrefix != tgtPrefix {
 					toID = edge.DependsOnID
+					current.UnverifiedTarget = true
 				} else {
 					errs = append(errs, fmt.Sprintf("line %d: resolving dependency ID %s: %v", edge.Line, edge.DependsOnID, err))
 					resolved = append(resolved, current)

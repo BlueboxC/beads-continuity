@@ -118,12 +118,15 @@ func resetDataGitURL(url string) string {
 // lsRemoteDoltDataRefs returns which of the Dolt data-plane refs currently
 // exist on the git remote at gitURL.
 func lsRemoteDoltDataRefs(ctx context.Context, gitURL string) ([]string, error) {
+	if err := checkRemoteNotOption("git remote", gitURL); err != nil {
+		return nil, err
+	}
 	ctx, cancel := context.WithTimeout(ctx, 60*time.Second)
 	defer cancel()
-	cmd := exec.CommandContext(ctx, "git", "ls-remote", gitURL, gitDoltDataRef, gitDoltInfoRef) // #nosec G204 -- URL from configured remote
+	cmd := exec.CommandContext(ctx, "git", "ls-remote", "--", gitURL, gitDoltDataRef, gitDoltInfoRef) // #nosec G204 -- validated remote operand after --
 	out, err := cmd.CombinedOutput()
 	if err != nil {
-		return nil, fmt.Errorf("git ls-remote %s failed: %s: %w", gitURL, strings.TrimSpace(string(out)), err)
+		return nil, fmt.Errorf("git ls-remote %s failed: %s: %w", redactRemoteURL(gitURL), scrubURLCredentials(strings.TrimSpace(string(out))), err)
 	}
 	var refs []string
 	for _, line := range strings.Split(strings.TrimSpace(string(out)), "\n") {
@@ -140,15 +143,18 @@ func lsRemoteDoltDataRefs(ctx context.Context, gitURL string) ([]string, error) 
 // git invocations (GH#3724 class: a user's templated pre-push hook must not
 // break — or observe — bd's data-plane plumbing).
 func deleteGitDoltDataRefs(ctx context.Context, gitURL string, refs []string) error {
-	args := []string{"push", gitURL}
+	if err := checkRemoteNotOption("git remote", gitURL); err != nil {
+		return err
+	}
+	args := []string{"push", "--", gitURL}
 	for _, ref := range refs {
 		args = append(args, ":"+ref)
 	}
-	cmd := exec.CommandContext(ctx, "git", args...) // #nosec G204 -- URL from configured remote, fixed refspecs
+	cmd := exec.CommandContext(ctx, "git", args...) // #nosec G204 -- validated remote operand after -- and fixed refspecs
 	cmd.Env = envWithNoGitHooks()
 	out, err := cmd.CombinedOutput()
 	if err != nil {
-		return fmt.Errorf("git push (delete %s) failed: %s: %w", strings.Join(refs, ", "), strings.TrimSpace(string(out)), err)
+		return fmt.Errorf("git push (delete %s) failed: %s: %w", strings.Join(refs, ", "), scrubURLCredentials(strings.TrimSpace(string(out))), err)
 	}
 	return nil
 }
@@ -255,6 +261,10 @@ Examples:
 				fmt.Sprintf("remote %q is not configured", name),
 				"Use 'bd dolt remote list' to see configured remotes.")
 		}
+		if err := checkRemoteNotOption("dolt remote URL", url); err != nil {
+			return HandleError("%v", err)
+		}
+		displayURL := redactRemoteURL(url)
 
 		// The rebuilt remote holds exactly HEAD; refuse while anything
 		// uncommitted would be silently left out of it.
@@ -276,7 +286,7 @@ Examples:
 		}
 		if kind == resetDataUnsupported {
 			return HandleErrorWithHint(
-				fmt.Sprintf("cannot clear stored data on remote %q (%s)", name, url),
+				fmt.Sprintf("cannot clear stored data on remote %q (%s)", name, displayURL),
 				fmt.Sprintf("Replace the remote with a fresh URL or prefix instead:\n"+
 					"  bd dolt remote remove %s\n"+
 					"  bd dolt remote add %s <fresh-url>\n"+
@@ -286,11 +296,11 @@ Examples:
 		if !doltRemoteResetDataYes {
 			if !term.IsTerminal(int(os.Stdin.Fd())) {
 				return HandleErrorWithHint(
-					fmt.Sprintf("reset-data replaces all Dolt data stored on remote %q (%s)", name, url),
+					fmt.Sprintf("reset-data replaces all Dolt data stored on remote %q (%s)", name, displayURL),
 					"Re-run with --yes to confirm.")
 			}
 			fmt.Printf("This replaces all Dolt data stored on remote %q:\n", name)
-			fmt.Printf("  %s\n", url)
+			fmt.Printf("  %s\n", displayURL)
 			fmt.Println("The remote is rebuilt from local HEAD; other clones must re-clone.")
 			fmt.Print("Proceed? (y/N): ")
 			reader := bufio.NewReader(os.Stdin)
@@ -321,7 +331,7 @@ Examples:
 					return HandleError("%v", derr)
 				}
 				deletedRefs = refs
-				fmt.Printf("Deleted %s on %s\n", strings.Join(refs, ", "), gitURL)
+				fmt.Printf("Deleted %s on %s\n", strings.Join(refs, ", "), redactRemoteURL(gitURL))
 			}
 		case resetDataFileStore:
 			path, _ := resetDataFilePath(url)

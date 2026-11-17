@@ -58,12 +58,13 @@ type proxyServer struct {
 	stats       *Stats
 	stopEpoch   string
 
-	trace       bool
-	logError    sync.Once
-	logger      *log.Logger
-	listener    net.Listener
-	activeConns atomic.Int64
-	conns       errgroup.Group
+	reportUpstreamOutage bool
+	trace                bool
+	logError             sync.Once
+	logger               *log.Logger
+	listener             net.Listener
+	activeConns          atomic.Int64
+	conns                errgroup.Group
 }
 
 const (
@@ -99,13 +100,14 @@ var errIdleTimeout = errors.New("idle timeout reached")
 
 func NewProxyServer(opts ProxyOpts) *proxyServer {
 	return &proxyServer{
-		rootDir:     opts.RootDir,
-		port:        opts.Port,
-		idleTimeout: opts.IdleTimeout,
-		server:      opts.Server,
-		stats:       opts.Stats,
-		stopEpoch:   opts.StopEpoch,
-		trace:       opts.Trace,
+		rootDir:              opts.RootDir,
+		port:                 opts.Port,
+		idleTimeout:          opts.IdleTimeout,
+		server:               opts.Server,
+		stats:                opts.Stats,
+		stopEpoch:            opts.StopEpoch,
+		reportUpstreamOutage: reportsUpstreamOutage(opts.Server),
+		trace:                opts.Trace,
 	}
 }
 
@@ -478,6 +480,9 @@ func (p *proxyServer) handleConn(ctx context.Context, client net.Conn) error {
 	if err != nil {
 		p.logf("handleConn(%s) backend dial error: %v", addr, err)
 		p.stats.IncBackendDialError()
+		if p.reportUpstreamOutage && isUpstreamUnreachableDialError(err) {
+			p.writeUpstreamOutage(client, dialFailureMessage(err))
+		}
 		_ = client.Close()
 		return err
 	}
@@ -516,6 +521,11 @@ func (p *proxyServer) handleConn(ctx context.Context, client net.Conn) error {
 		n, err := io.Copy(client, backend)
 		p.stats.AddBytesBackendToClient(n)
 		p.tracef("handleConn(%s) backend→client done (n=%d, err=%v)", addr, n, err)
+		// The backend speaks first. A clean EOF before its greeting has a
+		// short retry window for a restarting external server.
+		if p.reportUpstreamOutage && n == 0 && err == nil {
+			p.writeUpstreamOutage(client, closedBeforeGreetingMessage(backend))
+		}
 		return err
 	})
 	return g.Wait()

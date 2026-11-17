@@ -212,7 +212,7 @@ func TestHealSkipsHealthyDatabaseInTwoReads(t *testing.T) {
 
 	expectIgnoredCursorHealNoop(mock)
 
-	healed, err := healTrackedIgnoredCursorTable(context.Background(), db)
+	healed, err := healTrackedIgnoredCursorTable(context.Background(), db, nil)
 	if err != nil {
 		t.Fatalf("healTrackedIgnoredCursorTable() error = %v, want nil", err)
 	}
@@ -312,7 +312,7 @@ func TestHealRespectsOperatorIgnoreOverrideUnderABroaderPattern(t *testing.T) {
 		{pattern: ignoredSource.cursorTable, ignored: false},
 	}, false)
 
-	healed, err := healTrackedIgnoredCursorTable(context.Background(), db)
+	healed, err := healTrackedIgnoredCursorTable(context.Background(), db, nil)
 	if err != nil {
 		t.Fatalf("healTrackedIgnoredCursorTable() error = %v, want nil", err)
 	}
@@ -334,7 +334,7 @@ func TestHealIsNonFatalWhenTheProbeFails(t *testing.T) {
 	mock.ExpectQuery(regexp.QuoteMeta("SHOW TABLES AS OF 'HEAD'")).
 		WillReturnError(errors.New("command denied to user 'fenced'@'%'"))
 
-	healed, err := healTrackedIgnoredCursorTable(context.Background(), db)
+	healed, err := healTrackedIgnoredCursorTable(context.Background(), db, nil)
 	if err != nil {
 		t.Fatalf("healTrackedIgnoredCursorTable() error = %v, want nil (a failed probe must not brick the open)", err)
 	}
@@ -389,7 +389,7 @@ func TestHealIsNonFatalThroughTheWholePreDropZone(t *testing.T) {
 			expectIgnoredCursorGate(mock, "", true, exactlyIgnored(true), false)
 			tt.expect(mock)
 
-			healed, err := healTrackedIgnoredCursorTable(context.Background(), db)
+			healed, err := healTrackedIgnoredCursorTable(context.Background(), db, nil)
 			if err != nil {
 				t.Fatalf("healTrackedIgnoredCursorTable() error = %v, want nil: nothing is destroyed before the DROP, so this must cost one open, not every open", err)
 			}
@@ -419,7 +419,7 @@ func TestHealIsFatalAfterTheDropAndIsNotADirtyTablesError(t *testing.T) {
 	mock.ExpectExec(regexp.QuoteMeta("COMMIT")).
 		WillReturnError(errors.New("connection reset"))
 
-	healed, err := healTrackedIgnoredCursorTable(context.Background(), db)
+	healed, err := healTrackedIgnoredCursorTable(context.Background(), db, nil)
 	if err == nil {
 		t.Fatal("healTrackedIgnoredCursorTable() error = nil after the drop failed to commit, want the failure returned")
 	}
@@ -451,7 +451,7 @@ func TestHealUntracksAndRestoresInOrder(t *testing.T) {
 	expectIgnoredCursorUntrackCommit(mock)
 	expectIgnoredCursorRestore(mock, false)
 
-	healed, err := healTrackedIgnoredCursorTable(context.Background(), db)
+	healed, err := healTrackedIgnoredCursorTable(context.Background(), db, nil)
 	if err != nil {
 		t.Fatalf("healTrackedIgnoredCursorTable() error = %v", err)
 	}
@@ -475,7 +475,7 @@ func TestHealCopiesLegacyShapeWithoutContentHash(t *testing.T) {
 	expectIgnoredCursorUntrackCommit(mock)
 	expectIgnoredCursorRestore(mock, false)
 
-	if _, err := healTrackedIgnoredCursorTable(context.Background(), db); err != nil {
+	if _, err := healTrackedIgnoredCursorTable(context.Background(), db, nil); err != nil {
 		t.Fatalf("healTrackedIgnoredCursorTable() error = %v", err)
 	}
 	if err := mock.ExpectationsWereMet(); err != nil {
@@ -498,7 +498,7 @@ func TestHealCommitsAStrayScratchTableOutOfHead(t *testing.T) {
 	expectIgnoredCursorUntrackCommit(mock)
 	expectIgnoredCursorRestore(mock, true)
 
-	if _, err := healTrackedIgnoredCursorTable(context.Background(), db); err != nil {
+	if _, err := healTrackedIgnoredCursorTable(context.Background(), db, nil); err != nil {
 		t.Fatalf("healTrackedIgnoredCursorTable() error = %v", err)
 	}
 	if err := mock.ExpectationsWereMet(); err != nil {
@@ -519,7 +519,7 @@ func TestHealResumesFromASurvivingScratchTable(t *testing.T) {
 	expectSchemaTableExists(mock, ignoredSource.cursorTable, false)
 	expectIgnoredCursorRestore(mock, false)
 
-	healed, err := healTrackedIgnoredCursorTable(context.Background(), db)
+	healed, err := healTrackedIgnoredCursorTable(context.Background(), db, nil)
 	if err != nil {
 		t.Fatalf("healTrackedIgnoredCursorTable() error = %v", err)
 	}
@@ -547,7 +547,7 @@ func TestHealNeverResurrectsRowsIntoALiveCursorTable(t *testing.T) {
 	// Cleanup only. An INSERT here would be an unexpected statement.
 	expectIgnoredCursorScratchDrop(mock, false)
 
-	healed, err := healTrackedIgnoredCursorTable(context.Background(), db)
+	healed, err := healTrackedIgnoredCursorTable(context.Background(), db, nil)
 	if err != nil {
 		t.Fatalf("healTrackedIgnoredCursorTable() error = %v", err)
 	}
@@ -571,7 +571,7 @@ func TestHealResumeRespectsTheOperatorOverride(t *testing.T) {
 	expectSchemaTableExists(mock, ignoredSource.cursorTable, false)
 	expectIgnoredCursorScratchDrop(mock, false)
 
-	if _, err := healTrackedIgnoredCursorTable(context.Background(), db); err != nil {
+	if _, err := healTrackedIgnoredCursorTable(context.Background(), db, nil); err != nil {
 		t.Fatalf("healTrackedIgnoredCursorTable() error = %v", err)
 	}
 	if err := mock.ExpectationsWereMet(); err != nil {
@@ -606,7 +606,7 @@ func TestHealResumeDegradesForClientsThatCannotRunDDL(t *testing.T) {
 			mock.ExpectExec("(?s)^CREATE TABLE IF NOT EXISTS " + ignoredSource.cursorTable).
 				WillReturnError(tt.err)
 
-			_, err := healTrackedIgnoredCursorTable(context.Background(), db)
+			_, err := healTrackedIgnoredCursorTable(context.Background(), db, nil)
 			if tt.wantFatal && err == nil {
 				t.Fatal("healTrackedIgnoredCursorTable() error = nil, want the failure returned so a privileged opener retries")
 			}
@@ -636,7 +636,7 @@ func TestHealResumesWhenTheDroppedTableIsGoneFromTheWorkingSet(t *testing.T) {
 	expectIgnoredCursorUntrackCommit(mock)
 	expectIgnoredCursorRestore(mock, false)
 
-	healed, err := healTrackedIgnoredCursorTable(context.Background(), db)
+	healed, err := healTrackedIgnoredCursorTable(context.Background(), db, nil)
 	if err != nil {
 		t.Fatalf("healTrackedIgnoredCursorTable() error = %v", err)
 	}

@@ -2,13 +2,16 @@ package gitlab
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"sort"
 	"strconv"
 	"strings"
+	"sync/atomic"
 	"testing"
+	"time"
 
 	"github.com/steveyegge/beads/internal/storage"
 	"github.com/steveyegge/beads/internal/tracker"
@@ -890,5 +893,104 @@ func TestPull_DryRunDependencyPreviewUsesMatchedBead(t *testing.T) {
 		if strings.Contains(msg, "Would create dependency") {
 			t.Errorf("preview says %q, want no dependency: bd-b8 already depends on bd-b7", msg)
 		}
+	}
+}
+
+type overlapGitLabStore struct {
+	*crossProjectStore
+	cursor time.Time
+}
+
+func (s overlapGitLabStore) GetLocalMetadata(_ context.Context, key string) (string, error) {
+	if key == "gitlab.last_sync" {
+		return s.cursor.Format(time.RFC3339), nil
+	}
+	return "", nil
+}
+
+func (s overlapGitLabStore) PreviousExternalRef(context.Context, string, time.Time) (string, bool, error) {
+	return "", false, nil
+}
+
+// Adapted from gascity-eddie's upstream PR #8005 for the fork's project-scoped
+// GitLab identity. An overlap row in one project cannot hydrate a bead linked
+// after last_sync to another project's issue with the same IID.
+func TestGitLabHydratesConfiguredProjectDespiteSiblingOverlapIID(t *testing.T) {
+	cursor := time.Date(2026, time.January, 2, 3, 4, 5, 0, time.UTC)
+	for _, tc := range []struct {
+		name           string
+		siblingUpdated time.Time
+	}{
+		{name: "overlap", siblingUpdated: cursor.Add(-30 * time.Second)},
+		{name: "after cursor", siblingUpdated: cursor.Add(30 * time.Second)},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			const (
+				refA = "https://gitlab.com/group-a/project-a/-/issues/7"
+				refB = "https://gitlab.com/group-b/project-b/-/issues/7"
+			)
+			var projectFetches atomic.Int32
+			older := cursor.Add(-time.Hour)
+			remoteA := Issue{ID: 8007, IID: 7, ProjectID: 100, Title: "Configured issue", State: "opened", WebURL: refA, UpdatedAt: &older}
+			remoteB := Issue{ID: 9007, IID: 7, ProjectID: 200, Title: "Sibling issue", State: "opened", WebURL: refB, UpdatedAt: &tc.siblingUpdated}
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				if r.Method != http.MethodGet {
+					t.Errorf("unexpected mutation: %s %s", r.Method, r.URL.Path)
+					http.Error(w, "unexpected request", http.StatusMethodNotAllowed)
+					return
+				}
+				var response any
+				switch r.URL.Path {
+				case "/api/v4/groups/30/issues":
+					after, err := time.Parse(time.RFC3339, r.URL.Query().Get("updated_after"))
+					if err != nil {
+						t.Errorf("updated_after: %v", err)
+					}
+					result := []Issue{}
+					if !remoteB.UpdatedAt.Before(after) {
+						result = append(result, remoteB)
+					}
+					response = result
+				case "/api/v4/projects/100/issues/7":
+					projectFetches.Add(1)
+					response = remoteA
+				case "/api/v4/projects/200/issues/7/links":
+					response = []IssueLink{}
+				default:
+					t.Errorf("unexpected request path: %s", r.URL.Path)
+					http.NotFound(w, r)
+					return
+				}
+				if err := json.NewEncoder(w).Encode(response); err != nil {
+					t.Error(err)
+				}
+			}))
+			t.Cleanup(server.Close)
+
+			localRef := refA
+			stub := &types.Issue{
+				ID: "bd-stub", Title: "Pre-linked stub", Status: types.StatusOpen, IssueType: types.TypeTask,
+				ExternalRef: &localRef, CreatedAt: cursor.Add(-time.Hour), UpdatedAt: cursor.Add(time.Second),
+			}
+			store := overlapGitLabStore{
+				crossProjectStore: &crossProjectStore{issues: map[string]*types.Issue{stub.ID: stub}},
+				cursor:            cursor,
+			}
+			adapter := &Tracker{
+				client: forkGitLabOriginClient(t, server.URL, refA, "100").WithGroupID("30"),
+				config: DefaultMappingConfig(), projectPath: "group-a/project-a",
+			}
+			result, err := tracker.NewEngine(adapter, store, "fixture").Sync(context.Background(), tracker.SyncOptions{Pull: true})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if result.PullStats.Updated != 1 || result.PullStats.Created != 1 || stub.Title != "Configured issue" || projectFetches.Load() != 1 {
+				t.Fatalf("pull=%+v stub=%q direct reads=%d, want both issues in their own project", result.PullStats, stub.Title, projectFetches.Load())
+			}
+			other := store.issues["bd-new1"]
+			if derefRef(stub.ExternalRef) != refA || other == nil || derefRef(other.ExternalRef) != refB || other.Title != "Sibling issue" {
+				t.Fatalf("unexpected refs: configured=%q, sibling=%+v", derefRef(stub.ExternalRef), other)
+			}
+		})
 	}
 }

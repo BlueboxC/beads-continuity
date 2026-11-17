@@ -29,7 +29,7 @@ func TestSeedDoltIgnorePatternsWritesNothingWhenAllPatternsPresent(t *testing.T)
 	const mainVersion = 63
 	expectIgnorePatternSeedNoop(mock, mainVersion)
 
-	changed, err := seedDoltIgnorePatterns(context.Background(), db)
+	changed, err := seedDoltIgnorePatterns(context.Background(), db, nil)
 	if err != nil {
 		t.Fatalf("seedDoltIgnorePatterns() error = %v, want nil (a correctly seeded database must be readable through a fence that grants no write on dolt_ignore)", err)
 	}
@@ -66,7 +66,7 @@ func TestSeedDoltIgnorePatternsWritesOnlyTheMissingPatterns(t *testing.T) {
 			WillReturnResult(sqlmock.NewResult(0, 1))
 	}
 
-	changed, err := seedDoltIgnorePatterns(context.Background(), db)
+	changed, err := seedDoltIgnorePatterns(context.Background(), db, nil)
 	if err != nil {
 		t.Fatalf("seedDoltIgnorePatterns() error = %v", err)
 	}
@@ -105,7 +105,7 @@ func TestSeedDoltIgnorePatternsSeedsWhenTheTableDoesNotExistYet(t *testing.T) {
 			WillReturnResult(sqlmock.NewResult(0, 1))
 	}
 
-	changed, err := seedDoltIgnorePatterns(context.Background(), db)
+	changed, err := seedDoltIgnorePatterns(context.Background(), db, nil)
 	if err != nil {
 		t.Fatalf("seedDoltIgnorePatterns() error = %v", err)
 	}
@@ -136,7 +136,7 @@ func TestSeedDoltIgnorePatternsHonoursStoredCasing(t *testing.T) {
 	}
 	expectIgnoreSeedProbe(mock, mainVersion, shouty)
 
-	changed, err := seedDoltIgnorePatterns(context.Background(), db)
+	changed, err := seedDoltIgnorePatterns(context.Background(), db, nil)
 	if err != nil {
 		t.Fatalf("seedDoltIgnorePatterns() error = %v", err)
 	}
@@ -196,7 +196,7 @@ func TestSeedDoltIgnorePatternsDegradesToBlindWriteOnPartialRead(t *testing.T) {
 			WillReturnResult(sqlmock.NewResult(0, 1))
 	}
 
-	changed, err := seedDoltIgnorePatterns(context.Background(), db)
+	changed, err := seedDoltIgnorePatterns(context.Background(), db, nil)
 	if err != nil {
 		t.Fatalf("seedDoltIgnorePatterns() error = %v", err)
 	}

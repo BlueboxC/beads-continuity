@@ -21,7 +21,7 @@ Root DOX.md and the parent chain remain binding.
 - HTTP event streams revalidate bearer credentials before delivery and around journal reads, including idle and backlog passes. Successful removal terminates the stream; failed token-file reloads retain the last-good token set.
 - Terminal Markdown rendering removes raw controls and numeric entities that decode into controls before Glamour parsing; renderer-generated styles and printable entities remain supported.
 
-- OpenTelemetry remains opt-in and separate from removed anonymous usage metrics. Its default resource collects host, process identity and runtime metadata without argv or process owner; explicit environment attributes still override/extend defaults. Command spans retain credential-scrubbed arguments in local console traces only.
+- OpenTelemetry remains opt-in and separate from removed anonymous usage metrics. Default process resources omit argv, executable paths and account owners; explicit environment attributes remain operator-controlled. Command spans include only the parsed command path and changed flag names. Storage operation metrics carry only the operation name; hook spans carry output byte counts. Console exporters write to stderr, preserving JSON on stdout. Generic error text is a separate surface.
 
 - Recipe SharedPaths explicitly declare section-managed instruction files; other paths retain their existing whole-file ownership semantics.
 
@@ -45,7 +45,7 @@ Root DOX.md and the parent chain remain binding.
 
 - Shared user-level agent templates apply only in initialized Beads repositories and retain the fork conservative authority profile. Project templates keep their existing wording.
 
-- Successful tracker pulls record the hash of the imported representation with the assigned local ID, after the issue write. Dry runs and failed writes do not advance this push baseline. Cache and issue writes remain separate, rather than crash-atomic.
+- Tracker bulk reads overlap the stored cursor by five minutes; conflict checks retain the original cursor and provider query precision. Hydration retains provider project identity and configured scope. Direct and proxied UOW issue updates distinguish omitted labels from an explicit empty set and normalize labels. Successful or equivalent pulls refresh the scoped remote fingerprint or clear a stale one; dry runs and failed writes never advance it. Preserve local label edits when the baseline confirms unchanged remote labels, importing other remote fields and leaving the edit eligible for push. Cache and issue writes remain separate.
 - Initialized GitHub/GitLab mutation identifiers remain scoped to their configured origin and repository/project. Keep provider-family recognition separate so foreign references are skipped on push rather than recreated. GitLab numeric project IDs resolve their namespaced path once through the configured API before syncing; failed/missing metadata, mismatching numeric IDs and stale configured paths refuse initialization.
 - GitLab pull fallback qualifies keys by configured origin and project, and uses unambiguous project-ID/IID identities across renames. Reserve exact matches so two remote issues cannot overwrite one local issue; preview and dependency endpoints share that identity policy. Group links are fetched in each issue's project. Link and epic-child milestone writes require configured-project endpoints; known foreign project links do not satisfy local convergence. Bare-IID shorthand cannot match an arbitrary project's URL. Preserve the configured scheme/installation prefix and local credential routing.
 
@@ -69,6 +69,17 @@ Root DOX.md and the parent chain remain binding.
 - GitHub creates a closed local issue, then closes the created remote issue. A failed follow-up retains the created reference and reports a warning. When ContentEqual is provided, the sync engine records a create baseline only after the returned remote fields agree; the next push retries the same reference. Closed GitHub hashes invalidate prior create-only baselines once, preserving open-issue cache behavior. External creation and local reference persistence remain separate operations.
 
 - Shared bounded log output retains one bounded tail, refuses active symlink targets before truncation, serializes writes/rotation and preserves the active file if archiving fails. Direct detached-server rotation remains startup-only; a short-lived caller must not own a long-lived server's output pipes.
+
+- Notion reads default to 50 pages, with a positive local `notion.max_query_pages` / `NOTION_MAX_QUERY_PAGES` override. Retry-After honors cancellation and bounds attempts/waits for read-only query POSTs; never replay an ambiguous create. Notion token lookup stays local.
+
+- YAML replacement uses a same-directory atomic rename, preserves existing mode and intentional symlink destinations, and refuses read-only targets. Windows sharing retries are bounded. Keep existing unset validation and multiline/alias limits.
+- Formula loop expansion and conditional filtering validate resulting dependency references before returning steps; preserve original input and distinguish structural errors from lookup fallbacks.
+
+- Dolt CLI fallback requires a live managed endpoint and a matching held engine lock at the resolved physical database directory. Use SQL when the proof is incomplete.
+
+- Remote-cache validation rejects option-shaped URLs and SSH user/host components, including decoded usernames. AI compaction histograms retain fractional milliseconds.
+
+- WorkspaceConfig Settings reject keys over 255 Unicode code points and values over 65,535 bytes before SQL, preserving typed validation/field-length causes. KV, memory and metadata roles retain their own existing capacity and validation.
 
 ## Work Guidance
 

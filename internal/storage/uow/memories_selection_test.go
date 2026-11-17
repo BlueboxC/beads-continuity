@@ -14,6 +14,7 @@ import (
 	"github.com/steveyegge/beads/internal/storage/domain/db"
 	"github.com/steveyegge/beads/internal/storage/embeddeddolt"
 	storagememoryops "github.com/steveyegge/beads/internal/storage/memoryops"
+	"github.com/steveyegge/beads/internal/types"
 	"github.com/steveyegge/beads/memoryops"
 )
 
@@ -44,6 +45,31 @@ func TestMemoriesListSelectionBoundsTransferredValues(t *testing.T) {
 	if _, err := database.ExecContext(ctx, "CREATE TABLE config (`key` VARCHAR(255) PRIMARY KEY, value LONGTEXT)"); err != nil {
 		t.Fatal(err)
 	}
+	t.Run("memory_write_uses_its_own_capacity", func(t *testing.T) {
+		tx, err := database.BeginTx(ctx, nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer tx.Rollback()
+		uw := &mockUnitOfWork{configUseCase: domain.NewConfigUseCase(db.NewConfigSQLRepository(tx))}
+		role, err := NewMemories(&mockUnitOfWorkProvider{uows: []*mockUnitOfWork{uw}})
+		if err != nil {
+			t.Fatal(err)
+		}
+		const key = "large-memory"
+		body := strings.Repeat("é", types.MaxTextBytes/2+1)
+		if _, err := role.Remember(ctx, memoryops.RememberRequest{Key: key, Content: body}); err != nil {
+			t.Fatalf("memory larger than settings TEXT capacity was refused (%T)", err)
+		}
+		var stored string
+		if err := tx.QueryRowContext(ctx, "SELECT value FROM config WHERE `key` = ?", storagememoryops.StorageKey(key)).Scan(&stored); err != nil {
+			t.Fatal(err)
+		}
+		if stored != body || uw.commitCount != 1 {
+			t.Fatal("memory did not preserve the larger value or reach the UOW commit")
+		}
+	})
+
 	seed, err := database.BeginTx(ctx, nil)
 	if err != nil {
 		t.Fatal(err)

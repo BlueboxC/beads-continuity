@@ -139,7 +139,7 @@ func readIgnoredCursorState(ctx context.Context, db DBConn, qualifier string) (i
 // a failure is returned: the pass must not continue without a cursor table,
 // and every intermediate state that can persist is one the next open resumes
 // from.
-func healTrackedIgnoredCursorTable(ctx context.Context, db DBConn) (bool, error) {
+func healTrackedIgnoredCursorTable(ctx context.Context, db DBConn, beforeWrite func() error) (bool, error) {
 	state, err := readIgnoredCursorState(ctx, db, "")
 	if err != nil {
 		ignoredCursorAdvisory("schema: cannot read the %s reconcile gate, leaving it alone: %v\n",
@@ -148,6 +148,16 @@ func healTrackedIgnoredCursorTable(ctx context.Context, db DBConn) (bool, error)
 	}
 	if !state.reconcileNeeded() {
 		return false, nil
+	}
+	if beforeWrite != nil {
+		if err := beforeWrite(); err != nil {
+			if dberrors.IsAccessDenied(err) {
+				ignoredCursorAdvisory("schema: not permitted to prepare the %s repair; continuing without it: %v\n",
+					ignoredSource.cursorTable, err)
+				return false, nil
+			}
+			return false, err
+		}
 	}
 	if !state.needsUntrack {
 		return resumeIgnoredCursorUntrack(ctx, db)

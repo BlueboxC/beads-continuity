@@ -36,13 +36,17 @@ Root DOX.md and the parent chain remain binding.
 
 - Server probe/clone callers reuse the store’s port resolution; preserve explicit init overrides and shared-server provenance.
 - IPv6 loopback never auto-starts the managed IPv4 server, adopts its local data directory or persists its port file.
-- CLI transfers and persisted-remote recovery require a compatible endpoint and live workspace ownership for every resolved port, including config-only ports. Leftover copies remain evidence for conservative migration admission, never authoritative remotes for another server. SQL push failures identify required server-side credential variable names without exposing values.
+- CLI transfers require a managed endpoint and a held Dolt database lock with matching live server information for the exact physical directory. Preserve SQL fallback when ownership or physical proof is absent. Leftover copies remain evidence for conservative migration admission. SQL push failures identify required server-side credential variable names without exposing values.
 
 - CLI-transport pull settlement aborts declined conflicts and unrepaired constraints, matching SQL-route recovery. Capture a known-clean pre-pull working set before permitting the shared hard-reset fallback. Determinate settlement rejections and required conflict-read errors also clean up; indeterminate commit responses preserve state and never abort/replay.
 
 - External server opens check dolt_version before reads/bootstrap; identified versions below 2.6.0 refuse. Unknown versions keep advisory behavior; preserve gateway project binding and pool cleanup.
 
 - Cold-start remote refusals escape persisted names/URLs without changing retained values, ownership admission, route selection or server-side recovery authority.
+
+- Server-side merge settlement stages companion changes identifiable from the merge source, preserves unrelated working edits and keeps the existing indeterminate-commit handling.
+- Project identity uses the resolved .beads path on server-mode opens. An explicitly selected socket wins over metadata, which fills an unset socket.
+- Pool gauges count open stores only. Transfer diagnostics mask URL user information while retaining typed errors for retry and reporting.
 
 ## Work Guidance
 
