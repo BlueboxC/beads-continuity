@@ -110,11 +110,12 @@ def bounded_command(command, log, timeout):
         try:
             with log.open('wb') as output:
                 while True:
-                    chunk = process.stdout.read(65536)
+                    chunk = process.stdout.read1(65536)
                     if not chunk:
                         break
                     remaining = max(0, LOG_LIMIT-state['bytes'])
                     output.write(chunk[:remaining])
+                    output.flush()
                     state['bytes'] += min(len(chunk), remaining)
                     if len(chunk) > remaining:
                         state['truncated'] = True
@@ -245,12 +246,12 @@ def main():
         return launch_service()
     assert not sys.argv[1:]
     parent = subprocess.check_output(['git', 'rev-parse', 'HEAD^'], cwd=WORKSPACE, text=True).strip()
-    assert parent == manifest['base_6949']
-    changed = subprocess.check_output(['git', 'diff', '--name-only', 'HEAD^', 'HEAD'], cwd=WORKSPACE, text=True).splitlines()
+    subprocess.run(['git', 'merge-base', '--is-ancestor', manifest['base_6949'], 'HEAD'], cwd=WORKSPACE, check=True)
+    changed = subprocess.check_output(['git', 'diff', '--name-only', manifest['base_6949'], 'HEAD'], cwd=WORKSPACE, text=True).splitlines()
     assert sorted(changed) == sorted([*manifest['files'], '.github/composition-6949/manifest.json'])
     for name, expected in manifest['files'].items():
         assert hashlib.sha256((WORKSPACE/name).read_bytes()).hexdigest() == expected, name
-    save('source.json', {'head':os.environ['GITHUB_SHA'], 'parent':parent, 'manifest':manifest, 'changed':changed})
+    save('source.json', {'head':os.environ['GITHUB_SHA'], 'parent':parent, 'base_6949':manifest['base_6949'], 'manifest':manifest, 'changed':changed})
     import budget
     original_rss, original_stop = budget.process_rss, budget.stop
     def account_all_service_processes():

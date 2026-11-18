@@ -2,15 +2,15 @@
   "base_6949": "7740662d663d1d436c398c836515d59934058b86",
   "PR8524": "fc051ab0d1f6d908d0c151c2b0574cfdad55ade7",
   "PR8525": "65fcf76e3d41c892a510fa9e793721c14f5ec68b",
-  "scope": "Isolated verification only; original6949 commits preserved as parent; no merge into either public fix PR or canonical fork",
+  "scope": "Isolated verification only; original6949 commits preserved in ancestry; append CI-only repairs to retain consumed attempts; no merge into any fix PR or canonical fork",
   "files": {
     "cmd/bd/version_tracking.go": "45ffbb8fecc6cb1dbdc12e67ad497961bdab8050141ec9e685a2ba18b2083220",
     "cmd/bd/version_tracking_test.go": "12a139712123201155e87ca67a0de3e39f91df37fdef17206a6de715d792720a",
     "cmd/bd/doctor/version.go": "e9c60680d76a41454607727e66387064baa1e8371a51f8699125416a7e0012b6",
     "cmd/bd/doctor/version_test.go": "b8633f57554aa8bb81792a53847bbb0446b8b3e1c037430148be39e0cff254ef",
-    ".github/workflows/codex-composition-6949.yml": "75cd1ace969513bf3d73ecb1368f58192acebd1f5adf2e31399ac1845b0a533c",
-    ".github/composition-6949/run.py": "8d733a8fe9962dd555033b146c1468f022b414c4ca2449a08885b443343299a5",
-    ".github/composition-6949/budget.py": "eb24d4600a6bd0b57f8f706da62b82deca48a0816a53f24a189762766d785eda"
+    ".github/workflows/codex-composition-6949.yml": "645db32fef7797d0e503571ac49d1e1e7af5e794f72b298ca0061a655765c697",
+    ".github/composition-6949/run.py": "1e87a4a550fe924586608ab2a9c0ae642ff8d067aa5ba47ce2bc057334100af0",
+    ".github/composition-6949/budget.py": "919b5b26c61fd2e75b7d874486e3e0f33e1f74ff613109b7b2a3e565870f650e"
   },
   "unit_tests": [
     "TestTrackBdVersion_NoBeadsDir",

@@ -158,6 +158,8 @@ def _only_vanished_children(result, path):
         return False
     prefix, suffix = 'du: ', ': No such file or directory'
     for line in result.stderr.splitlines():
+        if sys.platform.startswith('linux') and line.startswith('/usr/bin/du: '):
+            line = line[len('/usr/bin/'):]
         if not line.startswith(prefix) or not line.endswith(suffix):
             return False
         child = line[len(prefix):-len(suffix)]
