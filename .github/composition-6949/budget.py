@@ -163,8 +163,15 @@ def _only_vanished_children(result, path):
         if not line.startswith(prefix) or not line.endswith(suffix):
             return False
         child = line[len(prefix):-len(suffix)]
-        if sys.platform.startswith('linux') and child.startswith("cannot access '") and child.endswith("'"):
-            child = child[len("cannot access '"):-1]
+        if sys.platform.startswith('linux'):
+            for diagnostic in ('cannot access ', 'cannot read directory ', 'fts_read failed: '):
+                if child.startswith(diagnostic):
+                    child = child[len(diagnostic):]
+                    break
+            else:
+                return False
+            if child.startswith("'") and child.endswith("'"):
+                child = child[1:-1]
         # Refuse root/ancestor failures, other diagnostics and ambiguous paths.
         if not child.startswith(str(path) + os.sep):
             return False

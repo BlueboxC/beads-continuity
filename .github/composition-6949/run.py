@@ -196,6 +196,7 @@ def worker(manifest):
     while not (ARTIFACTS/'cgroup-validated').exists():
         assert time.monotonic()<deadline, 'Controller did not validate cgroup and PrivateTmp'
         time.sleep(.1)
+    subprocess.run([sys.executable, str(HERE/'test_budget_port.py')], cwd=WORKSPACE, check=True, timeout=10)
     scratch = Path(os.environ['TMPDIR'])
     binary = scratch / 'bazel-9.3.1'
     assert (WORKSPACE / '.bazelversion').read_text().strip() == '9.3.1'
