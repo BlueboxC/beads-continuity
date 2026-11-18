@@ -72,7 +72,7 @@ func trackBdVersionFile(persist bool) {
 	// misfire is bounded — recoverPreV56IfNeeded refuses a non-semver
 	// predecessor, and the workspace's own version markers still refuse a
 	// genuine downgrade. (Those markers cannot arbitrate direction here: they
-	// compare with the same dotted scan and read HEAD stamps as 0.0.0 too.)
+	// use their own dotted comparison, which reads HEAD stamps as 0.0.0 too.)
 	if lastVersion != "" && lastVersion != Version {
 		if doctor.CompareVersions(Version, lastVersion) > 0 ||
 			doctor.IsBrewHeadVersion(Version) || doctor.IsBrewHeadVersion(lastVersion) {
@@ -307,27 +307,21 @@ func autoMigrateOnVersionBump(beadsDir string) {
 	}
 }
 
-// recoverPreV56IfNeeded rebuilds a Dolt database left behind by the pre-0.56
-// embedded mode (GH#2137) — which means deleting .dolt — but only when the
-// recorded predecessor is an actual semantic version older than 0.56.0.
+// recoverPreV56IfNeeded retains the original pre-0.56 native recovery boundary.
+// Its existing validator rejects unsupported predecessor spellings, including
+// Homebrew HEAD and v-prefixed Go pseudo-versions. Diagnostic SemVer ordering
+// must not grant a new permission to rebuild an existing Dolt database.
 //
-// The validity check is not redundant with the comparison. CompareVersions
-// scans every dot-separated part with %d and leaves whatever it cannot read at
-// 0, so any non-semver string writeLocalVersion has recorded compares as
-// pre-0.56 and routes a current workspace into this destructive path:
-// Homebrew's "HEAD-<shortsha>" from a --HEAD install (#5603), and the
-// v-prefixed Go pseudo-version a `go install`-built bd stamps (#5650). Neither
-// is a pre-0.56 workspace; both would lose their database.
-//
-// IsValidSemver rejects exactly the shapes CompareVersions misreads, so this
-// gate can only remove predecessors from the recovery set, never add one: a
-// stamp that reaches RecoverPreV56DoltDir today and still parses keeps its
-// recovery unchanged.
+// For accepted nonnegative dotted tokens, the original comparison against
+// 0.56.0 admits exactly major==0 with no minor or minor<56. Keep that numeric
+// threshold: stripping suffixes would newly admit tolerant markers such as
+// "0-rc.99.0", and diagnostic ordering would newly admit "0.56.0-rc.1".
 func recoverPreV56IfNeeded(previousVersion, dbPath string) {
 	if !doctor.IsValidSemver(previousVersion) {
 		return
 	}
-	if doctor.CompareVersions(previousVersion, "0.56.0") >= 0 {
+	parts := doctor.ParseVersionParts(previousVersion)
+	if parts[0] != 0 || (len(parts) > 1 && parts[1] >= 56) {
 		return
 	}
 

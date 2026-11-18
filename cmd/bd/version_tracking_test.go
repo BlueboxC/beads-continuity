@@ -569,6 +569,10 @@ func TestRecoverPreV56IfNeeded_OnlySemverPredecessorsAreRecovered(t *testing.T) 
 		{name: "0.56.0 itself", previous: "0.56.0"},
 		{name: "pre-0.56 release", previous: "0.55.4", wantRecovery: true},
 		{name: "pre-0.56 pre-release", previous: "0.55.4-rc.1", wantRecovery: true},
+		{name: "0.56.0 candidate preserves legacy recovery boundary", previous: "0.56.0-rc.1", wantRecovery: false},
+		{name: "0.56.0 build preserves legacy recovery boundary", previous: "0.56.0+build.1", wantRecovery: false},
+		{name: "tolerant hyphenated stamp cannot broaden recovery", previous: "0-rc.99.0", wantRecovery: false},
+		{name: "tolerant build stamp cannot broaden recovery", previous: "0+build.99", wantRecovery: false},
 	}
 
 	for _, tt := range tests {
@@ -634,3 +638,34 @@ func TestAutoMigrateOnVersionBump_NoDatabase(t *testing.T) {
 // persistence testing through autoMigrateOnVersionBump -> dolt.NewFromConfig.
 // Automatic schema migration is exercised here through the Dolt backend.
 // Dolt-based migration testing is covered by TestInitDoltMetadata in init_test.go.
+
+func TestTrackBdVersion_ReleaseCandidateOrdering(t *testing.T) {
+	tests := []struct {
+		name         string
+		lastVersion  string
+		binVersion   string
+		wantDetected bool
+	}{
+		{name: "rc to its release", lastVersion: "1.4.0-rc.3", binVersion: "1.4.0", wantDetected: true},
+		{name: "release back to its rc", lastVersion: "1.4.0", binVersion: "1.4.0-rc.3", wantDetected: false},
+		{name: "rc to a later rc", lastVersion: "1.4.0-rc.2", binVersion: "1.4.0-rc.3", wantDetected: true},
+		{name: "rc.9 to rc.10", lastVersion: "1.4.0-rc.9", binVersion: "1.4.0-rc.10", wantDetected: true},
+		{name: "rc.10 back to rc.9", lastVersion: "1.4.0-rc.10", binVersion: "1.4.0-rc.9", wantDetected: false},
+		{name: "previous release to an rc", lastVersion: "1.3.4", binVersion: "1.4.0-rc.3", wantDetected: true},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			localVersionPath := newTrackingWorkspace(t, tt.lastVersion, tt.binVersion)
+
+			trackBdVersion()
+
+			if versionUpgradeDetected != tt.wantDetected {
+				t.Errorf("versionUpgradeDetected = %v, want %v", versionUpgradeDetected, tt.wantDetected)
+			}
+			if got := readLocalVersion(localVersionPath); got != tt.binVersion {
+				t.Errorf(".local_version = %q, want %q", got, tt.binVersion)
+			}
+		})
+	}
+}

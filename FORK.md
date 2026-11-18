@@ -40,6 +40,12 @@ dependencies, with the existing orphan, force, transaction and history guards.
 Preview and execution use the same deletion set.
 
 
+## Release-candidate version compatibility
+
+Adapted Julian Knutsen's upstream corrections [c66df82b](https://github.com/gastownhall/beads/commit/c66df82b20c0d0643480ce6f981a995e28fc9bcf) and [a6b7cd76](https://github.com/gastownhall/beads/commit/a6b7cd76943765a05c5f26074b10e6a3f7b7db14). Diagnostic/upgrade ordering ranks a release above its prereleases, compares numeric identifiers numerically and ignores build metadata. Numeric identifiers use digit strings so very large rc numbers cannot overflow. Clone-local version reconciliation deliberately compares only the release core: a release records over its candidate without raising the high-water mark, and genuinely older releases remain refused.
+
+The fork retains local-only diagnostics and its original pre-0.56 destructive-recovery eligibility. A 0.56.0 candidate or an accepted odd marker does not newly trigger recovery when diagnostic comparison changes. Contributor regressions, an embedded detection/marker-role/reopen case and the separate server front-door case preserve their distinct evidence scopes. No engine, schema, graph format, activation, telemetry policy or dependency changes are introduced. These two follow-ups extend the selected maintenance cutoff to a6b7cd76 without importing unrelated architecture changes.
+
 ## October 27–28 report corrections
 
 The selected dependency tuple includes Dolt `1755bb696745` and analyzer `a381cc1d8b6a`. It adapts fulghum's Dolt #12225 and preserves the complete GMS #4078 regressions for keyless unique writes, including REPLACE retries and rejected-insert index integrity. Scoped fixes address skysoul1024's #12218 and #12220–12223: IGNORE text/binary conversion and generated defaults, NULL UNION typing, zero-date numeric zero and YEAR/ENUM/SET booleans. Normal/prepared consumer regressions include valid controls, functional indexes and index reads. The existing fsync, privilege, handshake and continuity corrections remain.

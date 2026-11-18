@@ -169,13 +169,84 @@ func CheckMetadataVersionTracking(path string, currentVersion string) DoctorChec
 	}
 }
 
-// CompareVersions returns -1, 0 or 1 for semantic version ordering.
+func stripVersionPrefix(version string) string {
+	return strings.TrimPrefix(strings.TrimSpace(version), "v")
+}
+
+// CompareVersions compares two semantic version strings, with semver-2.0
+// prerelease-suffix semantics: a version carrying a "-<prerelease>" suffix
+// sorts below the identical version without one ("1.3.1-rc.1" < "1.3.1"),
+// and two prerelease suffixes are compared identifier-by-identifier (each
+// identifier numeric if all-digits, else lexical), with the shorter
+// identifier list sorting lower when one is a prefix of the other. Build
+// metadata ("+...") takes no part in the comparison.
+//
+// Fixes gastownhall/beads#6595: the prior parser split the whole string on
+// "." without splitting off the prerelease suffix first, so "1.3.1-rc.1"
+// tokenized as ["1","3","1-rc","1"] and Sscanf's tolerant parse of "1-rc"
+// silently read just "1" — re-merging the trailing ".1" into a 4th numeric
+// part instead of dropping it, so the rc sorted ABOVE its own stable
+// release ("1.3.1" < "1.3.1-rc.1"), the opposite of what an rc's own
+// release notes promise ("return to the stable release once it ships").
+//
+// Returns: -1 if v1 < v2, 0 if v1 == v2, 1 if v1 > v2
+// Handles versions like "0.20.1", "1.2.3", "1.3.1-rc.1", etc.
 func CompareVersions(v1, v2 string) int {
-	// Split versions into parts
+	core1, pre1 := splitPrereleaseSuffix(stripBuildMetadata(stripVersionPrefix(v1)))
+	core2, pre2 := splitPrereleaseSuffix(stripBuildMetadata(stripVersionPrefix(v2)))
+
+	if c := compareVersionCore(core1, core2); c != 0 {
+		return c
+	}
+	return comparePrereleaseSuffix(pre1, pre2)
+}
+
+// stripBuildMetadata drops a "+<build>" suffix. Semver 2.0 leaves build
+// metadata out of precedence, so "1.4.0-rc.2+sha.abc" equals "1.4.0-rc.2"; it
+// has to go before the prerelease split, which would otherwise keep it as part
+// of the last prerelease identifier.
+func stripBuildMetadata(v string) string {
+	if i := strings.IndexByte(v, '+'); i >= 0 {
+		return v[:i]
+	}
+	return v
+}
+
+// splitPrereleaseSuffix splits a version string on its first "-" into the
+// numeric core and the prerelease suffix (empty when there is none).
+func splitPrereleaseSuffix(v string) (core, prerelease string) {
+	if i := strings.IndexByte(v, '-'); i >= 0 {
+		candidate := v[:i]
+		if isNumericVersionCore(candidate) {
+			return candidate, v[i+1:]
+		}
+	}
+	return v, ""
+}
+
+// isNumericVersionCore reports whether s is a non-empty dot-separated run of
+// numeric identifiers. A hyphen in an arbitrary non-version string must not be
+// reinterpreted as a semver prerelease separator: callers historically treat
+// such strings as an unorderable 0.0.0 value.
+func isNumericVersionCore(s string) bool {
+	if s == "" {
+		return false
+	}
+	for _, part := range strings.Split(s, ".") {
+		if part == "" || strings.Trim(part, "0123456789") != "" {
+			return false
+		}
+	}
+	return true
+}
+
+// compareVersionCore compares the dot-separated numeric core of two
+// versions (e.g. major.minor.patch). A part missing from either side
+// defaults to 0, matching the prior behavior for differing part counts.
+func compareVersionCore(v1, v2 string) int {
 	parts1 := strings.Split(v1, ".")
 	parts2 := strings.Split(v2, ".")
 
-	// Compare each part
 	maxLen := len(parts1)
 	if len(parts2) > maxLen {
 		maxLen = len(parts2)
@@ -184,7 +255,6 @@ func CompareVersions(v1, v2 string) int {
 	for i := 0; i < maxLen; i++ {
 		var p1, p2 int
 
-		// Get part value or default to 0 if part doesn't exist
 		if i < len(parts1) {
 			_, _ = fmt.Sscanf(parts1[i], "%d", &p1)
 		}
@@ -201,6 +271,82 @@ func CompareVersions(v1, v2 string) int {
 	}
 
 	return 0
+}
+
+// comparePrereleaseSuffix compares two prerelease suffixes per semver 2.0
+// precedence rule 11: a version WITH a prerelease suffix sorts below the
+// identical version without one; two prereleases compare identifier by
+// identifier (dot-separated), each identifier numeric-if-all-digits else
+// lexical, and the identifier list with fewer identifiers sorts lower when
+// one is a prefix of the other (e.g. "alpha" < "alpha.1").
+func comparePrereleaseSuffix(pre1, pre2 string) int {
+	if pre1 == "" && pre2 == "" {
+		return 0
+	}
+	if pre1 == "" {
+		return 1 // v1 is a release, v2 is a prerelease of the same core: v1 wins.
+	}
+	if pre2 == "" {
+		return -1
+	}
+
+	ids1 := strings.Split(pre1, ".")
+	ids2 := strings.Split(pre2, ".")
+
+	maxLen := len(ids1)
+	if len(ids2) > maxLen {
+		maxLen = len(ids2)
+	}
+
+	for i := 0; i < maxLen; i++ {
+		if i >= len(ids1) {
+			return -1
+		}
+		if i >= len(ids2) {
+			return 1
+		}
+		if c := comparePrereleaseIdentifier(ids1[i], ids2[i]); c != 0 {
+			return c
+		}
+	}
+	return 0
+}
+
+// comparePrereleaseIdentifier compares one dot-separated prerelease
+// identifier. Numeric identifiers (all digits) compare numerically so
+// "rc.2" < "rc.10"; anything else compares lexically. Per semver 2.0,
+// numeric identifiers always sort lower than alphanumeric ones.
+func comparePrereleaseIdentifier(a, b string) int {
+	aNum, aIsNum := prereleaseNumericIdentifier(a)
+	bNum, bIsNum := prereleaseNumericIdentifier(b)
+	if aIsNum && bIsNum {
+		if len(aNum) < len(bNum) {
+			return -1
+		}
+		if len(aNum) > len(bNum) {
+			return 1
+		}
+		return strings.Compare(aNum, bNum)
+	}
+	if aIsNum {
+		return -1
+	}
+	if bIsNum {
+		return 1
+	}
+	return strings.Compare(a, b)
+}
+
+// prereleaseNumericIdentifier recognizes digits without a machine-integer bound.
+// Ignore leading zeroes as the existing permissive numeric comparison did.
+func prereleaseNumericIdentifier(s string) (string, bool) {
+	if s == "" || strings.Trim(s, "0123456789") != "" {
+		return "", false
+	}
+	if trimmed := strings.TrimLeft(s, "0"); trimmed != "" {
+		return trimmed, true
+	}
+	return "0", true
 }
 
 // IsBrewHeadVersion recognizes the version Homebrew stamps into --HEAD

@@ -12,7 +12,7 @@ Health checks and repair operations.
 
 Root DOX.md and the parent chain remain binding.
 
-- Interactive and non-interactive version diagnostics report installed versions without querying GitHub.
+- Interactive and non-interactive version diagnostics report installed versions without querying GitHub. CompareVersions orders prereleases below their release, compares numeric identifiers without machine-integer overflow and ignores build metadata; preserve permissive legacy core parsing and HEAD handling.
 
 - Repair connections resolve credentials for the exact dialed port. Federation status probes a resolved endpoint when no managed PID is available and reports missing PID without dereferencing nil state. The federation TCP probe applies the same final port resolution as the store, including the legacy BEADS_DOLT_PORT override. Preserve endpoint and project identity checks; socket-only probing remains unsupported.
 

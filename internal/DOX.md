@@ -81,6 +81,8 @@ Root DOX.md and the parent chain remain binding.
 
 - WorkspaceConfig Settings reject keys over 255 Unicode code points and values over 65,535 bytes before SQL, preserving typed validation/field-length causes. KV, memory and metadata roles retain their own existing capacity and validation.
 
+- Version-marker reconciliation compares dotted release cores, ignoring prerelease/build suffixes. Candidate and release markers replace one another without raising the high-water mark within that release; genuinely older release cores refuse before writes. This is distinct from diagnostic SemVer ordering.
+
 ## Work Guidance
 
 Tracker adapters share configuration resolution: local integration credentials never query Dolt, including Notion authentication; authenticated tracker endpoints use explicit local YAML/environment. If no local destination exists, a historical nonempty synced endpoint or store failure refuses connection instead of choosing a public default. Ordinary values keep storage-first/environment fallback including store errors. Credential classification also recognizes case and surrounding-space variants without normalizing ordinary stored keys.

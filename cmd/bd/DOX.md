@@ -169,6 +169,8 @@ Root DOX.md and the parent chain remain binding.
 
 - Native backup restore validates the literal filesystem source and nonempty regular manifest before quiescing a backend. Off-host SQL servers cannot restore unchecked local filesystem paths. Embedded restoration keeps its native rehearsal.
 
+- Upgrade detection uses diagnostic SemVer ordering, including rc-to-release. Legacy pre-0.56 destructive recovery retains its original numeric major/minor eligibility after the existing validation; candidate, build and tolerant-marker spellings must not broaden it. Preview/readonly local markers retain their no-write behavior.
+
 ## Work Guidance
 - Routed create adopts a sole metadata-less native database, retaining its prefix and project identity. Refuse ambiguous databases, dirty working sets under committing policy, non-embedded target settings and graph formats before writing selectors. Personal migration shares the guarded adoption; dry-run checks target admission without initialization.
 - A routed/planning target holding only a nonempty regular `issues.jsonl` refuses before initialization and names explicit `bd init --from-jsonl` recovery. Preserve bytes and permissions; empty exports, recognized local workspaces and followed redirects retain existing admission. An unreadable export refuses inspection rather than being treated as absent.
