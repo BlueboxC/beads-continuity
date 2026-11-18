@@ -75,7 +75,7 @@ def active_cgroup_rss():
             pids.update(int(x) for x in file.read_text().split())
         except FileNotFoundError:
             continue
-    total = 0
+    total = 0;processes=[]
     for pid in pids:
         try:
             status = Path(f'/proc/{pid}/status').read_text()
@@ -83,7 +83,15 @@ def active_cgroup_rss():
             continue
         match = re.search(r'^VmRSS:\s+(\d+) kB$', status, re.M)
         if match:
-            total += int(match[1])*1024
+            rss=int(match[1])*1024;total+=rss
+            name=re.search(r'^Name:\s+(.+)$',status,re.M)
+            processes.append({'pid':pid,'name':name[1] if name else 'unknown','rss_bytes':rss})
+    stats=dict(line.split() for line in (group/'memory.stat').read_text().splitlines())
+    save('cgroup-memory-last.json',{'rss_bytes':total,'processes':sorted(processes,key=lambda p:p['rss_bytes'],reverse=True),'memory_stat':{k:int(stats[k]) for k in ['anon','file','kernel','slab','file_dirty','file_writeback'] if k in stats}})
+    profile=ARTIFACTS/'cgroup-process-profile.json'
+    prior=json.loads(profile.read_text()) if profile.exists() else {'peak_rss_bytes':0}
+    if total>=prior['peak_rss_bytes']:
+        save('cgroup-process-profile.json',{'peak_rss_bytes':total,'processes':sorted(processes,key=lambda p:p['rss_bytes'],reverse=True),'memory_stat':{k:int(stats[k]) for k in ['anon','file','kernel','slab','file_dirty','file_writeback'] if k in stats}})
     (ARTIFACTS/'cgroup-validated').touch()
     return total
 
@@ -187,10 +195,28 @@ def verify_link_options(actions):
     proof=[]
     for action in actions:
         args=link_arguments(action)
-        assert {'-w','-race'}<=set(args), 'Missing required GoLink flags'
-        assert not any(arg=='-s' or arg.startswith(('-w=','-s=','-race=')) for arg in args), 'Conflicting or broader GoLink flags'
-        proof.append(sorted({'-w','-race'} & set(args)))
+        assert {'-s','-w','-race'}<=set(args), 'Missing original upstream GoLink flags'
+        assert not any(arg.startswith(('-w=','-s=','-race=')) for arg in args), 'Conflicting GoLink flag override'
+        proof.append(sorted({'-s','-w','-race'} & set(args)))
     return proof
+
+
+def verify_action_environments(graph):
+    owners={str(t['id']):t['label'].removeprefix('@@') for t in graph.get('targets',[])}
+    root=[];unchanged=[]
+    for action in graph.get('actions',[]):
+        owner=owners[str(action['targetId'])]
+        assert owner in ('//cmd/bd:bd_composition_test','//cmd/bd/doctor:doctor_test','//internal/ceiling:ceiling'),owner
+        (unchanged if owner=='//internal/ceiling:ceiling' else root).append(action)
+    expected={'GOMEMLIMIT':'384MiB','GOGC':'20','GOMAXPROCS':'1'}
+    for label in ['//cmd/bd:bd_composition_test','//cmd/bd/doctor:doctor_test']:
+        assert {'GoCompilePkg','RunNogo','GoLink'}<={a['mnemonic'] for a in root if owners[str(a['targetId'])]==label}
+    assert any(a['mnemonic']=='GoCompilePkg' for a in unchanged)
+    for actions,controlled in [(root,True),(unchanged,False)]:
+        for action in actions:
+            actual={v['key']:v.get('value','') for v in action.get('environmentVariables',[])}
+            assert (all(actual.get(k)==v for k,v in expected.items()) if controlled else all(k not in actual for k in expected)),action['mnemonic']
+    return root,unchanged,expected
 
 
 def worker(manifest):
@@ -225,26 +251,20 @@ def worker(manifest):
     assert hashlib.sha256(binary.read_bytes()).hexdigest() == expected
     binary.chmod(0o755)
     startup = [str(binary), '--batch', '--nosystem_rc', '--nohome_rc', '--output_user_root='+str(scratch/'bazel'), '--host_jvm_args=-Xmx512m']
-    limits = ['--@rules_go//go/config:gc_linkopts=-w', '--jobs=1', '--local_resources=memory=1024', '--local_resources=cpu=1', '--local_test_jobs=1', '--loading_phase_threads=1', '--repository_cache=', '--test_output=all', '--test_arg=-test.parallel=1', '--action_env=GOMEMLIMIT=384MiB', '--action_env=GOGC=20', '--action_env=GOMAXPROCS=1', '--test_env=GOMEMLIMIT=384MiB', '--test_env=GOGC=20', '--test_env=GOMAXPROCS=1']
+    limits = ['--config=fork-cache', '--remote_executor=', '--noremote_upload_local_results', '--remote_max_connections=1', '--nocache_test_results', '--discard_analysis_cache', '--nokeep_state_after_build', '--notrack_incremental_state', '--jobs=1', '--local_resources=memory=1024', '--local_resources=cpu=1', '--local_test_jobs=1', '--loading_phase_threads=1', '--repository_cache=', '--test_output=all', '--test_arg=-test.parallel=1', '--action_env=GOMEMLIMIT=384MiB', '--action_env=GOGC=20', '--action_env=GOMAXPROCS=1', '--test_env=GOMEMLIMIT=384MiB', '--test_env=GOGC=20', '--test_env=GOMAXPROCS=1']
     # rules_go supplies an explicit action env; --action_env alone does not
     # constrain its compiler. Verify the actual patched action before compiling.
-    query = 'mnemonic("(GoCompilePkg|RunNogo|GoLink)", //cmd/bd:bd_composition_test)'
+    query = 'mnemonic("(GoCompilePkg|RunNogo|GoLink)", set(//cmd/bd:bd_composition_test //cmd/bd/doctor:doctor_test //internal/ceiling:ceiling))'
     environment_log = ARTIFACTS/'go-action-environment.log'
-    query_args = ['aquery', query, '--@rules_go//go/config:race', '--output=jsonproto', '--include_artifacts=false', '--include_commandline=true', '--include_param_files=true', '--@rules_go//go/config:gc_linkopts=-w', '--repository_cache=', '--noshow_progress', '--ui_event_filters=-info,-warning,-debug', '--jobs=1', '--loading_phase_threads=1']
+    query_args = ['aquery', query, '--@rules_go//go/config:race', '--output=jsonproto', '--include_artifacts=false', '--include_commandline=true', '--include_param_files=true', '--repository_cache=', '--noshow_progress', '--ui_event_filters=-info,-warning,-debug', '--jobs=1', '--loading_phase_threads=1']
     query_code = bounded_command(startup+query_args, environment_log, 600, stderr_log=ARTIFACTS/'go-action-environment-stderr.log', log_limit=2*1024*1024)
     assert query_code==0, 'Go action environment preflight failed'
     query_text=environment_log.read_text()
     action_graph=json.loads(query_text)
-    expected_env={'GOMEMLIMIT':'384MiB','GOGC':'20','GOMAXPROCS':'1'}
-    actions=action_graph.get('actions',[])
-    assert {'GoCompilePkg','RunNogo','GoLink'}<={x.get('mnemonic') for x in actions}
-    for action in actions:
-        if action.get('mnemonic') in ('GoCompilePkg','RunNogo','GoLink'):
-            actual={v['key']:v.get('value','') for v in action.get('environmentVariables',[])}
-            assert all(actual.get(k)==v for k,v in expected_env.items()), action.get('mnemonic')
-    links=[a for a in actions if a.get('mnemonic')=='GoLink']
+    root_actions,unchanged_actions,expected_env=verify_action_environments(action_graph)
+    links=[a for a in root_actions if a['mnemonic']=='GoLink']
     link_proofs=verify_link_options(links)
-    save('go-action-environment.json', {'expected':expected_env,'observed_actions':[{ 'mnemonic':a['mnemonic'], 'budget_environment':{k:v['value'] for v in a.get('environmentVariables',[]) for k in [v['key']] if k in expected_env}} for a in actions], 'precompile_verified':True, 'race_enabled':True, 'go_link_w_verified':True, 'go_link_race_verified':True, 'actual_go_link_flags':link_proofs, 'linker_debug_scope':'DWARF omitted only for verification binaries; source/race/nogo/cases preserved'})
+    save('go-action-environment.json', {'expected':expected_env,'observed_actions':[{'mnemonic':a['mnemonic'],'budget_environment':{v['key']:v.get('value','') for v in a.get('environmentVariables',[]) if v['key'] in expected_env}} for a in root_actions],'precompile_verified':True,'race_enabled':True,'baseline_go_link_flags_verified':True,'go_link_race_verified':True,'actual_go_link_flags':link_proofs,'unchanged_dependency_default_env_verified':True,'unchanged_dependency_actions':len(unchanged_actions),'read_only_build_cache':True,'remote_execution':False,'fresh_test_results':True,'memory_policy':['discard_analysis_cache','nokeep_state_after_build','notrack_incremental_state']})
     unit = manifest['unit_tests']
     phases = [
         ('focused-unit', ['test', '//cmd/bd:bd_composition_test', '//cmd/bd/doctor:doctor_test', '--config=ci', *limits, '--test_filter=^('+'|'.join(unit)+')$'], unit, 3300),

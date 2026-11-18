@@ -1,13 +1,13 @@
 --- a/go/private/context.bzl
 +++ b/go/private/context.bzl
-@@ -670,6 +670,10 @@
-         goroot = toolchain.sdk.root_file.dirname
+@@ -699,6 +699,10 @@
+         # the old behavior.
+         "GODEBUG": "winsymlink=0",
+     }
++
++    # Constrain changed verification packages; preserve dependency cache keys.
++    if ctx.label.workspace_root == "" and ctx.label.package in ["cmd/bd", "cmd/bd/doctor"]:
++        env.update({"GOMEMLIMIT": "384MiB", "GOGC": "20", "GOMAXPROCS": "1"})
  
-     env = {
-+        # Fork verification only: constrain the actual hermetic Go action.
-+        "GOMEMLIMIT": "384MiB",
-+        "GOGC": "20",
-+        "GOMAXPROCS": "1",
-         "GOARCH": mode.goarch,
-         "GOOS": mode.goos,
-         "GOEXPERIMENT": toolchain.sdk.experiments,
+     # The level of support is determined by the platform constraints in
+     # //go/constraints/amd64.

@@ -8,13 +8,13 @@
     "cmd/bd/version_tracking_test.go": "12a139712123201155e87ca67a0de3e39f91df37fdef17206a6de715d792720a",
     "cmd/bd/doctor/version.go": "e9c60680d76a41454607727e66387064baa1e8371a51f8699125416a7e0012b6",
     "cmd/bd/doctor/version_test.go": "b8633f57554aa8bb81792a53847bbb0446b8b3e1c037430148be39e0cff254ef",
-    ".github/workflows/codex-composition-6949.yml": "ff6fe61c63f026067a0b443d483efa5c209676ab58af52f44e8275aa25c163db",
-    ".github/composition-6949/run.py": "8440b22561362a8b378afde8e2a9ea6b57ba47c719956af7f54e065a2af964c2",
+    ".github/workflows/codex-composition-6949.yml": "564d54371f3918b523d95582d23517ceba5d8740a32390550b8023df5cc6a817",
+    ".github/composition-6949/run.py": "e502db5019066c55a6d5ee7d273087ce402ae437631e56fc6af12d4e8f99ab5a",
     ".github/composition-6949/budget.py": "db7641c07d78dac4db71575bd9b37995408ea00142622a900378be2fc9d84404",
     ".github/composition-6949/test_budget_port.py": "316070b76feb874d9d0549a2ae85a9f166d30fcb7e62ce9f57ac45a2621ea574",
     ".github/composition-6949/storage.py": "d5194aa388428c956bd8aa8e08a919ad8050af4c60f74e7630ba1ebf973fca89",
     "MODULE.bazel": "dfc5e5b861aaff8044dda62fdab5678c9d2c1f11f010db32155b01374959310d",
-    ".github/composition-6949/rules_go_memory.patch": "f8151ef612d00097cb0f6dff29d9acbec75bcedbf8fdc2cd4f4fc14ba5ca1d7b",
+    ".github/composition-6949/rules_go_memory.patch": "67bfe7468aece398447b44e6618d914806c1f40d75d26dcae6f9fb49983e9528",
     ".github/composition-6949/BUILD.bazel": "2028d5140a191a3c4a4d3de685fe90fdeaec2631112b19cd118e33ef704a404d",
     "cmd/bd/BUILD.bazel": "5c7e26ec22907f50118529f8a5a26f3daf8ebcbf1113e237043d6ca9575db728"
   },
@@ -82,7 +82,17 @@
     "canonical_targets_unchanged": true,
     "scope": "Same selected original tests and complete fixture closure; excludes unrelated monolithic test files from compilation; full original composed target did not fit3GiB"
   },
-  "verification_linkopts": [
-    "-w"
-  ]
+  "verification_linkopts": [],
+  "verification_memory_policy": [
+    "discard_analysis_cache",
+    "nokeep_state_after_build",
+    "notrack_incremental_state"
+  ],
+  "build_cache": {
+    "config": "fork-cache",
+    "read_only": true,
+    "remote_execution": false,
+    "test_results": "fresh",
+    "unchanged_dependency_environment": "upstream defaults; GC controls remain on changed cmd/bd and doctor packages"
+  }
 }
