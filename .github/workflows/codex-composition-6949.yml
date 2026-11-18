@@ -19,7 +19,7 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v6
         with:
-          fetch-depth: 6
+          fetch-depth: 7
           persist-credentials: false
       - name: Run focused canonical composition within existing ceilings
         run: python3 .github/composition-6949/run.py

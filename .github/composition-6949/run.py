@@ -225,7 +225,7 @@ def worker(manifest):
     assert {'GoCompilePkg','RunNogo','GoLink'}<={x.get('mnemonic') for x in actions}
     for action in actions:
         if action.get('mnemonic') in ('GoCompilePkg','RunNogo','GoLink'):
-            actual={v['key']:v['value'] for v in action.get('environmentVariables',[])}
+            actual={v['key']:v.get('value','') for v in action.get('environmentVariables',[])}
             assert all(actual.get(k)==v for k,v in expected_env.items()), action.get('mnemonic')
     save('go-action-environment.json', {'expected':expected_env,'observed_actions':[{ 'mnemonic':a['mnemonic'], 'budget_environment':{k:v['value'] for v in a.get('environmentVariables',[]) for k in [v['key']] if k in expected_env}} for a in actions], 'precompile_verified':True, 'race_enabled':True})
     unit = manifest['unit_tests']
