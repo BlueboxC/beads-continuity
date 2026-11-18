@@ -6,11 +6,14 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"github.com/steveyegge/beads/internal/testutil"
 	"io"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/steveyegge/beads/internal/git"
 	"github.com/steveyegge/beads/internal/storage/schema"
@@ -636,9 +639,16 @@ func TestRecoverPreV56IfNeeded_OnlySemverPredecessorsAreRecovered(t *testing.T) 
 		{name: "pre-0.56 release", previous: "0.55.4", wantRecovery: true},
 		{name: "v-prefixed pre-0.56 release", previous: "v0.55.4", wantRecovery: true},
 		{name: "pre-0.56 pre-release", previous: "0.55.4-rc.1", wantRecovery: true},
-		// Semver puts a 0.56.0 pre-release before 0.56.0 (#6596). No official
-		// build was ever stamped this way; the row pins the choice.
-		{name: "0.56.0 pre-release", previous: "0.56.0-rc.1", wantRecovery: true},
+		// Diagnostic SemVer precedence must not authorize deleting a database
+		// whose witness identifies the 0.56 release series.
+		{name: "0.56.0 pre-release", previous: "0.56.0-rc.1"},
+		{name: "v-prefixed 0.56.0 pre-release", previous: "v0.56.0-rc.1"},
+		{name: "0.56.0 pre-release with build metadata", previous: "0.56.0-rc.1+build.1"},
+		{name: "0.56 release with build metadata", previous: "0.56.0+build.1"},
+		{name: "later 0.56 prerelease", previous: "0.56.1-rc.1"},
+		{name: "suffix on major must not hide a later minor", previous: "0-rc.99.0"},
+		{name: "metadata on major must not hide a later minor", previous: "0+build.99"},
+		{name: "pre-0.56 release with build metadata", previous: "0.55.4+build.1", wantRecovery: true},
 	}
 
 	for _, tt := range tests {
@@ -1193,5 +1203,36 @@ func TestDoctorVersionMaintenance_ScopesMarkerToTarget(t *testing.T) {
 					got, set, callerBeadsDir, tt.callerEnvSet)
 			}
 		})
+	}
+}
+
+func TestRecoverPreV56IfNeeded_ReinitializesWithRealDolt(t *testing.T) {
+	testutil.RequireDoltCLIOnly(t)
+	doltDir, sentinel := writePreV56DoltFixture(t)
+
+	recoverPreV56IfNeeded("0.55.4", doltDir)
+
+	if _, err := os.Stat(sentinel); !os.IsNotExist(err) {
+		t.Fatalf("legacy fixture was not replaced: %v", err)
+	}
+	marker, err := os.ReadFile(filepath.Join(doltDir, ".bd-dolt-ok"))
+	if err != nil || string(marker) != "ok\n" {
+		t.Fatalf("reinitialization did not write the compatibility marker: %q, %v", marker, err)
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
+	defer cancel()
+	cmd := exec.CommandContext(ctx, "dolt", "sql", "-r", "csv", "-q", "SELECT 1 AS recovery_ready")
+	cmd.Dir = doltDir
+	out, err := cmd.CombinedOutput()
+	if err != nil || !strings.Contains(string(out), "recovery_ready\n1") {
+		t.Fatalf("reinitialized database is not queryable: %v\n%s", err, out)
+	}
+
+	if err := os.WriteFile(sentinel, []byte("current database"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	recoverPreV56IfNeeded("0.55.4", doltDir)
+	if got, err := os.ReadFile(sentinel); err != nil || string(got) != "current database" {
+		t.Fatalf("compatibility marker did not prevent a second recovery: %q, %v", got, err)
 	}
 }

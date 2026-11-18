@@ -1,0 +1,33 @@
+name: Focused composition 6949 8524 8525
+on:
+  push:
+    branches: [codex/ci-compose-6949-8524-8525-20261118]
+permissions:
+  contents: read
+concurrency:
+  group: composition-6949-${{ github.ref }}
+  cancel-in-progress: false
+jobs:
+  composition:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 100
+    env:
+      BD_DISABLE_METRICS: '1'
+      BD_DISABLE_EVENT_FLUSH: '1'
+      DOLT_DISABLE_EVENT_FLUSH: '1'
+      DOLT_METRICS_DISABLED: '1'
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v6
+        with:
+          fetch-depth: 2
+          persist-credentials: false
+      - name: Run focused canonical composition within existing ceilings
+        run: python3 .github/composition-6949/run.py
+      - name: Retain compact receipts
+        if: ${{ always() }}
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: composition-6949-${{ github.sha }}
+          path: composition-artifacts/
+          if-no-files-found: error
+          retention-days: 7
