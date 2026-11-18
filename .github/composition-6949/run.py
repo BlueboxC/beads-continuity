@@ -5,6 +5,7 @@ import os
 from pathlib import Path
 import re
 import shutil
+import signal
 import subprocess
 import sys
 import tempfile
@@ -47,7 +48,7 @@ def stop_unit():
         assert path.name == unit_name() and path.resolve().is_relative_to(Path('/sys/fs/cgroup'))
         assert all(not p.read_text().strip() for p in [path/'cgroup.procs', *path.rglob('*/cgroup.procs')] if p.exists())
     previous = json.loads((ARTIFACTS/'teardown.json').read_text())['attempts'] if (ARTIFACTS/'teardown.json').exists() else []
-    save('teardown.json', {'attempts':[*previous, {'unit':unit_name(), 'before':state, 'after':final, 'processes_and_private_tmp_retired':True}]})
+    save('teardown.json', {'attempts':[*previous, {'unit':unit_name(), 'before':state, 'after':final, 'processes_retired':True, 'private_tmp_namespace_retired':True}]})
 
 
 def active_cgroup_rss():
@@ -65,6 +66,8 @@ def active_cgroup_rss():
     assert int((group/'memory.max').read_text()) == 3*GIB
     assert int((group/'memory.swap.max').read_text()) == 512*1024*1024
     assert not Path(data['private_tmp_probe']).exists(), 'PrivateTmp did not isolate the test namespace'
+    bound_probe=Path(os.environ['COMPOSITION_PRIVATE_TMP'])/Path(data['private_tmp_probe']).name
+    assert bound_probe.is_file() and bound_probe.stat().st_dev==int(os.environ['COMPOSITION_STORAGE_DEVICE'])
     save('cgroup-observation.json', {'cgroup':str(group), 'memory_peak':int((group/'memory.peak').read_text()), 'memory_current':int((group/'memory.current').read_text()), 'memory_events':(group/'memory.events').read_text()})
     pids = set()
     for file in [group/'cgroup.procs', *group.rglob('*/cgroup.procs')]:
@@ -95,11 +98,11 @@ def cgroup_rss():
 
 
 def launch_service():
-    keys = ['PATH', 'TMPDIR', 'TMP', 'TEMP', 'GOTMPDIR', 'GOCACHE', 'GOMODCACHE', 'GOLANGCI_LINT_CACHE', 'GOTOOLCHAIN', 'GOMEMLIMIT', 'GOGC', 'GOMAXPROCS', 'GITHUB_SHA', 'GITHUB_RUN_ID', 'GITHUB_RUN_ATTEMPT', 'RUNNER_TEMP', 'BD_DISABLE_METRICS', 'BD_DISABLE_EVENT_FLUSH', 'DOLT_DISABLE_EVENT_FLUSH', 'DOLT_METRICS_DISABLED']
+    keys = ['PATH', 'TMPDIR', 'TMP', 'TEMP', 'GOTMPDIR', 'GOCACHE', 'GOMODCACHE', 'GOLANGCI_LINT_CACHE', 'GOTOOLCHAIN', 'GOMEMLIMIT', 'GOGC', 'GOMAXPROCS', 'GITHUB_SHA', 'GITHUB_RUN_ID', 'GITHUB_RUN_ATTEMPT', 'RUNNER_TEMP', 'COMPOSITION_PRIVATE_TMP', 'COMPOSITION_STORAGE_DEVICE', 'BD_DISABLE_METRICS', 'BD_DISABLE_EVENT_FLUSH', 'DOLT_DISABLE_EVENT_FLUSH', 'DOLT_METRICS_DISABLED']
     env = [key+'='+os.environ[key] for key in keys if key in os.environ]
     uid, gid = os.getuid(), os.getgid()
     assert uid != 0
-    command = ['sudo', '-n', 'systemd-run', '--quiet', '--wait', '--pipe', '--service-type=exec', '--unit='+unit_name(), '--uid='+str(uid), '--gid='+str(gid), '--working-directory='+str(WORKSPACE), '--property=PrivateTmp=yes', '--property=MemoryAccounting=yes', '--property=MemoryMax='+str(3*GIB), '--property=MemorySwapMax='+str(512*1024*1024), '--property=CPUQuota=100%', '--property=RuntimeMaxSec=5400', '--property=TimeoutStopSec=5', '--property=KillMode=control-group', '--property=OOMPolicy=kill', '/usr/bin/env', *env, 'COMPOSITION_UID='+str(uid), 'COMPOSITION_GID='+str(gid), sys.executable, str(Path(__file__).resolve()), '--worker']
+    command = ['sudo', '-n', 'systemd-run', '--quiet', '--wait', '--pipe', '--service-type=exec', '--unit='+unit_name(), '--uid='+str(uid), '--gid='+str(gid), '--working-directory='+str(WORKSPACE), '--property=PrivateMounts=yes', '--property=BindPaths='+os.environ['COMPOSITION_PRIVATE_TMP']+':/tmp', '--property=MemoryAccounting=yes', '--property=MemoryMax='+str(3*GIB), '--property=MemorySwapMax='+str(512*1024*1024), '--property=CPUQuota=100%', '--property=RuntimeMaxSec=5400', '--property=TimeoutStopSec=5', '--property=KillMode=control-group', '--property=OOMPolicy=kill', '/usr/bin/env', *env, 'COMPOSITION_UID='+str(uid), 'COMPOSITION_GID='+str(gid), sys.executable, str(Path(__file__).resolve()), '--worker']
     return subprocess.run(command, check=False).returncode
 
 
@@ -189,9 +192,10 @@ def worker(manifest):
     descriptor, probe_name = tempfile.mkstemp(prefix='composition-owned-', dir='/tmp')
     os.close(descriptor)
     private_probe = Path(probe_name)
+    assert private_probe.stat().st_dev==int(os.environ['COMPOSITION_STORAGE_DEVICE'])
     detached = subprocess.check_output([sys.executable, '-c', "import os;from pathlib import Path;os.setsid();print(Path('/proc/self/cgroup').read_text().strip())"], text=True)
     assert detached.strip() == '0::'+cgroup
-    save('cgroup.json', {'unit':unit_name(), 'cgroup':cgroup, 'inode':group.stat().st_ino, 'memory_max':3*GIB, 'swap_max':512*1024*1024, 'uid':os.getuid(), 'gid':os.getgid(), 'detached_child_in_same_cgroup':True, 'private_tmp_probe':str(private_probe)})
+    save('cgroup.json', {'unit':unit_name(), 'cgroup':cgroup, 'inode':group.stat().st_ino, 'memory_max':3*GIB, 'swap_max':512*1024*1024, 'uid':os.getuid(), 'gid':os.getgid(), 'detached_child_in_same_cgroup':True, 'private_tmp_probe':str(private_probe), 'private_tmp_on_bounded_volume':True})
     deadline = time.monotonic()+15
     while not (ARTIFACTS/'cgroup-validated').exists():
         assert time.monotonic()<deadline, 'Controller did not validate cgroup and PrivateTmp'
@@ -280,17 +284,41 @@ def main():
         raise RuntimeError('Insufficient disk for minimum focused job plus unchanged20GiB reserve')
     runner_temp = Path(os.environ['RUNNER_TEMP']).resolve()
     assert runner_temp.is_absolute() and not runner_temp.is_relative_to(Path('/tmp'))
-    tempfile.tempdir = str(runner_temp)
-    modules = Path(tempfile.mkdtemp(prefix='composition-modules-', dir=runner_temp))
-    os.environ['GOMODCACHE'] = str(modules)
-    os.environ.update(GOMEMLIMIT='384MiB', GOGC='20', GOMAXPROCS='1')
+    from storage import OwnedStorage
+    source_bytes=budget.directory_size(WORKSPACE)
+    original_refusal=budget.refusal
+    budget.refusal=lambda current_free, initial_free, limit:original_refusal(current_free, free+source_bytes, limit)
+    def interrupted(number, frame):
+        raise SystemExit(128+number)
+    signal.signal(signal.SIGINT,interrupted)
+    signal.signal(signal.SIGTERM,interrupted)
+    storage=None
     try:
+        storage=OwnedStorage(runner_temp,int(admitted_gib)*GIB,source_bytes,ARTIFACT_LIMIT)
+        save('storage.json',storage.probe())
+        tempfile.tempdir=str(storage.mount)
+        modules=storage.modules
+        os.environ['GOMODCACHE'] = str(modules)
+        os.environ['COMPOSITION_PRIVATE_TMP']=str(storage.private_tmp)
+        os.environ['COMPOSITION_STORAGE_DEVICE']=str(storage.mount_identity[0])
+        os.environ.update(GOMEMLIMIT='384MiB', GOGC='20', GOMAXPROCS='1')
+        def consistent_owned_size(roots):
+            try:
+                used=storage.measure_roots(roots)
+                storage.observed_peak=max(getattr(storage,'observed_peak',0),used)
+                save('storage-observation.json',{'used_bytes':used,'peak_bytes':storage.observed_peak,'capacity_bytes':storage.capacity,'source_bytes':source_bytes,'artifacts_bytes':artifact_size(),'total_budget_bytes':int(admitted_gib)*GIB})
+                return used+source_bytes+artifact_size()
+            except (OSError,ValueError,AssertionError) as error:
+                raise budget.MonitorError('Owned bounded filesystem metric unavailable') from error
+        budget.owned_directory_size=consistent_owned_size
         result = budget.run([sys.executable, str(Path(__file__).resolve()), '--launch-service'], int(admitted_gib)*GIB, temporary=True, memory_budget=3*GIB, swap_growth=512*1024*1024, go_cache_budget=8*GIB)
         save('result.json', {'exit_code':result, 'composition_passed':result==0, 'head':os.environ['GITHUB_SHA'], 'parent':parent, 'upstream_required_gates_unchanged':True})
         return result
     finally:
         stop_unit()
-        shutil.rmtree(modules)
+        if storage is not None:
+            storage.close()
+            save('storage-teardown.json',{'owned_root_removed':not storage.root.exists(),'mounted':False,'source_bytes':source_bytes,'image_cap_bytes':storage.capacity,'max_artifacts_bytes':ARTIFACT_LIMIT,'total_budget_bytes':int(admitted_gib)*GIB})
         assert artifact_size() < ARTIFACT_LIMIT
 
 

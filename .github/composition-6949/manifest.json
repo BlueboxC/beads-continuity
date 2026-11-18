@@ -8,10 +8,11 @@
     "cmd/bd/version_tracking_test.go": "12a139712123201155e87ca67a0de3e39f91df37fdef17206a6de715d792720a",
     "cmd/bd/doctor/version.go": "e9c60680d76a41454607727e66387064baa1e8371a51f8699125416a7e0012b6",
     "cmd/bd/doctor/version_test.go": "b8633f57554aa8bb81792a53847bbb0446b8b3e1c037430148be39e0cff254ef",
-    ".github/workflows/codex-composition-6949.yml": "0be5cfd740c076723b443451c89bdaa8c240ea8e01ec8bb51964ef4fa77c3a06",
-    ".github/composition-6949/run.py": "39cc65f8b50cfe826e7d2abc9dda614fb18d9fbd1a660358ab54f2198957c1b3",
+    ".github/workflows/codex-composition-6949.yml": "3922d078ee05514ecc88aad004fea8c6404c931e24da12ce79445af2feb2ada4",
+    ".github/composition-6949/run.py": "8845d5fa4d01c33958976756c7359cdc9494b60877c70eb5a14fdbf1cfa27efa",
     ".github/composition-6949/budget.py": "db7641c07d78dac4db71575bd9b37995408ea00142622a900378be2fc9d84404",
-    ".github/composition-6949/test_budget_port.py": "316070b76feb874d9d0549a2ae85a9f166d30fcb7e62ce9f57ac45a2621ea574"
+    ".github/composition-6949/test_budget_port.py": "316070b76feb874d9d0549a2ae85a9f166d30fcb7e62ce9f57ac45a2621ea574",
+    ".github/composition-6949/storage.py": "d5194aa388428c956bd8aa8e08a919ad8050af4c60f74e7630ba1ebf973fca89"
   },
   "unit_tests": [
     "TestTrackBdVersion_NoBeadsDir",
