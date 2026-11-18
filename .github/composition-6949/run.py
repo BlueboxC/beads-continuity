@@ -1,5 +1,6 @@
 """One focused, bounded fork-CI composition. No source installation or merge."""
 import hashlib
+import errno
 import json
 import os
 from pathlib import Path
@@ -51,6 +52,64 @@ def stop_unit():
     save('teardown.json', {'attempts':[*previous, {'unit':unit_name(), 'before':state, 'after':final, 'processes_retired':True, 'private_tmp_namespace_retired':True}]})
 
 
+def owned_cgroup_members(group, inode):
+    assert group.resolve().is_relative_to(Path('/sys/fs/cgroup')) and group.name==unit_name()
+    assert group.stat().st_ino==inode, 'Owned cgroup identity changed'
+    # The root membership is mandatory; a vanished child subgroup is not the root.
+    members={int(x) for x in (group/'cgroup.procs').read_text().split()}
+    def propagate(error):raise error
+    for directory, _, _ in os.walk(group,onerror=propagate,followlinks=False):
+        directory=Path(directory)
+        if directory==Path(group):continue
+        try:members.update(int(x) for x in (directory/'cgroup.procs').read_text().split())
+        except FileNotFoundError as error:
+            try:directory.stat()
+            except FileNotFoundError:continue
+            raise error
+    assert group.stat().st_ino==inode, 'Owned cgroup identity changed during membership read'
+    return members
+
+
+def read_process_status(pid, group, inode, reader=None):
+    try:
+        return (reader if reader is not None else lambda:Path(f'/proc/{pid}/status').read_text())()
+    except OSError as error:
+        if error.errno not in (errno.ENOENT,errno.ESRCH):raise
+        if pid in owned_cgroup_members(group,inode):raise
+        name=f'proc-retirements-{os.getpid()}.json'
+        prior=json.loads((ARTIFACTS/name).read_text()) if (ARTIFACTS/name).exists() else {'count':0,'last':[]}
+        save(name,{'observer_pid':os.getpid(),'count':prior['count']+1,'last':[*prior['last'],{'pid':pid,'errno':error.errno,'absent_from_fresh_owned_membership':True}][-16:]})
+        return None
+
+
+def proc_retirement_preflight(group, inode):
+    child=subprocess.Popen([sys.executable,'-c','import sys;sys.stdin.buffer.read(1)'],stdin=subprocess.PIPE)
+    descriptor=None
+    try:
+        assert child.pid in owned_cgroup_members(group,inode)
+        live=read_process_status(os.getpid(),group,inode)
+        assert live is not None and re.search(r'^VmRSS:\s+\d+ kB$',live,re.M), 'Live process RSS unavailable'
+        descriptor=Path(f'/proc/{child.pid}/status').open()
+        child.stdin.close();assert child.wait(timeout=5)==0
+        observed=None
+        try:descriptor.read()
+        except OSError as error:observed=error.errno
+        assert observed==errno.ESRCH, f'Expected native dead-task ESRCH, got {observed}'
+        assert read_process_status(child.pid,group,inode,reader=descriptor.read) is None
+        refusals=[]
+        for number,token in [(errno.EACCES,'permission'),(errno.ESRCH,'still-owned')]:
+            def unavailable():raise OSError(number,'preflight injected metric loss')
+            refused=False
+            try:read_process_status(os.getpid(),group,inode,reader=unavailable)
+            except OSError as error:refused=error.errno==number
+            assert refused,token
+            refusals.append(token)
+        save('proc-retirement-preflight.json',{'native_dead_task_errno':observed,'fresh_membership_absent':True,'live_status_read':True,'permissions_refused':True,'still_owned_read_loss_refused':True,'root_membership_required':True,'resource_limits_unchanged':True})
+    finally:
+        if descriptor is not None:descriptor.close()
+        if child.poll() is None:child.kill();child.wait(timeout=5)
+
+
 def active_cgroup_rss():
     proof = ARTIFACTS / 'cgroup.json'
     if not proof.exists():
@@ -69,18 +128,11 @@ def active_cgroup_rss():
     bound_probe=Path(os.environ['COMPOSITION_PRIVATE_TMP'])/Path(data['private_tmp_probe']).name
     assert bound_probe.is_file() and bound_probe.stat().st_dev==int(os.environ['COMPOSITION_STORAGE_DEVICE'])
     save('cgroup-observation.json', {'cgroup':str(group), 'memory_peak':int((group/'memory.peak').read_text()), 'memory_current':int((group/'memory.current').read_text()), 'memory_events':(group/'memory.events').read_text()})
-    pids = set()
-    for file in [group/'cgroup.procs', *group.rglob('*/cgroup.procs')]:
-        try:
-            pids.update(int(x) for x in file.read_text().split())
-        except FileNotFoundError:
-            continue
+    pids=owned_cgroup_members(group,data['inode'])
     total = 0;processes=[]
     for pid in pids:
-        try:
-            status = Path(f'/proc/{pid}/status').read_text()
-        except FileNotFoundError:
-            continue
+        status=read_process_status(pid,group,data['inode'])
+        if status is None:continue
         match = re.search(r'^VmRSS:\s+(\d+) kB$', status, re.M)
         if match:
             rss=int(match[1])*1024;total+=rss
@@ -101,8 +153,9 @@ def cgroup_rss():
         return active_cgroup_rss()
     except FileNotFoundError:
         state = unit_state()
-        assert state.get('LoadState') == 'not-found' or state.get('ActiveState') in ('inactive', 'failed')
-        return 0
+        if state.get('LoadState') == 'not-found' or state.get('ActiveState') in ('inactive', 'failed'):
+            return 0
+        raise
 
 
 def launch_service():
@@ -241,6 +294,7 @@ def worker(manifest):
         assert time.monotonic()<deadline, 'Controller did not validate cgroup and PrivateTmp'
         time.sleep(.1)
     subprocess.run([sys.executable, str(HERE/'test_budget_port.py')], cwd=WORKSPACE, check=True, timeout=10)
+    proc_retirement_preflight(group,group.stat().st_ino)
     scratch = Path(os.environ['TMPDIR'])
     binary = scratch / 'bazel-9.3.1'
     assert (WORKSPACE / '.bazelversion').read_text().strip() == '9.3.1'
@@ -320,7 +374,9 @@ def main():
         try:
             rss = cgroup_rss()
         except (OSError, ValueError, AssertionError) as error:
-            raise budget.MonitorError('Cannot account owned service cgroup') from error
+            detail={'error_class':type(error).__name__,'errno':getattr(error,'errno',None),'message':str(error)[:1000],'stage':'owned-service-cgroup'}
+            save('measurement-failure.json',detail)
+            raise budget.MonitorError('Cannot account owned service cgroup: '+json.dumps(detail)) from error
         return {key:value+rss for key,value in groups.items()}
     def stop_all_service_processes(child):
         stop_unit()
