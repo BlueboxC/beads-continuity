@@ -106,40 +106,38 @@ def launch_service():
     return subprocess.run(command, check=False).returncode
 
 
-def bounded_command(command, log, timeout):
-    process = subprocess.Popen(command, cwd=WORKSPACE, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
-    state = {'bytes':0, 'truncated':False, 'error':None}
-    def drain():
+def bounded_command(command, log, timeout, stderr_log=None, log_limit=LOG_LIMIT):
+    process = subprocess.Popen(command, cwd=WORKSPACE, stdout=subprocess.PIPE, stderr=subprocess.PIPE if stderr_log else subprocess.STDOUT)
+    states=[];threads=[];capture_lock=threading.Lock()
+    def drain(pipe, destination, state):
         try:
-            with log.open('wb') as output:
+            with destination.open('wb') as output:
                 while True:
-                    chunk = process.stdout.read1(65536)
-                    if not chunk:
-                        break
-                    remaining = max(0, LOG_LIMIT-state['bytes'])
-                    output.write(chunk[:remaining])
-                    output.flush()
-                    state['bytes'] += min(len(chunk), remaining)
-                    if len(chunk) > remaining:
-                        state['truncated'] = True
-                        process.terminate()
+                    chunk=pipe.read1(65536)
+                    if not chunk:break
+                    with capture_lock:
+                        # Leave room for controller/exit receipts even on failure.
+                        remaining=max(0,min(log_limit-state['bytes'],ARTIFACT_LIMIT-1024*1024-artifact_size()))
+                        output.write(chunk[:remaining]);output.flush()
+                        state['bytes']+=min(len(chunk),remaining)
+                    if len(chunk)>remaining:
+                        state['truncated']=True;process.terminate()
         except Exception as error:
-            state['error'] = str(error)
-            process.terminate()
-    thread = threading.Thread(target=drain, daemon=True)
-    thread.start()
+            state['error']=str(error);process.terminate()
+    streams=[(process.stdout,log)]
+    if stderr_log:streams.append((process.stderr,stderr_log))
+    for pipe,destination in streams:
+        state={'bytes':0,'truncated':False,'error':None};states.append(state)
+        thread=threading.Thread(target=drain,args=(pipe,destination,state),daemon=True);threads.append(thread);thread.start()
     try:
-        code = process.wait(timeout=timeout)
+        code=process.wait(timeout=timeout)
     except subprocess.TimeoutExpired:
-        process.kill()
-        process.wait(timeout=10)
-        raise
+        process.kill();process.wait(timeout=10);raise
     finally:
-        thread.join(timeout=10)
-        if thread.is_alive():
-            raise RuntimeError('Log capture did not finish')
-    assert not state['truncated'], 'Log reached16MiB; phase fails and bounded diagnostics are retained'
-    assert state['error'] is None, 'Log capture failed: '+str(state['error'])
+        for thread in threads:thread.join(timeout=10)
+        if any(thread.is_alive() for thread in threads):raise RuntimeError('Log capture did not finish')
+    assert not any(x['truncated'] for x in states),'Capture limit reached; phase fails and bounded diagnostics are retained'
+    assert all(x['error'] is None for x in states),'Log capture failed: '+str([x['error'] for x in states if x['error']])
     return code
 
 
@@ -181,6 +179,7 @@ def assert_selected(log, expected):
 
 
 def worker(manifest):
+    worker_deadline=time.monotonic()+5350  # inside the existing5400s service limit
     assert os.getuid() == int(os.environ['COMPOSITION_UID']) and os.getgid() == int(os.environ['COMPOSITION_GID']) and os.getuid() != 0
     cgroup = Path('/proc/self/cgroup').read_text().strip().split('0::')[-1]
     group = Path('/sys/fs/cgroup')/cgroup.lstrip('/')
@@ -212,6 +211,23 @@ def worker(manifest):
     binary.chmod(0o755)
     startup = [str(binary), '--batch', '--nosystem_rc', '--nohome_rc', '--output_user_root='+str(scratch/'bazel'), '--host_jvm_args=-Xmx512m']
     limits = ['--jobs=1', '--local_resources=memory=1024', '--local_resources=cpu=1', '--local_test_jobs=1', '--loading_phase_threads=1', '--repository_cache=', '--test_output=all', '--test_arg=-test.parallel=1', '--action_env=GOMEMLIMIT=384MiB', '--action_env=GOGC=20', '--action_env=GOMAXPROCS=1', '--test_env=GOMEMLIMIT=384MiB', '--test_env=GOGC=20', '--test_env=GOMAXPROCS=1']
+    # rules_go supplies an explicit action env; --action_env alone does not
+    # constrain its compiler. Verify the actual patched action before compiling.
+    query = 'mnemonic("(GoCompilePkg|RunNogo|GoLink)", //cmd/bd:bd_test)'
+    environment_log = ARTIFACTS/'go-action-environment.log'
+    query_args = ['aquery', query, '--@rules_go//go/config:race', '--output=jsonproto', '--include_artifacts=false', '--include_commandline=false', '--repository_cache=', '--noshow_progress', '--ui_event_filters=-info,-warning,-debug', '--jobs=1', '--loading_phase_threads=1']
+    query_code = bounded_command(startup+query_args, environment_log, 600, stderr_log=ARTIFACTS/'go-action-environment-stderr.log', log_limit=2*1024*1024)
+    assert query_code==0, 'Go action environment preflight failed'
+    query_text=environment_log.read_text()
+    action_graph=json.loads(query_text)
+    expected_env={'GOMEMLIMIT':'384MiB','GOGC':'20','GOMAXPROCS':'1'}
+    actions=action_graph.get('actions',[])
+    assert {'GoCompilePkg','RunNogo','GoLink'}<={x.get('mnemonic') for x in actions}
+    for action in actions:
+        if action.get('mnemonic') in ('GoCompilePkg','RunNogo','GoLink'):
+            actual={v['key']:v['value'] for v in action.get('environmentVariables',[])}
+            assert all(actual.get(k)==v for k,v in expected_env.items()), action.get('mnemonic')
+    save('go-action-environment.json', {'expected':expected_env,'observed_actions':[{ 'mnemonic':a['mnemonic'], 'budget_environment':{k:v['value'] for v in a.get('environmentVariables',[]) for k in [v['key']] if k in expected_env}} for a in actions], 'precompile_verified':True, 'race_enabled':True})
     unit = manifest['unit_tests']
     phases = [
         ('focused-unit', ['test', '//cmd/bd:bd_test', '//cmd/bd/doctor:doctor_test', '--config=ci', *limits, '--test_filter=^('+'|'.join(unit)+')$'], unit, 3300),
@@ -222,7 +238,8 @@ def worker(manifest):
         log = ARTIFACTS / (name+'.log')
         print('Running', name, 'with canonical Bazel selection and unchanged ceilings', flush=True)
         started = time.monotonic()
-        code = bounded_command(startup+args, log, timeout)
+        remaining=int(worker_deadline-time.monotonic());assert remaining>0, 'Existing service deadline exhausted'
+        code = bounded_command(startup+args, log, min(timeout,remaining))
         tail = '\n'.join(log.read_text().splitlines()[-24:])[-8192:]
         print(tail, flush=True)
         assert code == 0, f'{name} Bazel exit {code}'

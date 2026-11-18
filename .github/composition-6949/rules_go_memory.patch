@@ -1,0 +1,13 @@
+--- a/go/private/context.bzl
++++ b/go/private/context.bzl
+@@ -670,6 +670,10 @@
+         goroot = toolchain.sdk.root_file.dirname
+ 
+     env = {
++        # Fork verification only: constrain the actual hermetic Go action.
++        "GOMEMLIMIT": "384MiB",
++        "GOGC": "20",
++        "GOMAXPROCS": "1",
+         "GOARCH": mode.goarch,
+         "GOOS": mode.goos,
+         "GOEXPERIMENT": toolchain.sdk.experiments,

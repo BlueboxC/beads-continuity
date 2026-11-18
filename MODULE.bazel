@@ -13,7 +13,10 @@ bazel_dep(name = "rules_go", version = "0.63.0")
 single_version_override(
     module_name = "rules_go",
     patch_strip = 1,
-    patches = ["//third_party/patches:rules_go_nogo_golangci_nolint.patch"],
+    patches = [
+        "//third_party/patches:rules_go_nogo_golangci_nolint.patch",
+        "//.github/composition-6949:rules_go_memory.patch",
+    ],
     version = "0.63.0",
 )
 
