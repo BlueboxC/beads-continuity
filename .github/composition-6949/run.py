@@ -178,6 +178,21 @@ def assert_selected(log, expected):
     return {'required_roots': expected, 'passed': sorted(passed), 'skipped': sorted(skipped), 'failed': sorted(failed)}
 
 
+def link_arguments(action):
+    return [*action.get('arguments',[]), *[arg for entry in action.get('paramFiles',[]) for arg in entry.get('arguments',[])]]
+
+
+def verify_link_options(actions):
+    assert actions, 'No GoLink action'
+    proof=[]
+    for action in actions:
+        args=link_arguments(action)
+        assert {'-w','-race'}<=set(args), 'Missing required GoLink flags'
+        assert not any(arg=='-s' or arg.startswith(('-w=','-s=','-race=')) for arg in args), 'Conflicting or broader GoLink flags'
+        proof.append(sorted({'-w','-race'} & set(args)))
+    return proof
+
+
 def worker(manifest):
     worker_deadline=time.monotonic()+5350  # inside the existing5400s service limit
     assert os.getuid() == int(os.environ['COMPOSITION_UID']) and os.getgid() == int(os.environ['COMPOSITION_GID']) and os.getuid() != 0
@@ -210,12 +225,12 @@ def worker(manifest):
     assert hashlib.sha256(binary.read_bytes()).hexdigest() == expected
     binary.chmod(0o755)
     startup = [str(binary), '--batch', '--nosystem_rc', '--nohome_rc', '--output_user_root='+str(scratch/'bazel'), '--host_jvm_args=-Xmx512m']
-    limits = ['--jobs=1', '--local_resources=memory=1024', '--local_resources=cpu=1', '--local_test_jobs=1', '--loading_phase_threads=1', '--repository_cache=', '--test_output=all', '--test_arg=-test.parallel=1', '--action_env=GOMEMLIMIT=384MiB', '--action_env=GOGC=20', '--action_env=GOMAXPROCS=1', '--test_env=GOMEMLIMIT=384MiB', '--test_env=GOGC=20', '--test_env=GOMAXPROCS=1']
+    limits = ['--@rules_go//go/config:gc_linkopts=-w', '--jobs=1', '--local_resources=memory=1024', '--local_resources=cpu=1', '--local_test_jobs=1', '--loading_phase_threads=1', '--repository_cache=', '--test_output=all', '--test_arg=-test.parallel=1', '--action_env=GOMEMLIMIT=384MiB', '--action_env=GOGC=20', '--action_env=GOMAXPROCS=1', '--test_env=GOMEMLIMIT=384MiB', '--test_env=GOGC=20', '--test_env=GOMAXPROCS=1']
     # rules_go supplies an explicit action env; --action_env alone does not
     # constrain its compiler. Verify the actual patched action before compiling.
     query = 'mnemonic("(GoCompilePkg|RunNogo|GoLink)", //cmd/bd:bd_composition_test)'
     environment_log = ARTIFACTS/'go-action-environment.log'
-    query_args = ['aquery', query, '--@rules_go//go/config:race', '--output=jsonproto', '--include_artifacts=false', '--include_commandline=false', '--repository_cache=', '--noshow_progress', '--ui_event_filters=-info,-warning,-debug', '--jobs=1', '--loading_phase_threads=1']
+    query_args = ['aquery', query, '--@rules_go//go/config:race', '--output=jsonproto', '--include_artifacts=false', '--include_commandline=true', '--include_param_files=true', '--@rules_go//go/config:gc_linkopts=-w', '--repository_cache=', '--noshow_progress', '--ui_event_filters=-info,-warning,-debug', '--jobs=1', '--loading_phase_threads=1']
     query_code = bounded_command(startup+query_args, environment_log, 600, stderr_log=ARTIFACTS/'go-action-environment-stderr.log', log_limit=2*1024*1024)
     assert query_code==0, 'Go action environment preflight failed'
     query_text=environment_log.read_text()
@@ -227,7 +242,9 @@ def worker(manifest):
         if action.get('mnemonic') in ('GoCompilePkg','RunNogo','GoLink'):
             actual={v['key']:v.get('value','') for v in action.get('environmentVariables',[])}
             assert all(actual.get(k)==v for k,v in expected_env.items()), action.get('mnemonic')
-    save('go-action-environment.json', {'expected':expected_env,'observed_actions':[{ 'mnemonic':a['mnemonic'], 'budget_environment':{k:v['value'] for v in a.get('environmentVariables',[]) for k in [v['key']] if k in expected_env}} for a in actions], 'precompile_verified':True, 'race_enabled':True})
+    links=[a for a in actions if a.get('mnemonic')=='GoLink']
+    link_proofs=verify_link_options(links)
+    save('go-action-environment.json', {'expected':expected_env,'observed_actions':[{ 'mnemonic':a['mnemonic'], 'budget_environment':{k:v['value'] for v in a.get('environmentVariables',[]) for k in [v['key']] if k in expected_env}} for a in actions], 'precompile_verified':True, 'race_enabled':True, 'go_link_w_verified':True, 'go_link_race_verified':True, 'actual_go_link_flags':link_proofs, 'linker_debug_scope':'DWARF omitted only for verification binaries; source/race/nogo/cases preserved'})
     unit = manifest['unit_tests']
     phases = [
         ('focused-unit', ['test', '//cmd/bd:bd_composition_test', '//cmd/bd/doctor:doctor_test', '--config=ci', *limits, '--test_filter=^('+'|'.join(unit)+')$'], unit, 3300),
