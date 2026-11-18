@@ -3,6 +3,7 @@
 package fdhygiene
 
 import (
+	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -104,45 +105,69 @@ func TestMarkInheritedCloexec_Idempotent(t *testing.T) {
 	}
 }
 
-// TestMarkInheritedCloexec_ChildDoesNotInherit is the regression test for
-// GH#4634 proper: it execs a real child and asserts the descriptor is absent
-// from the child's fd table. Without the fix the same child sees it.
+const (
+	childFDProbeEnv    = "BEADS_TEST_FDHYGIENE_PROBE_FD"
+	childFDProbePrefix = "fdhygiene fd identity: "
+)
+
+// TestMarkInheritedCloexec_ChildDoesNotInherit covers GH#4634 with a real exec.
+// The child may reuse the fd number, but must lose the original file.
 func TestMarkInheritedCloexec_ChildDoesNotInherit(t *testing.T) {
-	sh, err := exec.LookPath("sh")
-	if err != nil {
-		t.Skipf("no sh on PATH: %v", err)
+	if raw, ok := os.LookupEnv(childFDProbeEnv); ok {
+		fd, err := strconv.Atoi(raw)
+		if err != nil || fd <= 2 {
+			t.Fatalf("invalid probe fd %q", raw)
+		}
+		fmt.Println(childFDProbePrefix + fdIdentity(t, fd))
+		return
 	}
 
 	fd := openLeakedFD(t)
-
-	// Baseline: the child inherits it today. This is the bug, asserted first so
-	// a future runtime that closes fds itself makes the test fail loudly rather
-	// than pass vacuously.
-	if !childSeesFD(t, sh, fd) {
-		t.Skipf("fd %d does not reach an unsanitized child on this platform; nothing to regress", fd)
+	original := fdIdentity(t, fd)
+	if got := childFDIdentity(t, fd); got != original {
+		t.Fatalf("positive control: fd %d identity in unsanitized child = %s, want %s", fd, got, original)
 	}
 
 	MarkInheritedCloexec()
 
-	if childSeesFD(t, sh, fd) {
-		t.Errorf("fd %d still present in the child's fd table after marking", fd)
+	flags, err := unix.FcntlInt(uintptr(fd), unix.F_GETFD, 0)
+	if err != nil || flags&unix.FD_CLOEXEC == 0 {
+		t.Fatalf("fd %d flags after marking = %d, %v, want FD_CLOEXEC", fd, flags, err)
+	}
+	if got := childFDIdentity(t, fd); got == original {
+		t.Errorf("fd %d still refers to the original file after exec (device:inode %s)", fd, got)
 	}
 }
 
-// childSeesFD execs a child that lists its own open descriptors and reports
-// whether fd appears. /dev/fd is the portable spelling: a real fdescfs on
-// darwin and the BSDs, a symlink to /proc/self/fd on Linux.
-func childSeesFD(t *testing.T, sh string, fd int) bool {
+func fdIdentity(t *testing.T, fd int) string {
 	t.Helper()
-	out, err := exec.Command(sh, "-c", "ls /dev/fd").Output() //nolint:gosec // G204: sh is PATH-resolved in-test, args are constant
-	if err != nil {
-		t.Fatalf("listing child fds: %v", err)
+	var st unix.Stat_t
+	if err := unix.Fstat(fd, &st); err != nil {
+		if err == unix.EBADF {
+			return "closed"
+		}
+		t.Fatalf("Fstat on fd %d: %v", fd, err)
 	}
-	want := strconv.Itoa(fd)
-	for _, f := range strings.Fields(string(out)) {
-		if f == want {
-			return true
+	return fmt.Sprintf("%d:%d", st.Dev, st.Ino)
+}
+
+func childFDIdentity(t *testing.T, fd int) string {
+	t.Helper()
+	exe, err := os.Executable()
+	if err != nil {
+		t.Fatalf("locate test executable: %v", err)
+	}
+	cmd := exec.Command(exe, "-test.run=^TestMarkInheritedCloexec_ChildDoesNotInherit$")
+	cmd.Env = append(os.Environ(), childFDProbeEnv+"="+strconv.Itoa(fd))
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		t.Fatalf("probing child fd %d: %v\n%s", fd, err, out)
+	}
+	for _, line := range strings.Split(string(out), "\n") {
+		if identity, ok := strings.CutPrefix(line, childFDProbePrefix); ok {
+			return identity
 		}
 	}
-	return false
+	t.Fatalf("child did not report fd %d identity:\n%s", fd, out)
+	return ""
 }

@@ -165,17 +165,16 @@ func TestInitSchemaSharedStoreGate(t *testing.T) {
 			WillReturnRows(sqlmock.NewRows([]string{"count"}).AddRow(1))
 		mock.ExpectQuery(regexp.QuoteMeta("SELECT COUNT(*) FROM dolt_status")).
 			WillReturnRows(sqlmock.NewRows([]string{"count"}).AddRow(0))
-		// The gate on a database this init just created: no cursor table, so
-		// version 0, so allow — and MigrateUp proceeds to its first statement.
+		// Creating the database grants migration consent. The seed reads its
+		// missing cursor before checking for version-gated ignore patterns.
 		expectCursorProbe(mock, "schema_migrations", false)
-		mock.ExpectExec(regexp.QuoteMeta("INSERT IGNORE INTO dolt_ignore VALUES (?, true)")).
-			WithArgs(sqlmock.AnyArg()).
-			WillReturnError(errors.New("reached the first migration statement"))
+		cause := errors.New("reached the first migration statement")
+		expectLockedSeedFailure(mock, cause)
 		expectLockRelease(mock, lockName)
 
 		p := &doltSQLProvider{defaultBranch: defaultBranch, db: db, serverEndpoint: "tcp:127.0.0.1:3306"}
 		err = p.initSchema(context.Background(), "beads")
-		if err == nil || !strings.Contains(err.Error(), "reached the first migration statement") {
+		if !errors.Is(err, cause) {
 			t.Fatalf("initSchema() error = %v, want the fresh bootstrap to migrate", err)
 		}
 		if err := mock.ExpectationsWereMet(); err != nil {
@@ -194,11 +193,12 @@ func TestInitSchemaSharedStoreGate(t *testing.T) {
 
 		lockName := expectBehindDatabaseThroughPreparation(mock, "beads", 1)
 		expectSharedGateProbe(mock, 1, 0)
-		// The gate passed, so it asks forward drift too: behind, so allowed.
+		// The gate checks forward drift, then the seed reads the cursor to
+		// select version-gated ignore patterns.
 		expectVersionQuery(mock, 1)
-		mock.ExpectExec(regexp.QuoteMeta("INSERT IGNORE INTO dolt_ignore VALUES (?, true)")).
-			WithArgs(sqlmock.AnyArg()).
-			WillReturnError(errors.New("reached the first migration statement"))
+		expectVersionQuery(mock, 1)
+		cause := errors.New("reached the first migration statement")
+		expectLockedSeedFailure(mock, cause)
 		expectLockRelease(mock, lockName)
 
 		p := &doltSQLProvider{defaultBranch: defaultBranch, db: db, serverEndpoint: "tcp:127.0.0.1:3306"}
@@ -206,7 +206,7 @@ func TestInitSchemaSharedStoreGate(t *testing.T) {
 		_ = captureStderr(t, func() {
 			initErr = p.initSchema(context.Background(), "beads")
 		})
-		if initErr == nil || !strings.Contains(initErr.Error(), "reached the first migration statement") {
+		if !errors.Is(initErr, cause) {
 			t.Fatalf("initSchema() error = %v, want the consented open to migrate", initErr)
 		}
 		if err := mock.ExpectationsWereMet(); err != nil {

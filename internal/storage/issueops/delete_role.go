@@ -96,8 +96,9 @@ func DeleteInTx(ctx context.Context, tx *sql.Tx, req publicops.DeleteRequest) (p
 		idSet[id] = true
 	}
 
-	// A non-cascade request guards the named rows. A cascade reports any
-	// surviving dependents after its parent-child closure is known.
+	// The guard runs only when the request did not already say what to do
+	// about dependents. Under Cascade there is nothing outside the set by
+	// construction, which is why the expansion below is not asked about it.
 	//
 	// IT ASKS ABOUT EVERY NAMED ID, IN BOTH PLANES: the leaf says "a NAMED ROW
 	// that some row OUTSIDE the request depends on is refused" with no wisp
@@ -139,13 +140,6 @@ func DeleteInTx(ctx context.Context, tx *sql.Tx, req publicops.DeleteRequest) (p
 		return publicops.DeleteResult{}, fmt.Errorf("delete: %w", err)
 	}
 
-	if req.Cascade {
-		result.Orphaned, err = cascadeOrphansInTx(ctx, tx, set.All)
-		if err != nil {
-			return publicops.DeleteResult{}, fmt.Errorf("delete: check cascade dependents: %w", err)
-		}
-	}
-
 	// The neighborhood is read BEFORE the deletion, because after it the
 	// edges that identify a neighbor are gone. It is read against the whole
 	// deletion set — the cascade closure, not just the named ids — so a row
@@ -182,24 +176,6 @@ func DeleteInTx(ctx context.Context, tx *sql.Tx, req publicops.DeleteRequest) (p
 	}
 	result.ReferencesUpdated = rewritten
 	return result, nil
-}
-
-func cascadeOrphansInTx(ctx context.Context, tx DBTX, ids []string) ([]string, error) {
-	idSet := make(map[string]bool, len(ids))
-	for _, id := range ids {
-		idSet[id] = true
-	}
-	external, err := ExternalDependentsBySourceInTx(ctx, tx, ids, idSet)
-	if err != nil {
-		return nil, err
-	}
-	orphaned := make(map[string]bool)
-	for _, deps := range external {
-		for _, id := range deps {
-			orphaned[id] = true
-		}
-	}
-	return workapi.SortedDeleteIDs(orphaned), nil
 }
 
 // ExternalDependentsBySourceInTx reports, for each of ids, the DIRECT

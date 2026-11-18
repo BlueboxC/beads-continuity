@@ -23,7 +23,7 @@ type DeleteBlockedError struct {
 }
 
 func (e *DeleteBlockedError) Error() string {
-	return fmt.Sprintf("issue %s has dependents not in deletion set; use --force to orphan them, or --cascade to also delete its parent-child descendants (other dependents are orphaned)", e.IssueID)
+	return fmt.Sprintf("issue %s has dependents not in deletion set; use --cascade to delete them or --force to orphan them", e.IssueID)
 }
 
 func (u *issueUseCaseImpl) DeleteIssue(ctx context.Context, id, actor string) (DeleteIssuesResult, error) {
@@ -74,22 +74,11 @@ func (u *issueUseCaseImpl) deleteMany(ctx context.Context, params DeleteIssuesPa
 	allIDs := params.IDs
 	switch {
 	case params.Cascade:
-		expanded, err := u.issueRepo.FindCascadeClosure(ctx, params.IDs)
+		expanded, err := u.issueRepo.FindAllDependents(ctx, params.IDs)
 		if err != nil {
 			return DeleteIssuesResult{}, fmt.Errorf("delete: cascade expansion: %w", err)
 		}
 		allIDs = expanded
-		external, err := u.externalDependents(ctx, allIDs)
-		if err != nil {
-			return DeleteIssuesResult{}, err
-		}
-		orphanSet := map[string]bool{}
-		for _, deps := range external {
-			for _, dep := range deps {
-				orphanSet[dep] = true
-			}
-		}
-		result.OrphanedIssues = sortedStringSet(orphanSet)
 	case params.EnforceCascadePolicy:
 		// Embedded-parity dependent handling (see DeleteIssuesParams): without
 		// Cascade, an external dependent either blocks the delete (no Force) or
@@ -327,7 +316,7 @@ func (u *issueUseCaseImpl) previewDelete(ctx context.Context, ids []string) (Del
 		preview.DepRecords[id] = append(preview.DepRecords[id], deps...)
 	}
 
-	allIDs, err := u.issueRepo.FindCascadeClosure(ctx, ids)
+	allIDs, err := u.issueRepo.FindAllDependents(ctx, ids)
 	if err != nil {
 		return preview, fmt.Errorf("previewDelete: cascade expansion: %w", err)
 	}

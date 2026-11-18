@@ -33,7 +33,7 @@ Root DOX.md and the parent chain remain binding.
 
 - Blocked-state inheritance ignores stale bits on closed or pinned parents. Reads propagate late iterator errors before returning complete results or proceeding with writes.
 - Generated top-level IDs skip IDs occupied in either native table and IDs named elsewhere in the same batch. Explicit imports keep their existing identity and conflict rules.
-- Delete cascade follows only parent-child edges across both native tables. Preview and execution use the same deletion set and identify surviving dependents affected by other edges.
+- Delete cascade expands the transitive closure of incoming dependencies across both native tables. Preview, execution and reference rewrites use the same deletion set.
 
 ## Work Guidance
 

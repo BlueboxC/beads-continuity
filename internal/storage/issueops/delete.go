@@ -152,7 +152,8 @@ type DeletionSet struct {
 }
 
 // ResolveDeletionSetInTx decides WHICH rows a delete removes: the named ids,
-// plus the parent-child descendants in both planes under cascade.
+// plus — under cascade — the transitive closure of everything that depends on
+// them, in BOTH planes.
 //
 // THE CASCADE IS ROOTED AT EVERY NAMED ID, WISPS INCLUDED. Rooting it at the
 // durable half is what made `bd wisp gc` (which hardcodes cascade) silently
@@ -162,7 +163,7 @@ type DeletionSet struct {
 func ResolveDeletionSetInTx(ctx context.Context, tx DBTX, ids []string, cascade bool) (DeletionSet, error) {
 	all := append([]string(nil), ids...)
 	if cascade {
-		closure, err := FindCascadeClosureInTx(ctx, tx, ids)
+		closure, err := FindAllDependentsInTx(ctx, tx, ids)
 		if err != nil {
 			return DeletionSet{}, fmt.Errorf("expand cascade: %w", err)
 		}
@@ -221,11 +222,6 @@ func DeleteIssuesInTx(ctx context.Context, tx *sql.Tx, ids []string, cascade boo
 				}
 			}
 			orphaned = workapi.SortedDeleteIDs(orphans)
-		}
-	} else {
-		orphaned, err = cascadeOrphansInTx(ctx, tx, set.All)
-		if err != nil {
-			return nil, fmt.Errorf("get cascade dependents: %w", err)
 		}
 	}
 
@@ -458,11 +454,12 @@ func ExistingIssueIDsInTableInTx(ctx context.Context, tx DBTX, table string, ids
 	return actual, nil
 }
 
-// FindCascadeClosureInTx walks incoming parent-child edges in both planes.
-// Traversal is capped at maxRecursiveResults total discovered IDs.
+// findAllDependentsRecursiveInTx finds all issues that depend on the given
+// issues, recursively. Uses batched IN-clause queries. Traversal is capped
+// at maxRecursiveResults total discovered IDs.
 //
 //nolint:gosec // G201: inClause contains only ? placeholders
-func FindCascadeClosureInTx(ctx context.Context, tx DBTX, ids []string) (map[string]bool, error) {
+func FindAllDependentsInTx(ctx context.Context, tx DBTX, ids []string) (map[string]bool, error) {
 	result := make(map[string]bool)
 	for _, id := range ids {
 		result[id] = true
@@ -483,10 +480,9 @@ func FindCascadeClosureInTx(ctx context.Context, tx DBTX, ids []string) (map[str
 		toProcess = toProcess[batchEnd:]
 
 		inClause, args := buildSQLInClause(batch)
-		args = append([]any{string(types.DepParentChild)}, args...)
 		for _, depTable := range []string{"dependencies", "wisp_dependencies"} {
 			rows, err := tx.QueryContext(ctx,
-				fmt.Sprintf(`SELECT issue_id FROM %s WHERE type = ? AND %s`, depTable, depTargetIn("", inClause)),
+				fmt.Sprintf(`SELECT issue_id FROM %s WHERE %s`, depTable, depTargetIn("", inClause)),
 				args...)
 			if err != nil {
 				if optionalBlockedTable(depTable) && isTableNotExistError(err) {

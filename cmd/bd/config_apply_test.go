@@ -193,9 +193,17 @@ func TestApplyServerSkipsWhenAutoStartDisabled(t *testing.T) {
 	}
 }
 
+func setupConfigApplyFixture(t *testing.T) {
+	t.Helper()
+	repoDir := newGitRepo(t)
+	chdirForDriftTest(t, repoDir)
+	// Keep server and remote checks away from any unrelated Beads workspace.
+	t.Setenv("BEADS_DIR", filepath.Join(repoDir, ".beads"))
+	initConfigForTest(t)
+}
+
 func TestRunApplyAllOK(t *testing.T) {
-	t.Setenv("BEADS_TEST_IGNORE_REPO_CONFIG", "1")
-	// In a test environment with no drift, all results should be ok or skipped
+	setupConfigApplyFixture(t)
 	results := runApply(false)
 	if len(results) != 3 {
 		t.Errorf("expected 3 results, got %d", len(results))
@@ -208,7 +216,7 @@ func TestRunApplyAllOK(t *testing.T) {
 }
 
 func TestRunApplyDryRun(t *testing.T) {
-	t.Setenv("BEADS_TEST_IGNORE_REPO_CONFIG", "1")
+	setupConfigApplyFixture(t)
 	results := runApply(true)
 	if len(results) != 3 {
 		t.Errorf("expected 3 results, got %d", len(results))

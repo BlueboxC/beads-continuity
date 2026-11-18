@@ -20,7 +20,7 @@ Root DOX.md and the parent chain remain binding.
 
 - Context server-port projections use the same DialConfig precedence as the store, including legacy environment fallback and authoritative configured ports.
 
-- Native create checks both issue planes and batch reservations when generating top-level IDs. Native delete cascade follows parent-child edges only and reports affected surviving dependents.
+- Native create checks both issue planes and batch reservations when generating top-level IDs. Delete cascade uses the shared transitive dependent closure in both native planes.
 
 ## Work Guidance
 

@@ -27,19 +27,24 @@ func TestCLISettlementDeterminateFailuresAbort(t *testing.T) {
 				mock.ExpectRollback()
 			} else {
 				mock.ExpectQuery(conflicts).WillReturnRows(sqlmock.NewRows([]string{"table", "num_conflicts"}).AddRow("metadata", 1))
-				mock.ExpectExec(regexp.QuoteMeta("CALL DOLT_CONFLICTS_RESOLVE('--theirs', 'metadata')")).WillReturnResult(sqlmock.NewResult(0, 1))
-				mock.ExpectExec(regexp.QuoteMeta("CALL DOLT_ADD('metadata')")).WillReturnResult(sqlmock.NewResult(0, 1))
+				mock.ExpectQuery(regexp.QuoteMeta("CALL DOLT_CONFLICTS_RESOLVE('--theirs', 'metadata')")).
+					WillReturnRows(sqlmock.NewRows([]string{"status"})).RowsWillBeClosed()
+				mock.ExpectQuery(regexp.QuoteMeta("CALL DOLT_ADD('metadata')")).
+					WillReturnRows(sqlmock.NewRows([]string{"status"})).RowsWillBeClosed()
 				mock.ExpectQuery(regexp.QuoteMeta("SELECT `table` FROM dolt_constraint_violations WHERE num_violations > 0")).WillReturnRows(sqlmock.NewRows([]string{"table"}))
-				commit := mock.ExpectExec("CALL DOLT_COMMIT")
+				mock.ExpectQuery(regexp.QuoteMeta("SELECT source_commit FROM dolt_merge_status WHERE is_merging")).
+					WillReturnRows(sqlmock.NewRows([]string{"source_commit"}))
+				commit := mock.ExpectQuery("CALL DOLT_COMMIT")
 				if phase == "Dolt commit" {
 					commit.WillReturnError(rejected)
 					mock.ExpectRollback()
 				} else {
-					commit.WillReturnResult(sqlmock.NewResult(0, 1))
+					commit.WillReturnRows(sqlmock.NewRows([]string{"status"})).RowsWillBeClosed()
 					mock.ExpectCommit().WillReturnError(rejected)
 				}
 			}
-			mock.ExpectExec(regexp.QuoteMeta("CALL DOLT_MERGE('--abort')")).WillReturnResult(sqlmock.NewResult(0, 1))
+			mock.ExpectQuery(regexp.QuoteMeta("CALL DOLT_MERGE('--abort')")).
+				WillReturnRows(sqlmock.NewRows([]string{"status"})).RowsWillBeClosed()
 			mock.ExpectExec(regexp.QuoteMeta("SET @@dolt_allow_commit_conflicts = 0")).WillReturnResult(sqlmock.NewResult(0, 0))
 			store := &DoltStore{db: db}
 			err = store.autoResolveConflictsAfterCLIPull(t.Context(), nil, false)

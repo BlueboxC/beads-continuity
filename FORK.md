@@ -3,7 +3,7 @@
 ## Compatible upstream maintenance
 
 The selected maintenance baseline is original `main` at
-`126b30aad7f52ae3f699d50cdf5544ebb41cc8f5`. Complete compatible backports
+`126b30aad7f52ae3f699d50cdf5544ebb41cc8f5`. The 71 selected upstream units
 retain the ordinary v1.3.1 API, the fork's supervised knowledge, code/document
 catalogs, native viewer and Codex continuity. Preview3 remains
 schema11/generation13 with the same qualified Dolt/analyzer/driver tuple.
@@ -33,6 +33,11 @@ schema11/generation13 with the same qualified Dolt/analyzer/driver tuple.
 The original's replacement native-history format, removal of graph admission
 and Python/FastMCP major-version transition require separate qualification.
 Contributor regressions and stronger fork controls are retained together.
+
+The parent-only delete cascade from [PR #8078](https://github.com/gastownhall/beads/pull/8078)
+is excluded. The fork retains its established closure over all incoming
+dependencies, with the existing orphan, force, transaction and history guards.
+Preview and execution use the same deletion set.
 
 
 ## October 27–28 report corrections

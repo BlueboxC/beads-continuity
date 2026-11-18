@@ -134,8 +134,9 @@ func deleteInUOW(ctx context.Context, uw UnitOfWork, req publicops.DeleteRequest
 		}
 	}
 
-	// A non-cascade request guards the named rows. The use case computes
-	// a cascade's surviving dependents from its complete deletion set.
+	// The guard runs only when the request did not already say what to do
+	// about dependents. Under Cascade there is nothing outside the set by
+	// construction.
 	if !req.Cascade {
 		idSet := make(map[string]bool, len(req.IDs))
 		for _, id := range req.IDs {
@@ -182,9 +183,6 @@ func deleteInUOW(ctx context.Context, uw UnitOfWork, req publicops.DeleteRequest
 	result.Labels = deleted.LabelsCount
 	result.Events = deleted.EventsCount
 	result.ReferencesUpdated = deleted.ReferencesUpdated
-	if req.Cascade {
-		result.Orphaned = deleted.OrphanedIssues
-	}
 	return result, nil
 }
 

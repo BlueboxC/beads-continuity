@@ -92,7 +92,7 @@ func TestForkRecipeHintQuotesStoredKey(t *testing.T) {
 		t.Fatal(err)
 	}
 	const name = "recipe-$(printf should-not-run)"
-	if err := recipes.SaveUserRecipe(beadsDir, name, filepath.Join(dir, "missing\nForged")); err != nil {
+	if err := recipes.SaveUserRecipe(beadsDir, name, "missing\nForged"); err != nil {
 		t.Fatal(err)
 	}
 	t.Chdir(dir)
@@ -103,6 +103,9 @@ func TestForkRecipeHintQuotesStoredKey(t *testing.T) {
 	out := captureStdout(t, func() error { _ = runRecipe(name); return nil })
 	if quoted, ok := shellQuotedFor(runtime.GOOS, name); ok && !strings.Contains(out, "bd setup "+quoted) {
 		t.Fatalf("unsafe recipe command: %q", out)
+	}
+	if !strings.Contains(out, `  Missing: "missing\nForged"`) {
+		t.Fatalf("missing-path hint did not retain the escaped path: %q", out)
 	}
 	if strings.Contains(out, "missing\nForged") {
 		t.Fatalf("path forged a new hint line: %q", out)

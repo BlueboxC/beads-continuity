@@ -1191,7 +1191,7 @@ func TestDeleteIssuesBatchPerformance(t *testing.T) {
 			dep := &types.Dependency{
 				IssueID:     fmt.Sprintf("batch-del-%d", i),
 				DependsOnID: fmt.Sprintf("batch-del-%d", i-1),
-				Type:        types.DepParentChild,
+				Type:        types.DepBlocks,
 			}
 			if err := store.AddDependency(ctx, dep, "tester"); err != nil {
 				t.Fatalf("failed to add dependency %d: %v", i, err)
@@ -1311,7 +1311,7 @@ func TestDeleteIssuesDryRun(t *testing.T) {
 	ctx, cancel := testContext(t)
 	defer cancel()
 
-	// Create 3 issues with parent-child chain deps and a label
+	// Create 3 issues with chain deps and a label
 	for i := 1; i <= 3; i++ {
 		iss := &types.Issue{
 			ID: fmt.Sprintf("dry-%d", i), Title: fmt.Sprintf("Dry %d", i),
@@ -1323,7 +1323,7 @@ func TestDeleteIssuesDryRun(t *testing.T) {
 		if i > 1 {
 			dep := &types.Dependency{
 				IssueID: fmt.Sprintf("dry-%d", i), DependsOnID: fmt.Sprintf("dry-%d", i-1),
-				Type: types.DepParentChild,
+				Type: types.DepBlocks,
 			}
 			if err := store.AddDependency(ctx, dep, "tester"); err != nil {
 				t.Fatalf("failed to add dep: %v", err)
@@ -1449,7 +1449,7 @@ func TestDeleteIssuesBatchBoundary(t *testing.T) {
 				}
 				if i > 0 {
 					dep := &types.Dependency{
-						IssueID: id, DependsOnID: ids[i-1], Type: types.DepParentChild,
+						IssueID: id, DependsOnID: ids[i-1], Type: types.DepBlocks,
 					}
 					if err := store.AddDependency(ctx, dep, "tester"); err != nil {
 						t.Fatalf("failed to add dep: %v", err)
@@ -1505,7 +1505,7 @@ func TestDeleteIssuesCircularDeps(t *testing.T) {
 		{"circ-c", "circ-b"},
 	} {
 		dep := &types.Dependency{
-			IssueID: d.from, DependsOnID: d.to, Type: types.DepParentChild,
+			IssueID: d.from, DependsOnID: d.to, Type: types.DepBlocks,
 		}
 		if err := store.AddDependency(ctx, dep, "tester"); err != nil {
 			t.Fatalf("failed to add dep %s->%s: %v", d.from, d.to, err)
@@ -1516,7 +1516,7 @@ func TestDeleteIssuesCircularDeps(t *testing.T) {
 	// ability to handle cycles that may exist in the database, not AddDependency.
 	if _, err := store.execContext(ctx, `
 		INSERT INTO dependencies (id, issue_id, depends_on_issue_id, type, created_at, created_by, metadata)
-		VALUES (UUID(), ?, ?, 'parent-child', NOW(), 'tester', '{}')
+		VALUES (UUID(), ?, ?, 'blocks', NOW(), 'tester', '{}')
 	`, "circ-a", "circ-c"); err != nil {
 		t.Fatalf("failed to insert cycle-completing dep circ-a->circ-c: %v", err)
 	}
@@ -1566,7 +1566,7 @@ func TestDeleteIssuesDiamondDeps(t *testing.T) {
 	}
 	for _, d := range deps {
 		dep := &types.Dependency{
-			IssueID: d.from, DependsOnID: d.to, Type: types.DepParentChild,
+			IssueID: d.from, DependsOnID: d.to, Type: types.DepBlocks,
 		}
 		if err := store.AddDependency(ctx, dep, "tester"); err != nil {
 			t.Fatalf("failed to add dep: %v", err)

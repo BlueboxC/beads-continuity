@@ -81,6 +81,23 @@ func expectDatabaseExistsProbe(mock sqlmock.Sqlmock, database string, exists boo
 		WillReturnRows(sqlmock.NewRows([]string{"count"}).AddRow(n))
 }
 
+// expectLockedSeedFailure models an under-seeded database with automatic
+// transaction commits enabled. The original mode must be restored on the
+// pinned connection even when the first seed write fails.
+func expectLockedSeedFailure(mock sqlmock.Sqlmock, cause error) {
+	mock.ExpectQuery(`^SELECT pattern FROM dolt_ignore WHERE pattern IN \(`).
+		WillReturnRows(sqlmock.NewRows([]string{"pattern"}))
+	mock.ExpectQuery(regexp.QuoteMeta("SELECT @@SESSION.dolt_transaction_commit")).
+		WillReturnRows(sqlmock.NewRows([]string{"@@SESSION.dolt_transaction_commit"}).AddRow(1))
+	mock.ExpectExec(regexp.QuoteMeta("SET @@SESSION.dolt_transaction_commit = 0")).
+		WillReturnResult(sqlmock.NewResult(0, 0))
+	mock.ExpectExec(regexp.QuoteMeta("INSERT IGNORE INTO dolt_ignore VALUES (?, true)")).
+		WithArgs(sqlmock.AnyArg()).
+		WillReturnError(cause)
+	mock.ExpectExec(regexp.QuoteMeta("SET @@SESSION.dolt_transaction_commit = 1")).
+		WillReturnResult(sqlmock.NewResult(0, 0))
+}
+
 // TestInitSchemaAcquiresMigrationLockBeforeBootstrapDDL is the fresh-bootstrap
 // ordering guard: nothing that creates or touches schema may run before
 // GET_LOCK.
@@ -116,14 +133,11 @@ func TestInitSchemaAcquiresMigrationLockBeforeBootstrapDDL(t *testing.T) {
 		WillReturnRows(sqlmock.NewRows([]string{"count"}).AddRow(1))
 	mock.ExpectQuery(regexp.QuoteMeta("SELECT COUNT(*) FROM dolt_status")).
 		WillReturnRows(sqlmock.NewRows([]string{"count"}).AddRow(0))
-	// The shared-store migration gate, between preparation and MigrateUp. This
-	// init just created the database, so the cursor table does not exist yet,
-	// the gate reads version 0, and it allows: creating a database is consent
-	// for its schema.
+	// Creating the database grants migration consent. The seed reads its
+	// missing cursor before checking for version-gated ignore patterns.
 	expectCursorProbe(mock, "schema_migrations", false)
-	mock.ExpectExec(regexp.QuoteMeta("INSERT IGNORE INTO dolt_ignore VALUES (?, true)")).
-		WithArgs(sqlmock.AnyArg()).
-		WillReturnError(errors.New("first migration statement failed"))
+	cause := errors.New("first migration statement failed")
+	expectLockedSeedFailure(mock, cause)
 	mock.ExpectQuery(regexp.QuoteMeta("SELECT RELEASE_LOCK(?)")).
 		WithArgs(lockName).
 		WillReturnRows(sqlmock.NewRows([]string{"released"}).AddRow(1))
@@ -134,7 +148,7 @@ func TestInitSchemaAcquiresMigrationLockBeforeBootstrapDDL(t *testing.T) {
 		serverEndpoint: "tcp:127.0.0.1:3306",
 	}
 	err = p.initSchema(context.Background(), "beads")
-	if err == nil || !strings.Contains(err.Error(), "first migration statement failed") {
+	if !errors.Is(err, cause) {
 		t.Fatalf("initSchema() error = %v, want first migration sentinel", err)
 	}
 	if err := mock.ExpectationsWereMet(); err != nil {
@@ -194,11 +208,12 @@ func TestInitSchemaConvergenceProbeRunsWithNoSessionDatabase(t *testing.T) {
 	// consent below keeps this test about the lock/probe ordering it exists to
 	// pin. See TestInitSchemaSharedStoreGate for the gate's own behavior.
 	expectSharedGateProbe(mock, 1, 0)
-	// The gate passed, so it asks forward drift too: behind, so allowed.
+	// The gate checks forward drift, then the seed reads the cursor to
+	// select version-gated ignore patterns.
 	expectVersionQuery(mock, 1)
-	mock.ExpectExec(regexp.QuoteMeta("INSERT IGNORE INTO dolt_ignore VALUES (?, true)")).
-		WithArgs(sqlmock.AnyArg()).
-		WillReturnError(errors.New("first migration statement failed"))
+	expectVersionQuery(mock, 1)
+	cause := errors.New("first migration statement failed")
+	expectLockedSeedFailure(mock, cause)
 	mock.ExpectQuery(regexp.QuoteMeta("SELECT RELEASE_LOCK(?)")).
 		WithArgs(lockName).
 		WillReturnRows(sqlmock.NewRows([]string{"released"}).AddRow(1))
@@ -209,7 +224,7 @@ func TestInitSchemaConvergenceProbeRunsWithNoSessionDatabase(t *testing.T) {
 		serverEndpoint: "tcp:127.0.0.1:3306",
 	}
 	err = p.initSchema(context.Background(), "beads")
-	if err == nil || !strings.Contains(err.Error(), "first migration statement failed") {
+	if !errors.Is(err, cause) {
 		t.Fatalf("initSchema() error = %v, want first migration sentinel", err)
 	}
 	if err := mock.ExpectationsWereMet(); err != nil {

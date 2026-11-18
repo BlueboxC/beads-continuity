@@ -11,6 +11,7 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/steveyegge/beads/internal/configfile"
 	"github.com/steveyegge/beads/internal/storage/embeddeddolt"
@@ -298,8 +299,11 @@ func TestEmbeddedUpdate(t *testing.T) {
 		if got.AwaitID != "run-123" {
 			t.Errorf("expected await_id run-123, got %q", got.AwaitID)
 		}
-		if got.DueAt == nil || got.DueAt.Format("2006-01-02") != "2099-01-15" {
-			t.Errorf("expected due_at 2099-01-15, got %v", got.DueAt)
+		// bdEnv inherits the test process's local time zone. A date-only
+		// input means local midnight, represented as a UTC instant in JSON.
+		wantDueAt := time.Date(2099, time.January, 15, 0, 0, 0, 0, time.Local).UTC()
+		if got.DueAt == nil || got.DueAt.Format(time.RFC3339Nano) != wantDueAt.Format(time.RFC3339Nano) {
+			t.Errorf("due_at = %v, want local midnight normalized to %v", got.DueAt, wantDueAt)
 		}
 		if !got.NoHistory {
 			t.Error("expected no_history true")
