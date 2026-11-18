@@ -2011,3 +2011,239 @@ filegroup(
 )
 
 # --- end repo_files ---
+
+# Focused composition verification; existing canonical targets above stay intact.
+go_test(
+    name = "bd_composition_test",
+    # Verification-only source subset; original test and fixture files.
+    # Keep production embed, runfiles, environment, dependencies and shards.
+    size = "large",
+    timeout = "long",
+    srcs = [
+        "aaa_stdio_baseline_test.go",
+        "cobra_flag_reset_test.go",
+        "context_binding_integration_test.go",
+        "context_binding_test.go",
+        "helpers_test.go",
+        "hooks_export_worktree_test.go",
+        "hooks_post_merge_import_test.go",
+        "ready_input_test.go",
+        "shared_migrate_consent_test.go",
+        "shared_store_migrate_gate_test.go",
+        "sync_remote_fixture_test.go",
+        "test_dolt_server_cgo_test.go",
+        "test_helpers_pure_test.go",
+        "test_helpers_test.go",
+        "test_repo_beads_guard_test.go",
+        "version_tracking_test.go",
+        "zz_stdio_leak_guard_test.go",
+    ],
+    data = glob(["testdata/**"]) + [
+        ":bd_for_tests",
+        ":compact_gc_fixture",
+        ":go_srcs",
+        ":preflight_go_fixture",
+        "//:bd_test_files",
+        "//:go_srcs",
+        "//cmd/bd/doctor:go_srcs",
+        "//cmd/bd/doctor/fix:go_srcs",
+        "//internal/storage/embeddeddolt/cmd:go_srcs",
+        "@go_sdk//:bin/gofmt",
+    ],
+    embed = [":bd_lib"],
+    env = {
+        "BEADS_TEST_BD_BINARY": "$(rlocationpath :bd_for_tests)",
+        "BEADS_TEST_GOFMT": "$(rlocationpath @go_sdk//:bin/gofmt)",
+        "BEADS_TEST_COMPACT_GC_FIXTURE": "$(rlocationpath :compact_gc_fixture)",
+        "BEADS_TEST_PREFLIGHT_GO": "$(rlocationpath :preflight_go_fixture)",
+    },
+    shard_count = 16,
+    deps = [
+        "//:beads",
+        "//cmd/bd/doctor",
+        "//cmd/bd/doctor/fix",
+        "//cmd/bd/setup",
+        "//internal/ado",
+        "//internal/beads",
+        "//internal/ceiling",
+        "//internal/config",
+        "//internal/configfile",
+        "//internal/debug",
+        "//internal/doltremote",
+        "//internal/doltserver",
+        "//internal/doltversion",
+        "//internal/eventsjournal",
+        "//internal/execenv",
+        "//internal/formula",
+        "//internal/git",
+        "//internal/gitenv",
+        "//internal/githooksenv",
+        "//internal/github",
+        "//internal/gitlab",
+        "//internal/hooks",
+        "//internal/httpapi",
+        "//internal/httpapi/apigen",
+        "//internal/httpclient",
+        "//internal/httpclient/encode",
+        "//internal/httpclient/wire",
+        "//internal/initprocs",
+        "//internal/linear",
+        "//internal/memoryapi",
+        "//internal/metrics",
+        "//internal/migration",
+        "//internal/molecules",
+        "//internal/notion",
+        "//internal/procid",
+        "//internal/recipes",
+        "//internal/remedy",
+        "//internal/routing",
+        "//internal/storage",
+        "//internal/storage/backends",
+        "//internal/storage/contextinfo",
+        "//internal/storage/dbproxy/pidfile",
+        "//internal/storage/dbproxy/proxy",
+        "//internal/storage/dbproxy/server",
+        "//internal/storage/dbproxy/util",
+        "//internal/storage/depid",
+        "//internal/storage/dolt",
+        "//internal/storage/doltutil",
+        "//internal/storage/domain",
+        "//internal/storage/embeddeddolt",
+        "//internal/storage/externaldeps",
+        "//internal/storage/fs",
+        "//internal/storage/git",
+        "//internal/storage/issueops",
+        "//internal/storage/journalscan",
+        "//internal/storage/kvkeys",
+        "//internal/storage/memoryops",
+        "//internal/storage/schema",
+        "//internal/storage/uow",
+        "//internal/storage/versioncontrolops",
+        "//internal/telemetry",
+        "//internal/templates/agents",
+        "//internal/testutil",
+        "//internal/testutil/bazeltest",
+        "//internal/testutil/credentialcmd",
+        "//internal/testutil/legacyworkspace",
+        "//internal/timeparsing",
+        "//internal/tracker",
+        "//internal/types",
+        "//internal/ui",
+        "//internal/uimd",
+        "//internal/utils",
+        "//internal/validation",
+        "//internal/versioncheck",
+        "//internal/workapi",
+        "//internal/workspacegate",
+        "//internal/worktreeremove",
+        "//issueops",
+        "//memoryops",
+        "@com_github_charmbracelet_x_ansi//:ansi",
+        "@com_github_data_dog_go_sqlmock//:go-sqlmock",
+        "@com_github_dolthub_dolt_go//libraries/doltcore/servercfg",
+        "@com_github_dolthub_dolt_go//libraries/utils/filesys",
+        "@com_github_dolthub_dolt_go//store/blobstore",
+        "@com_github_go_sql_driver_mysql//:mysql",
+        "@com_github_spf13_cobra//:cobra",
+        "@com_github_spf13_pflag//:pflag",
+        "@com_github_stretchr_testify//assert",
+        "@com_github_stretchr_testify//require",
+        "@in_gopkg_yaml_v3//:yaml_v3",
+        "@land_charm_lipgloss_v2//:lipgloss",
+        "@org_golang_x_sync//errgroup",
+        "@org_golang_x_term//:term",
+    ] + select({
+        "@rules_go//go/platform:aix": [
+            "//internal/tracker/conformance",
+        ],
+        "@rules_go//go/platform:android": [
+            "//internal/tracker/conformance",
+        ],
+        "@rules_go//go/platform:darwin": [
+            "//internal/tracker/conformance",
+        ],
+        "@rules_go//go/platform:dragonfly": [
+            "//internal/tracker/conformance",
+        ],
+        "@rules_go//go/platform:freebsd": [
+            "//internal/tracker/conformance",
+        ],
+        "@rules_go//go/platform:illumos": [
+            "//internal/tracker/conformance",
+        ],
+        "@rules_go//go/platform:ios": [
+            "//internal/tracker/conformance",
+        ],
+        "@rules_go//go/platform:linux": [
+            "//internal/tracker/conformance",
+        ],
+        "@rules_go//go/platform:netbsd": [
+            "//internal/tracker/conformance",
+        ],
+        "@rules_go//go/platform:openbsd": [
+            "//internal/tracker/conformance",
+        ],
+        "@rules_go//go/platform:solaris": [
+            "//internal/tracker/conformance",
+        ],
+        "@rules_go//go/platform:windows": [
+            "@org_golang_x_sys//windows",
+        ],
+        "//conditions:default": [],
+    }),
+)
+
+sh_test(
+    name = "bd_composition_server_test",
+    size = "large",
+    # args' -test.timeout=19m fires (with a goroutine dump) before Bazel's
+    # 1200s action limit (eternal under the lane's --test_timeout), which
+    # kills without one.
+    timeout = "eternal",
+    srcs = ["//tools/bazel:go_test_pinned_shard.sh"],
+    args = [
+        "$(rootpath :dolt_server_pinned_shards.txt)",
+        "$(rootpath :bd_composition_test)",
+        # Item 5 A2: moved from --config=doltserver-cmd's --test_arg
+        # (go_test_pinned_shard.sh forwards args after its own, so this
+        # lands last in argv, same as the config's --test_arg did). Go's own
+        # timeout fires first and dumps every goroutine to test.log, which
+        # Bazel's 1200s cap does not. The move keeps this out of
+        # --config=dolt-int, whose other member (server-storage) has a 15m
+        # Go timeout of its own.
+        "-test.timeout=19m",
+    ],
+    data = [
+        ":bd_for_tests",
+        ":bd_composition_test",
+        ":compact_gc_fixture",
+        ":dolt_server_pinned_shards.txt",
+        ":preflight_go_fixture",
+        "@go_sdk//:bin/gofmt",
+    ],
+    env = {
+        "BEADS_TEST_BD_BINARY": "$(rlocationpath :bd_for_tests)",
+        "BEADS_TEST_DOLT_SERVER": "local",
+        # The integration jobs' global git identity (tools/bazel/test_env.sh).
+        "BEADS_TEST_GIT_IDENTITY": "1",
+        "BEADS_TEST_GOFMT": "$(rlocationpath @go_sdk//:bin/gofmt)",
+        "BEADS_TEST_COMPACT_GC_FIXTURE": "$(rlocationpath :compact_gc_fixture)",
+        "BEADS_TEST_PREFLIGHT_GO": "$(rlocationpath :preflight_go_fixture)",
+        # Item 5 A2: moved from --config=doltserver-cmd's --test_env, so
+        # --config=dolt-int does not set it for server-storage's targets too.
+        "BEADS_TEST_REQUIRE_EXCLUDE_PERMISSION": "1",
+        "BEADS_TEST_REQUIRE_DOLT_CONTAINER": "1",
+        # TestSharedServerConcurrent (skipped everywhere else) as a bounded
+        # smoke: 6 concurrent bd clients, 3 per database, against 2
+        # shared-server projects (~1 min; bd init alone is ~8s a project).
+        "BEADS_TEST_SHARED_SERVER_CONCURRENT": "1",
+        "BEADS_TEST_SS_CLIENTS": "6",
+        "BEADS_TEST_SS_DIRS": "2",
+        # The 4-vCPU runner shape, as in bd_proxied_test: -test.parallel
+        # defaults to GOMAXPROCS, and every parallel test opens stores
+        # against the one shared server.
+        "GOMAXPROCS": "4",
+    },
+    shard_count = 32,
+    tags = ["dolt-server-cmd"],
+)

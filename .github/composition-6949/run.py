@@ -213,7 +213,7 @@ def worker(manifest):
     limits = ['--jobs=1', '--local_resources=memory=1024', '--local_resources=cpu=1', '--local_test_jobs=1', '--loading_phase_threads=1', '--repository_cache=', '--test_output=all', '--test_arg=-test.parallel=1', '--action_env=GOMEMLIMIT=384MiB', '--action_env=GOGC=20', '--action_env=GOMAXPROCS=1', '--test_env=GOMEMLIMIT=384MiB', '--test_env=GOGC=20', '--test_env=GOMAXPROCS=1']
     # rules_go supplies an explicit action env; --action_env alone does not
     # constrain its compiler. Verify the actual patched action before compiling.
-    query = 'mnemonic("(GoCompilePkg|RunNogo|GoLink)", //cmd/bd:bd_test)'
+    query = 'mnemonic("(GoCompilePkg|RunNogo|GoLink)", //cmd/bd:bd_composition_test)'
     environment_log = ARTIFACTS/'go-action-environment.log'
     query_args = ['aquery', query, '--@rules_go//go/config:race', '--output=jsonproto', '--include_artifacts=false', '--include_commandline=false', '--repository_cache=', '--noshow_progress', '--ui_event_filters=-info,-warning,-debug', '--jobs=1', '--loading_phase_threads=1']
     query_code = bounded_command(startup+query_args, environment_log, 600, stderr_log=ARTIFACTS/'go-action-environment-stderr.log', log_limit=2*1024*1024)
@@ -230,8 +230,8 @@ def worker(manifest):
     save('go-action-environment.json', {'expected':expected_env,'observed_actions':[{ 'mnemonic':a['mnemonic'], 'budget_environment':{k:v['value'] for v in a.get('environmentVariables',[]) for k in [v['key']] if k in expected_env}} for a in actions], 'precompile_verified':True, 'race_enabled':True})
     unit = manifest['unit_tests']
     phases = [
-        ('focused-unit', ['test', '//cmd/bd:bd_test', '//cmd/bd/doctor:doctor_test', '--config=ci', *limits, '--test_filter=^('+'|'.join(unit)+')$'], unit, 3300),
-        ('focused-server', ['test', '//cmd/bd:bd_dolt_server_test', '--config=doltserver-cmd', *limits, '--test_sharding_strategy=disabled', '--test_arg=-test.run=^TestVersionBumpDirtyTableRefusalKeepsLocalVersionMarker$'], ['TestVersionBumpDirtyTableRefusalKeepsLocalVersionMarker'], 1800),
+        ('focused-unit', ['test', '//cmd/bd:bd_composition_test', '//cmd/bd/doctor:doctor_test', '--config=ci', *limits, '--test_filter=^('+'|'.join(unit)+')$'], unit, 3300),
+        ('focused-server', ['test', '//cmd/bd:bd_composition_server_test', '--config=doltserver-cmd', *limits, '--test_sharding_strategy=disabled', '--test_arg=-test.run=^TestVersionBumpDirtyTableRefusalKeepsLocalVersionMarker$'], ['TestVersionBumpDirtyTableRefusalKeepsLocalVersionMarker'], 1800),
     ]
     results = []
     for name, args, expected_tests, timeout in phases:
@@ -273,6 +273,8 @@ def main():
     assert sorted(changed) == sorted([*manifest['files'], '.github/composition-6949/manifest.json'])
     for name, expected in manifest['files'].items():
         assert hashlib.sha256((WORKSPACE/name).read_bytes()).hexdigest() == expected, name
+    for name, expected in manifest['fixture_files'].items():
+        assert hashlib.sha256((WORKSPACE/name).read_bytes()).hexdigest()==expected, name
     save('source.json', {'head':os.environ['GITHUB_SHA'], 'parent':parent, 'base_6949':manifest['base_6949'], 'manifest':manifest, 'changed':changed})
     import budget
     original_rss, original_stop = budget.process_rss, budget.stop

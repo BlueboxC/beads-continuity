@@ -8,14 +8,15 @@
     "cmd/bd/version_tracking_test.go": "12a139712123201155e87ca67a0de3e39f91df37fdef17206a6de715d792720a",
     "cmd/bd/doctor/version.go": "e9c60680d76a41454607727e66387064baa1e8371a51f8699125416a7e0012b6",
     "cmd/bd/doctor/version_test.go": "b8633f57554aa8bb81792a53847bbb0446b8b3e1c037430148be39e0cff254ef",
-    ".github/workflows/codex-composition-6949.yml": "ff386694c648ec6f9b4818cdaacc7181b4f34c19a9a3e3fca3c87819dafcd261",
-    ".github/composition-6949/run.py": "1999e384828055d105b5db70892c69bc3e5f05476d406cd4f00c9d9ca2310b5c",
+    ".github/workflows/codex-composition-6949.yml": "b71995cce649eed31abece39d0df1984da3ffe71fdbe3d06b336b15d824971a0",
+    ".github/composition-6949/run.py": "e6fe9fd0a40187b8b08164b75698323de30a0b7389ee405c283baaf9dfdfadef",
     ".github/composition-6949/budget.py": "db7641c07d78dac4db71575bd9b37995408ea00142622a900378be2fc9d84404",
     ".github/composition-6949/test_budget_port.py": "316070b76feb874d9d0549a2ae85a9f166d30fcb7e62ce9f57ac45a2621ea574",
     ".github/composition-6949/storage.py": "d5194aa388428c956bd8aa8e08a919ad8050af4c60f74e7630ba1ebf973fca89",
     "MODULE.bazel": "dfc5e5b861aaff8044dda62fdab5678c9d2c1f11f010db32155b01374959310d",
     ".github/composition-6949/rules_go_memory.patch": "f8151ef612d00097cb0f6dff29d9acbec75bcedbf8fdc2cd4f4fc14ba5ca1d7b",
-    ".github/composition-6949/BUILD.bazel": "2028d5140a191a3c4a4d3de685fe90fdeaec2631112b19cd118e33ef704a404d"
+    ".github/composition-6949/BUILD.bazel": "2028d5140a191a3c4a4d3de685fe90fdeaec2631112b19cd118e33ef704a404d",
+    "cmd/bd/BUILD.bazel": "5c7e26ec22907f50118529f8a5a26f3daf8ebcbf1113e237043d6ca9575db728"
   },
   "unit_tests": [
     "TestTrackBdVersion_NoBeadsDir",
@@ -54,5 +55,31 @@
     "jobs": 1,
     "jvm_mib": 512,
     "timeout_minutes": 100
+  },
+  "fixture_files": {
+    "cmd/bd/aaa_stdio_baseline_test.go": "c396c9f45d71b9a79d3f738d6bd4aec35195e0b513e0711e81229eddfe6275ca",
+    "cmd/bd/cobra_flag_reset_test.go": "a781fd9efd9625191775cb8dec3de8ef1cc1bcc4385621d68d27fbb3e6bc0ed5",
+    "cmd/bd/context_binding_integration_test.go": "0632879f70fcd43613ec366d1f498a7d209bbd83af081b44da784e837075cfe0",
+    "cmd/bd/context_binding_test.go": "73620fd766f2f4ba65ed6ccfc15cca2c1c01b02d35e823acfd3022327826ec02",
+    "cmd/bd/helpers_test.go": "24c66af665c0ad00021a904521e1220ef942279a5952f0ab5011465d157bcfec",
+    "cmd/bd/hooks_export_worktree_test.go": "d36c03bd4957f7f27c2d586b68292881399fa081f181cd2da1331edfcaa85669",
+    "cmd/bd/hooks_post_merge_import_test.go": "1e18a54e6075bfba2204edf3ac4c3ffa36e0a5d651e8bad7be56e50f0af07c16",
+    "cmd/bd/ready_input_test.go": "f1d136316d3381647e1f811672179ad3a1ea474fe6e623738389303438886b5b",
+    "cmd/bd/shared_migrate_consent_test.go": "1c57b5188ff03d1f94fa854150f7ba8da3403a1bf74ae9fa7cd38f7c5c2ef20f",
+    "cmd/bd/shared_store_migrate_gate_test.go": "7f32a44a3984c03e6e61027401f14322fdf169d30967fd6f596cb80beeab2741",
+    "cmd/bd/sync_remote_fixture_test.go": "9e5cdd0fa5ece3965bb0c396c453c012af8b98804d18a087591e28989c290a37",
+    "cmd/bd/test_dolt_server_cgo_test.go": "5eafd6cbb94fd01535fc55f4c3bcb8386e784f8754540794c5c47b39132dc9ce",
+    "cmd/bd/test_helpers_pure_test.go": "0f469adda6faf259910001c6eb13d9dac84e6c9d3f3c239f91a78d4b169fb0f9",
+    "cmd/bd/test_helpers_test.go": "90b1f8630c695378c943cdcdc7af767c36a5153cd43d5b2f99b8002859c5b2ca",
+    "cmd/bd/test_repo_beads_guard_test.go": "d0c121b307ddcd2320eee0c66b7ebee8c003ad2dd0898ac897589bd0bd51db6f",
+    "cmd/bd/version_tracking_test.go": "12a139712123201155e87ca67a0de3e39f91df37fdef17206a6de715d792720a",
+    "cmd/bd/zz_stdio_leak_guard_test.go": "3094567b16836e0f61d193782c287f2427acc7f04b8f03776b0a86a5fac8426d"
+  },
+  "verification_variant": {
+    "unit_target": "//cmd/bd:bd_composition_test",
+    "server_target": "//cmd/bd:bd_composition_server_test",
+    "files": 17,
+    "canonical_targets_unchanged": true,
+    "scope": "Same selected original tests and complete fixture closure; excludes unrelated monolithic test files from compilation; full original composed target did not fit3GiB"
   }
 }
