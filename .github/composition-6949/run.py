@@ -316,7 +316,7 @@ def worker(manifest):
     # patch is needed or claimed for this small, unchanged-target package.
     query = 'mnemonic("(GoCompilePkg|RunNogo|GoLink)", //scripts:scripts_test)'
     qlog=ARTIFACTS/'go-action-environment.log'
-    qargs=['aquery',query,'--config=ci','--@rules_go//go/config:race','--output=jsonproto','--include_artifacts=false','--include_commandline=true','--include_param_files=true','--repository_cache=','--noshow_progress','--ui_event_filters=-info,-warning,-debug','--jobs=1','--loading_phase_threads=1']
+    qargs=['aquery',query,'--@rules_go//go/config:race','--output=jsonproto','--include_artifacts=false','--include_commandline=true','--include_param_files=true','--repository_cache=','--noshow_progress','--ui_event_filters=-info,-warning,-debug','--jobs=1','--loading_phase_threads=1']
     assert bounded_command(startup+qargs,qlog,600,stderr_log=ARTIFACTS/'go-action-environment-stderr.log',log_limit=2*1024*1024)==0
     graph=json.loads(qlog.read_text());owners={str(t['id']):t['label'].removeprefix('@@') for t in graph.get('targets',[])}
     actions=graph.get('actions',[])

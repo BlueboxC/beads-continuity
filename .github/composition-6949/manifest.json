@@ -9,9 +9,9 @@
     "TestSetupBazelRCWriterForkMode"
   ],
   "files": {
-    ".github/workflows/codex-csr-regression.yml": "66693e370f788b1e6b508ba71c3794da663d2372934f1df6abe229e6d67e937b",
+    ".github/workflows/codex-csr-regression.yml": "b94a13bf05c1c6acb0b57cf12c834d17ba5fd5af4c3f06a2777f74e34af6863c",
     "scripts/bazel_fork_mode_test.go": "e64668c54377f55e29c418f3c0f8930077a6ebc8f06a3c768e8c4913624239e1",
-    ".github/composition-6949/run.py": "5ff12f199c0270652e7edb1bf8fb3a84b31417e889891418322a14e76c3aa0fc",
+    ".github/composition-6949/run.py": "17e09be43dab3cae1e94f94ec1badbbc9e5f23bdab55721764792f838f5b8f77",
     ".github/composition-6949/budget.py": "db7641c07d78dac4db71575bd9b37995408ea00142622a900378be2fc9d84404",
     ".github/composition-6949/storage.py": "cf98ce8d8ed4af537338a8df795ba128e02f2dc4d274dc21231f3f507a6a33e1",
     ".github/composition-6949/test_budget_port.py": "316070b76feb874d9d0549a2ae85a9f166d30fcb7e62ce9f57ac45a2621ea574"
