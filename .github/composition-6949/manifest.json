@@ -3,7 +3,7 @@
   "base_6949": "c47dc137015a33357ae4700894119cd248e62389",
   "base": "c47dc137015a33357ae4700894119cd248e62389",
   "original_dependency": "6b15daf23515c3f298e48b4ef40e15cff347a111",
-  "test_only_red_probe": true,
+  "test_only_red_probe": false,
   "unit_tests": [
     "TestSetupBazelForkCredential",
     "TestSetupBazelRCWriterForkMode"
@@ -14,11 +14,10 @@
     ".github/composition-6949/run.py": "17e09be43dab3cae1e94f94ec1badbbc9e5f23bdab55721764792f838f5b8f77",
     ".github/composition-6949/budget.py": "db7641c07d78dac4db71575bd9b37995408ea00142622a900378be2fc9d84404",
     ".github/composition-6949/storage.py": "cf98ce8d8ed4af537338a8df795ba128e02f2dc4d274dc21231f3f507a6a33e1",
-    ".github/composition-6949/test_budget_port.py": "316070b76feb874d9d0549a2ae85a9f166d30fcb7e62ce9f57ac45a2621ea574"
+    ".github/composition-6949/test_budget_port.py": "316070b76feb874d9d0549a2ae85a9f166d30fcb7e62ce9f57ac45a2621ea574",
+    ".github/actions/setup-bazel/fork-credential.sh": "1831b42b75723640b2a5eb37b0c94b34830b66c41cb6a03e2c09f5011e37da1c"
   },
-  "fixture_files": {
-    ".github/actions/setup-bazel/fork-credential.sh": "4f569e2cbef6adc5215b655fca6ce47ddb455bd87d0d721e671a84e558b77bdf"
-  },
+  "fixture_files": {},
   "ceilings": {
     "local_staging_MiB": 64,
     "disk_GiB": 12,
@@ -36,5 +35,10 @@
     "no_workflow_permission_timeout_runner_change": true,
     "no_local_Git_build_or_DB_copy": true
   },
-  "artifact_root": "RUNNER_TEMP/beads-csr-artifacts-RUNID-ATTEMPT outside checkout; existing size/global budget accounting retained"
+  "artifact_root": "RUNNER_TEMP/beads-csr-artifacts-RUNID-ATTEMPT outside checkout; existing size/global budget accounting retained",
+  "red_evidence": {
+    "head": "2d8c8cad27db85e85213b5fac831f4d3f16950ce",
+    "run": 44502788701,
+    "artifact_sha256": "66e72a7e63a4b3cc9f7ab4e7728fb2657e67d033b0bdca18ce8673996bf0a753"
+  }
 }
