@@ -203,6 +203,7 @@ class UpdateIssueParams(BaseModel):
     notes: str | None = None
     external_ref: str | None = None
     labels: list[str] | None = None
+    defer_until: str | None = None
 
 
 class ClaimIssueParams(BaseModel):

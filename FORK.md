@@ -472,7 +472,7 @@ The embedded engine additionally adapts macneale4’s [Dolt PR #12198](https://g
 
 ## Scoped dependency maintenance
 
-Adapt Julian Knutsen's [PR #7814](https://github.com/gastownhall/beads/pull/7814), [PR #7813](https://github.com/gastownhall/beads/pull/7813) and [PR #7812](https://github.com/gastownhall/beads/pull/7812): MCP build jobs use uv 0.13.5, the Python runtime requires opentelemetry-api >=1.45.1, and the OpenAPI generator uses kin-openapi 0.149.0 with jsonschema 6.0.3. Retain FastMCP 3.4.5, the existing CLI/hooks integration and all Dolt/analyzer/driver pins. The Nix Go1.27.3 overlay retains the pinned source, uses Go1.26 to bootstrap, and adapts the pinned vendor opt-in patch to the renamed loader state. Recompute the fixed-output dependency hash and independently build after lock changes.
+Adapt Julian Knutsen's [PR #7814](https://github.com/gastownhall/beads/pull/7814), [PR #7813](https://github.com/gastownhall/beads/pull/7813) and [PR #7812](https://github.com/gastownhall/beads/pull/7812): MCP build jobs use uv 0.13.5, the Python runtime requires opentelemetry-api >=1.45.1, and the OpenAPI generator uses kin-openapi 0.149.0 with jsonschema 6.0.3. Require Python >=3.11 and FastMCP 4.1.2 for MCP, retaining the existing CLI/hooks integration and all Dolt/analyzer/driver pins. The Nix Go1.27.3 overlay retains the pinned source, uses Go1.26 to bootstrap, and adapts the pinned vendor opt-in patch to the renamed loader state. Recompute the fixed-output dependency hash and independently build after lock changes.
 
 The three-clone [#7811](https://github.com/gastownhall/beads/issues/7811) label-loss reproduction is already covered by this fork's companion-table settlement correction for [#7757](https://github.com/gastownhall/beads/issues/7757); do not add a second resolution workaround. Qualify the actual binary and report stock-version differences separately.
 
@@ -493,3 +493,23 @@ Adopt Anthropic SDK1.83.0 and the reviewed x/mod0.42.0, x/net0.61.0, x/crypto0.5
 ### SQL execution follow-ups (October 24, 2026)
 
 The tuple incorporates GMS PRs #4062, #4058 and #4059 for Dolt #12205: LATERAL scopes retain legal ON predicates; EXIT handlers execute their entire body; and session select limits no longer truncate the input to DISTINCT/window expressions. The handler loop additionally preserves its instruction counter through IF/WHILE branches, with true/false and tail-operation regressions. Existing exact-decimal, Full-Text, storage and merge protections remain. Embedded normal/prepared qualification covers 22 cases, supplemented by the contributor engine suites and the Beads regression suite. Multiple procedure result sets (Dolt #12199) remain outside this correction. Engine upgrades retain matched data/binary recovery and native backup checks; the driver, schemas, capacities, hooks and external CLI/server policy are unchanged.
+
+## Python MCP runtime alignment
+
+The MCP package requires Python >=3.11 and pins FastMCP 4.1.2, Pydantic
+2.13.5 and pydantic-settings 2.15.0. Adapted from Dependabot's upstream
+[PR #6495](https://github.com/gastownhall/beads/pull/6495) and Julian
+Knutsen's [#7814](https://github.com/gastownhall/beads/pull/7814),
+[#8200](https://github.com/gastownhall/beads/pull/8200) and
+[#8220](https://github.com/gastownhall/beads/pull/8220). Python3.10 is no
+longer supported by this package; the lock resolves dnspython2.9.0 and
+retains PyJWT>=2.15.1, joserfc>=1.7.7, OpenTelemetry>=1.45.1 and the
+urllib3>=2.8.0 development floor.
+
+The fork retains literal CLI operands/options, reopen/label semantics,
+cancellation and unknown-outcome refusals, multi-project routing and the
+eight advisory read-only hints. Both modern2026-07-28 and legacy2025-11-25
+stdio clients preserve all18 tool names, descriptions, input/output
+schemas and annotations against the captured FastMCP3.4.5 wire baseline.
+The ordinary CLI/hooks integration, release/API version, database format
+and installed engine remain unchanged.

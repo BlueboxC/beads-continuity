@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+- Require Python 3.11 or newer and update to FastMCP 4.1.2, Pydantic 2.13.5 and pydantic-settings 2.15.0 (upstream PRs #6495, #7814, #8200 and #8220; Julian Knutsen and Dependabot). Preserve the fork's literal arguments, reopen behavior, cancellation deadlines, label semantics and read-only hints.
+- Resolve dnspython 2.9.0 without the Python 3.10 branch; retain the existing PyJWT, joserfc, OpenTelemetry and urllib3 security minima.
+
 ### Added
 - Advisory MCP `readOnlyHint` annotations on the eight read-only tools (PR #7779).
 - New `comment`, `comments`, and `note` MCP tools, wrapping the existing
@@ -17,6 +21,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   reads them back, and `note` appends to the notes field.
 
 ### Fixed
+- Bind caller-supplied CLI arguments as literal values, including issue IDs
+  and dependency operands (Wenjie F., PR #7881).
+- Report reopen no-ops and apply additional fields when updating an issue to
+  open. Preserve the reopen reason and report partial failures
+  (gascity-eddie, PR #7927).
+- Update PyJWT to 2.15.1 and joserfc to 1.7.7 (gascityinc-randy, PR #7466, and Julian Knutsen, PR #8115).
 - `mcp__beads__show()` no longer crashes with `pydantic literal_error` when an
   issue has dependency types beyond the original four (`blocks`, `related`,
   `parent-child`, `discovered-from`). `DependencyType` is now `str`, matching

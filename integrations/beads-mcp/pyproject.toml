@@ -3,13 +3,13 @@ name = "beads-mcp"
 version = "1.3.1"
 description = "MCP server for beads issue tracker."
 readme = "README.md"
-requires-python = ">=3.10"
+requires-python = ">=3.11"
 license = {text = "MIT"}
 dependencies = [
-    "fastmcp==3.4.5",
-    "pydantic==2.13.4",
-    "pydantic-settings==2.14.2",
-    "PyJWT>=2.15.0",
+    "fastmcp==4.1.2",
+    "pydantic==2.13.5",
+    "pydantic-settings==2.15.0",
+    "PyJWT>=2.15.1",
     "opentelemetry-api>=1.45.1",
 ]
 authors = [
@@ -24,7 +24,6 @@ classifiers = [
     "Intended Audience :: Developers",
     "License :: OSI Approved :: MIT License",
     "Programming Language :: Python :: 3",
-    "Programming Language :: Python :: 3.10",
     "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
     "Programming Language :: Python :: 3.13",
@@ -68,7 +67,7 @@ warn_return_any = false
 check_untyped_defs = false
 
 [tool.ruff]
-target-version = "py310"
+target-version = "py311"
 line-length = 115
 
 [tool.ruff.lint]

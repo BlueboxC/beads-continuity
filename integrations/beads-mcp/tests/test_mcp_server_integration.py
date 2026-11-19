@@ -26,7 +26,7 @@ def bd_executable():
 async def temp_db(bd_executable):
     """Create a temporary database file and initialize it - fully hermetic."""
     # Create temp directory that will serve as the workspace root
-    temp_dir = tempfile.mkdtemp(prefix="beads_mcp_test_", dir="/tmp")
+    temp_dir = tempfile.mkdtemp(prefix="beads_mcp_test_")
 
     # Initialize database in this directory (creates .beads/ subdirectory)
     import asyncio
