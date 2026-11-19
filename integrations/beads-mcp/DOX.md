@@ -12,6 +12,8 @@ Python package exposing Beads operations to MCP clients.
 
 Root DOX.md and the parent chain remain binding.
 
+- Re-resolve filesystem-sensitive workspace paths on each call. Retargeted aliases and newly initialized worktree-local `.beads` roots must select their current owner; worktrees without a local root retain the existing main-repository fallback. Keep the client pool keyed by the resolved root.
+
 - MCP issue updates forward labels through `--set-labels`. Omitted or null preserves existing labels, an empty list clears them, and a nonempty list replaces them.
 - Explicit reopen reports a successful no-op as a tool error. Updating to open reopens a closed or configured-done issue before applying additional fields. The reopen reason remains in the reopen operation and closed-issue updates retain their list response. A non-closed issue uses an ordinary update and clears any dated defer. Report partial or uncertain field updates without retrying or changing timeout exit codes.
 
@@ -28,5 +30,7 @@ Use the existing package tests and dependency declarations. Test workspaces inhe
 ## Verification
 
 Use `make ci-package-mcp` with the canonical candidate binary. Its Ruff, mypy, unit, real CLI/stdio and packaging checks qualify the connector. Comment/note round trips must preserve option-shaped text and actor identity. Verify indexed child contracts.
+
+Run the five worktree regressions by default with separate temporary embedded-Dolt roots. Verify native history sync through `refs/dolt/data`, passive JSONL export, path changes and exact issue isolation; never commit live database directories or ignore failed sync commands in fixtures.
 
 ## Child DOX Index

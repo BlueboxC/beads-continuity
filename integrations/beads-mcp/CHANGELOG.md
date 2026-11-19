@@ -21,6 +21,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   reads them back, and `note` appends to the notes field.
 
 ### Fixed
+- Re-evaluate workspace paths after alias retargeting or creation of a worktree-local database, preserving the per-project client pool. Restore the five worktree integration cases with isolated Dolt fixtures, native Git-backed history sync and passive JSONL export.
 - Bind caller-supplied CLI arguments as literal values, including issue IDs
   and dependency operands (Wenjie F., PR #7881).
 - Report reopen no-ops and apply additional fields when updating an issue to

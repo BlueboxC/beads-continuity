@@ -513,3 +513,7 @@ stdio clients preserve all18 tool names, descriptions, input/output
 schemas and annotations against the captured FastMCP3.4.5 wire baseline.
 The ordinary CLI/hooks integration, release/API version, database format
 and installed engine remain unchanged.
+
+## MCP workspace routing and worktree coverage
+
+Resolve filesystem-sensitive workspace paths afresh so a retargeted alias or a newly initialized worktree-local `.beads` selects its current database. Keep the existing root-keyed client pool and main-repository fallback for worktrees without a local database. The five worktree regressions run with real isolated embedded Dolt, checked Git-backed history sync through `refs/dolt/data`, nested discovery and passive JSONL export. A retargeted-symlink regression replaces private LRU-cache assertions. Python/FastMCP requirements, protocol schemas, engine pins and existing database history are unchanged.
