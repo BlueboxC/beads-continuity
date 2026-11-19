@@ -1,0 +1,13 @@
+--- a/go/private/context.bzl
++++ b/go/private/context.bzl
+@@ -699,6 +699,10 @@
+         # the old behavior.
+         "GODEBUG": "winsymlink=0",
+     }
++
++    # Constrain changed verification packages; preserve dependency cache keys.
++    if ctx.label.workspace_root == "" and ctx.label.package in ["cmd/bd", "cmd/bd/doctor"]:
++        env.update({"GOMEMLIMIT": "384MiB", "GOGC": "20", "GOMAXPROCS": "1"})
+ 
+     # The level of support is determined by the platform constraints in
+     # //go/constraints/amd64.

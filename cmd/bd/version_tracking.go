@@ -432,7 +432,8 @@ func recoverPreV56IfNeeded(previousVersion, dbPath string) bool {
 	if !doctor.IsValidSemver(previousVersion) || isGoPseudoVersion(previousVersion) {
 		return false
 	}
-	if doctor.CompareVersions(previousVersion, "0.56.0") >= 0 {
+	parts := doctor.ParseVersionParts(previousVersion)
+	if len(parts) == 0 || parts[0] != 0 || (len(parts) > 1 && parts[1] >= 56) {
 		return false
 	}
 
